@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Queen SDA">
+  <rect width="512" height="512" rx="96" fill="#0a2a20"/>
+  <circle cx="256" cy="256" r="196" fill="none" stroke="#0e9f6e" stroke-width="30"/>
+  <circle cx="256" cy="256" r="132" fill="none" stroke="#0ea5bd" stroke-width="27"/>
+  <circle cx="256" cy="256" r="74" fill="none" stroke="#22c55e" stroke-width="24"/>
+  <circle cx="256" cy="256" r="30" fill="#0ea5bd"/>
+</svg>
