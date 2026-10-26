@@ -1,0 +1,190 @@
+/* Queen SDA — carcasa (shell): puerto regla a regla de theme.css del
+   original (oleada de igualación total, D-21/D-23/D-24/D-65).
+   Vive fuera de index.css a propósito: recoge la cabecera de sección
+   con el clúster de perfil/conexión, la entrada de pestaña .md-page,
+   los paquetes de transiciones de controles y las redes globales de
+   movimiento reducido, con los valores GOBERNANTES del original
+   (cuando theme.css repite una regla, manda la última de su cascada:
+   así se porta aquí, una sola vez y con ese valor). */
+
+/* ===== Cabecera de sección: SOLO el clúster perfil + conexión =====
+   (theme.css:2314-2379). En el original no existe cabecera superior
+   con marca/usuario/«Salir»: arriba va esta cabecera pegajosa con la
+   píldora «En línea» y el botón de perfil a la derecha (D-65). */
+.oneui-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 92px;
+  margin: 0 -4px 22px;
+  padding: 18px 4px 14px;
+  background-color: var(--bg);
+  background-image: var(--ambient-bg);
+  background-attachment: fixed;
+  border-bottom: 1px solid transparent;
+  transition: min-height 160ms ease, padding 160ms ease, border-color 160ms ease;
+}
+.oneui-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+  margin-left: auto;
+}
+.oneui-header-chip,
+.oneui-profile-button {
+  min-height: 46px;
+}
+.oneui-profile-button {
+  width: 46px;
+  min-width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+}
+.oneui-profile-button img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+/* El estado de red vive junto a la foto de perfil (theme.css:241-282):
+   verde = en línea y sincronizado; amarillo = sin sincronizar. */
+.profile-status-cluster,
+.profile-status-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.profile-status-row { width: 100%; }
+.connection-status {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  flex: none;
+  min-height: 30px;
+  max-width: 112px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.2;
+  letter-spacing: 0.01em;
+  box-shadow: none;
+  cursor: pointer;
+}
+.connection-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 8px;
+  border-radius: 999px;
+  background: currentColor;
+}
+.connection-status-synced { color: #16834f; }
+.connection-status-unstable { color: #2563c9; }
+.connection-status-paused { color: #9a6c00; }
+.connection-status:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ===== Entrada de pestaña (D-21) =====
+   Cascada del original: md-fade-up .24s → system-page-enter 120ms →
+   sda-tab-enter .12s cubic-bezier(.2,.72,.25,1) backwards (LA QUE
+   MANDA, theme.css:7394). Solo opacidad y relleno «backwards», nunca
+   «both»: el relleno retenido convertiría la sección en contexto de
+   apilamiento y atraparía los diálogos fixed bajo la barra inferior
+   (invariante escrita por el propio original en theme.css). */
+.md-page { animation: sda-tab-enter .12s cubic-bezier(.2,.72,.25,1) backwards; }
+@keyframes sda-tab-enter { from { opacity: 0; } to { opacity: 1; } }
+@keyframes system-page-enter { from { opacity: .01; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+details > :not(summary) { animation: system-detail-enter var(--motion-base) ease-out backwards; }
+@keyframes system-detail-enter { from { opacity: .01; } to { opacity: 1; } }
+.md-page h2 { letter-spacing: -.018em; line-height: 1.14; }
+.md-page h3 { letter-spacing: -.01em; line-height: 1.2; }
+html[data-ultralight="true"] .md-page { animation: none; }
+
+/* ===== Esqueletos de carga (D-20: sda-skeleton) ===== */
+:where(.skeleton, .loading-skeleton, .queen-evolution-loader, .system-realtime-charts-loading span) {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--border) 48%, var(--surface));
+}
+:where(.skeleton, .loading-skeleton)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, color-mix(in srgb, var(--text) 8%, transparent) 48%, transparent 76%);
+  transform: translate3d(-100%, 0, 0);
+  animation: sda-skeleton .95s ease-in-out infinite;
+  will-change: transform;
+}
+@keyframes sda-skeleton { to { transform: translate3d(100%, 0, 0); } }
+
+/* ===== Transiciones de controles (D-23) =====
+   Paquete rápido del original (theme.css:6732, con --motion-fast =
+   80ms ya definido en :root) y paquete táctil :where (theme.css:7380):
+   especificidad cero, como en el original: cualquier regla propia de
+   un control manda sobre el paquete. */
+button, [role="button"], summary {
+  transition: background-color var(--motion-fast) ease, border-color var(--motion-fast) ease, color var(--motion-fast) ease, box-shadow var(--motion-fast) ease, opacity var(--motion-fast) ease, transform var(--motion-fast) ease;
+}
+:where(button, [role="button"], .btn, .oneui-bottom-nav button) {
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  transition: transform .14s ease, opacity .14s ease, background-color .18s ease, border-color .18s ease;
+}
+:where(button, [role="button"], .btn, .oneui-bottom-nav button):active:not(:disabled) {
+  transform: translate3d(0, 1px, 0) scale(.975);
+  opacity: .86;
+}
+/* .md-card del original = la tarjeta del sistema; en el clon la clase
+   de tarjeta es .card y recibe la misma transición (theme.css:825). */
+.card, .md-card {
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.card:active, .md-card:active { transform: scale(0.99); }
+/* Chevrones de menú de acciones (theme.css, paquete de menús). */
+.action-menu-chevron { transition: transform 120ms ease; }
+
+/* ===== Red global de movimiento reducido (D-24) =====
+   Las dos redes del original (theme.css:7373 y 7404) adaptadas a las
+   raíces que el clon SÍ renderiza: .md-page envuelve cada pestaña;
+   las redes por sección siguen viviendo en sus hojas espejo. */
+@media (prefers-reduced-motion: reduce) {
+  .md-page { animation: none !important; }
+  :where(button, [role="button"], .btn):active:not(:disabled) { transform: none !important; }
+  .skeleton::after, .loading-skeleton::after { animation: none !important; }
+  .card, .md-card { transition: none; }
+}

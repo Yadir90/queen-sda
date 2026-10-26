@@ -1,16 +1,25 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import type { AutomationRun, Bulletin, Section, Session, StoredData } from './types'
 import {
-  EMPTY_DATA, TEMP_PASSWORD, changePassword, ensureProfiles, getSession, loadData, login, logout, profileMustChange, saveAutomationState, saveBulletins, saveQueenEvolution, supabaseConfigured,
+  EMPTY_DATA, TEMP_PASSWORD, changePassword, ensureProfiles, getSession, listProfiles, loadData, login, logout, profileMustChange, saveAutomationState, saveBulletins, saveQueenEvolution, startLocalSession, supabaseConfigured,
 } from './lib/backend'
-import { sbChangePassword, sbFetchStoredData, sbLogin, sbLogout, sbQueenChat, sbRestoreSession, sbSaveAutomationState, sbSaveBulletins, sbSaveQueenState } from './lib/supabaseBackend'
+import { recoveryParamsFromUrl, sbChangePassword, sbFetchStoredData, sbLoadActivityLog, sbLogin, sbLogout, sbOnPasswordRecovery, sbQueenChat, sbRequestPasswordReset, sbRestoreSession, sbSaveActivityLog, sbSaveAutomationState, sbSaveBulletins, sbSaveQueenState } from './lib/supabaseBackend'
+import { canModifyIn, sectionAccess } from './lib/permissions'
+import { loadActivityLog, logActivity, logImpersonationEvent, mergeActivityLog, setActivityActor, setActivityRemoteSaver, setImpersonationMarker, subscribeActivityLog, type ActivityEntry } from './lib/activityLog'
+import { diffActivity } from './lib/activityDiff'
+import { clearQuickAccess, getQuickAccess, hasQuickAccess, verifyQuickPin } from './lib/quickAccess'
+import { requireBiometricUnlock } from './lib/webauthn'
 import { buildQueenEvolution } from './lib/queenCore.mjs'
 import { ensureBulletinsForDays } from './lib/documentosCore.mjs'
 import { downloadText } from './lib/download'
 import { Icon, AlertDot, type IconName } from './components/icons'
 import { QueenOrb, QueenReactorMark } from './components/QueenReactor'
 import { MediaImage } from './components/MediaImage'
+import { BRAND_LOGO_URL } from './lib/brandAssets'
+import { getOfflineState, requestOfflineSync, subscribeOfflineState, type OfflineState } from './lib/offlineQueue'
+import { buildQueenObservations } from './lib/queenCore.mjs'
 import { effectiveSaldo, fmtCUP, fmtInt, isMorosa, todayISO } from './lib/utils'
+import './components/shell.css'
 import Inicio from './screens/Inicio'
 import { MasScreen } from './screens/Secciones'
 
@@ -92,11 +101,120 @@ const SIDE_MAS: NavItem[] = [
   { id: 'transferencias', label: 'Transferencias', icon: 'transfer' },
 ]
 
-function LoginScreen({ onLogin }: { onLogin: (s: Session, mustChange: boolean) => void }) {
+function LoginScreen({ onLogin, onImpersonate }: {
+  onLogin: (s: Session, mustChange: boolean, via?: 'contraseña' | 'PIN') => void
+  onImpersonate: (target: { id: string; name: string; email: string; role: Session['role'] }, adminName: string) => void
+}) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  /* Selector de usuario (decisión del dueño, 2026-10-26 15:09):
+     primero se escoge quién entra (foto y nombre) y después su
+     vía: contraseña siempre; PIN de este dispositivo en modo
+     local; y «entrar como» para el administrador con SU PIN o SU
+     biometría. La biometría de apertura vive en la pantalla de
+     bloqueo de la sesión guardada (LockScreen), como se diseñó en
+     la Pieza H: sin sesión guardada no hay nada que desbloquear. */
+  const profiles = useMemo(() => listProfiles(), [])
+  const adminProfile = profiles.find((p) => p.role === 'admin')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected = profiles.find((p) => p.id === selectedId) ?? null
+  const [pinOpen, setPinOpen] = useState(false)
+  const [pinValue, setPinValue] = useState('')
+  const [pinError, setPinError] = useState<string | null>(null)
+  const [pinBusy, setPinBusy] = useState(false)
+  const [asOpen, setAsOpen] = useState(false)
+  const [asPin, setAsPin] = useState('')
+  const [asError, setAsError] = useState<string | null>(null)
+  const [asBusy, setAsBusy] = useState(false)
+  const selectedQuick = selected ? getQuickAccess(selected.id) : null
+  const adminQuick = adminProfile ? getQuickAccess(adminProfile.id) : null
+
+  const pick = (p: { id: string; email: string }) => {
+    setSelectedId(p.id)
+    setEmail(p.email)
+    setError(null)
+    setPinOpen(false)
+    setPinError(null)
+    setAsOpen(false)
+    setAsError(null)
+  }
+  const submitPinLogin = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!selected) return
+    setPinBusy(true)
+    setPinError(null)
+    try {
+      const check = await verifyQuickPin(selected.id, pinValue)
+      if (!check.ok) {
+        const pseudo: Session = { profileId: selected.id, name: selected.name, email: selected.email, role: selected.role }
+        logActivity('fallido', check.reason === 'locked'
+          ? 'PIN de acceso desactivado tras demasiados intentos fallidos en el selector'
+          : `Intento de acceso con PIN incorrecto en el selector (quedan ${check.attemptsLeft} intentos)`, { actor: pseudo })
+        setPinError(check.reason === 'locked'
+          ? 'Demasiados intentos fallidos: el PIN quedó desactivado en este dispositivo. Entra con tu contraseña.'
+          : check.reason === 'wrong'
+            ? `PIN incorrecto. Te quedan ${check.attemptsLeft} intento${check.attemptsLeft === 1 ? '' : 's'}.`
+            : 'Este dispositivo ya no tiene PIN activo para tu cuenta.')
+        return
+      }
+      const s = startLocalSession(selected.id, true)
+      if (!s) { setPinError('No se pudo crear la sesión local.'); return }
+      onLogin(s, profileMustChange(selected.id), 'PIN')
+    } finally {
+      setPinBusy(false)
+      setPinValue('')
+    }
+  }
+  const submitEnterAsPin = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!selected || !adminProfile) return
+    setAsBusy(true)
+    setAsError(null)
+    try {
+      const check = await verifyQuickPin(adminProfile.id, asPin)
+      if (!check.ok) {
+        setAsError(check.reason === 'locked'
+          ? 'Demasiados intentos: el PIN del administrador quedó desactivado en este dispositivo.'
+          : `PIN del administrador incorrecto. Quedan ${check.attemptsLeft} intentos.`)
+        return
+      }
+      onImpersonate(selected, adminProfile.name)
+    } finally {
+      setAsBusy(false)
+      setAsPin('')
+    }
+  }
+  const enterAsBiometric = async () => {
+    if (!selected || !adminProfile) return
+    setAsBusy(true)
+    setAsError(null)
+    try {
+      const unlock = await requireBiometricUnlock()
+      if (!unlock.ok) { setAsError(unlock.reason ?? 'La verificación biométrica no se completó.'); return }
+      onImpersonate(selected, adminProfile.name)
+    } finally {
+      setAsBusy(false)
+    }
+  }
+  /* Recuperación de contraseña (Supabase): vista de pedir el enlace y
+     confirmación de envío, dentro de la misma tarjeta de acceso. */
+  const [view, setView] = useState<'login' | 'forgot' | 'sent'>('login')
+  const [forgotError, setForgotError] = useState<string | null>(null)
+  const [forgotBusy, setForgotBusy] = useState(false)
+  const submitForgot = async (e: FormEvent) => {
+    e.preventDefault()
+    setForgotError(null)
+    setForgotBusy(true)
+    try {
+      const result = await sbRequestPasswordReset(email)
+      if (!result.ok) { setForgotError(result.error ?? 'No se pudo enviar el correo.'); return }
+      setView('sent')
+    } finally {
+      setForgotBusy(false)
+    }
+  }
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -123,24 +241,178 @@ function LoginScreen({ onLogin }: { onLogin: (s: Session, mustChange: boolean) =
         <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
         <h1>{SYSTEM_NAME}</h1>
         <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Iniciar sesión</h2>
-        {error ? <div className="error-box">{error}</div> : null}
-        <form onSubmit={(e) => void submit(e)}>
-          <div className="field">
-            <label htmlFor="lg-email">Correo electrónico</label>
-            <input id="lg-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          </div>
-          <div className="field">
-            <label htmlFor="lg-pass">Contraseña</label>
-            <input id="lg-pass" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
-          </div>
-          <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar'}</button>
-        </form>
+        {view === 'forgot' ? (
+          <>
+            <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Recuperar contraseña</h2>
+            <p className="small" style={{ marginBottom: 12 }}>Escribe tu correo y te enviamos un enlace para crear una contraseña nueva. El enlace abre esta misma app y caduca en poco tiempo.</p>
+            {forgotError ? <div className="error-box">{forgotError}</div> : null}
+            <form onSubmit={(e) => void submitForgot(e)}>
+              <div className="field">
+                <label htmlFor="lg-forgot-email">Correo electrónico</label>
+                <input id="lg-forgot-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+              <button className="btn primary block" type="submit" disabled={forgotBusy}>{forgotBusy ? 'Enviando…' : 'Enviar enlace de recuperación'}</button>
+            </form>
+            <button type="button" className="auth-forgot" onClick={() => { setView('login'); setForgotError(null) }}>Volver a iniciar sesión</button>
+          </>
+        ) : view === 'sent' ? (
+          <>
+            <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Revisa tu correo</h2>
+            <div className="ok-box">Si ese correo tiene una cuenta, te enviamos un enlace de recuperación. Ábrelo en este mismo dispositivo y navegador para crear tu contraseña nueva.</div>
+            <button type="button" className="auth-forgot" onClick={() => setView('login')}>Volver a iniciar sesión</button>
+          </>
+        ) : (
+          <>
+            <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Iniciar sesión</h2>
+            <p className="small muted" style={{ marginBottom: 10 }}>Escoge tu usuario y entra por tu vía: tu contraseña siempre vale; tu PIN y tu huella valen en los dispositivos donde los activaste.</p>
+            <div className="auth-users" role="group" aria-label="Escoge tu usuario">
+              {profiles.map((p) => {
+                const ini = p.name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+                return (
+                  <button
+                    key={p.id} type="button"
+                    className={`auth-user ${selectedId === p.id ? 'selected' : ''}`}
+                    aria-pressed={selectedId === p.id}
+                    onClick={() => pick(p)}
+                  >
+                    <MediaImage
+                      kind="foto-perfil" entityKey={`perfil-${p.id}`} alt=""
+                      className="avatar" style={{ objectFit: 'cover', padding: 0 }}
+                      fallback={<span className="avatar" aria-hidden>{ini}</span>}
+                    />
+                    <span className="auth-user-name">{p.name}</span>
+                    <span className="auth-user-role">{p.role === 'admin' ? 'Administrador' : 'Solo lectura'}</span>
+                  </button>
+                )
+              })}
+            </div>
+            {error ? <div className="error-box">{error}</div> : null}
+            <form onSubmit={(e) => void submit(e)}>
+              <div className="field">
+                <label htmlFor="lg-email">Correo electrónico</label>
+                <input id="lg-email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+              </div>
+              <div className="field">
+                <label htmlFor="lg-pass">Contraseña{selected ? ` de ${selected.name.split(' ')[0]}` : ''}</label>
+                <input id="lg-pass" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+              </div>
+              <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Entrando…' : 'Entrar con contraseña'}</button>
+            </form>
+            {!SB_MODE && selected && selectedQuick?.pinEnabled ? (
+              pinOpen ? (
+                <form onSubmit={(e) => void submitPinLogin(e)} style={{ marginTop: 12 }}>
+                  {pinError ? <div className="error-box" style={{ marginBottom: 10 }}>{pinError}</div> : null}
+                  <div className="field">
+                    <label htmlFor="lg-pin">Tu PIN en este dispositivo</label>
+                    <input id="lg-pin" type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]*" maxLength={6} className="auth-pin-input" value={pinValue} onChange={(e) => setPinValue(e.target.value.replace(/\D/g, ''))} required />
+                  </div>
+                  <button className="btn block" type="submit" disabled={pinBusy || pinValue.length < 4}>{pinBusy ? 'Comprobando…' : 'Entrar con PIN'}</button>
+                </form>
+              ) : (
+                <button type="button" className="btn block" style={{ marginTop: 12 }} onClick={() => setPinOpen(true)}>Entrar con PIN</button>
+              )
+            ) : null}
+            {selected && selected.role !== 'admin' && adminProfile ? (
+              <div style={{ borderTop: '1px solid var(--line)', marginTop: 16, paddingTop: 12 }}>
+                <button type="button" className="auth-forgot" aria-expanded={asOpen} onClick={() => { setAsOpen(!asOpen); setAsError(null) }}>
+                  ¿Eres el administrador? Entrar como {selected.name.split(' ')[0]} con tu PIN o tu huella
+                </button>
+                {asOpen ? (
+                  <div style={{ marginTop: 8 }}>
+                    {asError ? <div className="error-box" style={{ marginBottom: 10 }}>{asError}</div> : null}
+                    {adminQuick?.pinEnabled ? (
+                      <form onSubmit={(e) => void submitEnterAsPin(e)}>
+                        <div className="field">
+                          <label htmlFor="lg-aspin">PIN del administrador</label>
+                          <input id="lg-aspin" type="password" inputMode="numeric" autoComplete="off" pattern="[0-9]*" maxLength={6} className="auth-pin-input" value={asPin} onChange={(e) => setAsPin(e.target.value.replace(/\D/g, ''))} required />
+                        </div>
+                        <button className="btn block" type="submit" disabled={asBusy || asPin.length < 4}>{asBusy ? 'Comprobando…' : `Autorizar y entrar como ${selected.name.split(' ')[0]}`}</button>
+                      </form>
+                    ) : null}
+                    {SB_MODE && adminQuick?.biometricEnabled ? (
+                      <button type="button" className="btn block" style={{ marginTop: adminQuick?.pinEnabled ? 10 : 0 }} disabled={asBusy} onClick={() => void enterAsBiometric()}>
+                        <Icon name="fingerprint" size={15} /> Autorizar con mi huella o cara
+                      </button>
+                    ) : null}
+                    {!adminQuick?.pinEnabled && !(SB_MODE && adminQuick?.biometricEnabled) ? (
+                      <p className="small muted">El administrador aún no tiene acceso rápido activado en este dispositivo: entra con su contraseña y actívalo en Ajustes → Seguridad para poder «entrar como» desde aquí.</p>
+                    ) : null}
+                    <p className="small muted" style={{ marginTop: 8 }}>La entrada queda registrada en Cronología a tu nombre, y dentro verás la banda «Estás viendo como {selected.name.split(' ')[0]}».</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {SB_MODE ? (
+              <button type="button" className="auth-forgot" onClick={() => { setView('forgot'); setError(null) }}>¿Olvidaste tu contraseña?</button>
+            ) : null}
+          </>
+        )}
         <p className="small muted" style={{ textAlign: 'center', marginTop: 14 }}>
           {SB_MODE
             ? 'Acceso con Supabase: tu cuenta la crea el administrador y la seguridad la pone el servidor (roles de solo lectura o administrador).'
             : 'Acceso local de esta v1: los perfiles y roles replican los de la fase 1. La seguridad final llegará con Supabase.'}
         </p>
+      </section>
+    </div>
+  )
+}
+
+/* Pantalla de restablecimiento: la abre el enlace del correo de
+   recuperación (la sesión ya viene activa de Supabase). Fija la
+   contraseña nueva con updateUser (sbChangePassword) y entra a la app;
+   si el enlace caducó, lo dice y manda de vuelta al acceso. */
+function ResetPasswordScreen({ session, linkError, onDone, onLogout }: {
+  session: Session | null
+  linkError: string | null
+  onDone: () => void
+  onLogout: () => void
+}) {
+  const [next, setNext] = useState('')
+  const [repeat, setRepeat] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (next !== repeat) { setError('La contraseña nueva y su repetición no coinciden.'); return }
+    setError(null)
+    setBusy(true)
+    try {
+      const result = await sbChangePassword(next)
+      if (!result.ok) { setError(result.error ?? 'No se pudo guardar la contraseña nueva.'); return }
+      onDone()
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="auth-wrap">
+      <section className="card auth-card">
+        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
+        <h1>Contraseña nueva</h1>
+        <p className="auth-sub">{SYSTEM_FULL}<br />{PLACE}</p>
+        {linkError || !session ? (
+          <>
+            <div className="error-box">{linkError ?? 'El enlace de recuperación no dejó una sesión válida. Pide uno nuevo desde «¿Olvidaste tu contraseña?».'}</div>
+            <button className="btn primary block" style={{ marginTop: 12 }} onClick={onLogout}>Volver a iniciar sesión</button>
+          </>
+        ) : (
+          <>
+            <p className="small">Hola, {session.name}. Crea tu contraseña nueva para recuperar el acceso a tu cuenta.</p>
+            {error ? <div className="error-box">{error}</div> : null}
+            <form onSubmit={(e) => void submit(e)}>
+              <div className="field">
+                <label htmlFor="rp-new">Nueva contraseña</label>
+                <input id="rp-new" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} required />
+              </div>
+              <div className="field">
+                <label htmlFor="rp-rep">Repite la nueva contraseña</label>
+                <input id="rp-rep" type="password" autoComplete="new-password" value={repeat} onChange={(e) => setRepeat(e.target.value)} required />
+              </div>
+              <button className="btn primary block" type="submit" disabled={busy}>{busy ? 'Guardando…' : 'Guardar contraseña y entrar'}</button>
+            </form>
+            <button className="btn block" style={{ marginTop: 10 }} onClick={onLogout}>Cancelar y cerrar sesión</button>
+          </>
+        )}
       </section>
     </div>
   )
@@ -225,9 +497,162 @@ function BootScreen({ slow, onRetry }: { slow: boolean; onRetry: () => void }) {
   )
 }
 
+/* Píldora de conexión del original (su ConnectionStatus, D-68):
+   puerto completo de sus CUATRO estados reales, alimentados por el
+   motor offline del clon (lib/offlineQueue.ts: cola durable de
+   escrituras, D-03) — etiquetas, detalles, estados y toque para
+   reintentar la sincronización EXACTOS:
+     sin red        → «Sin conexión»  / «Sin conexión confirmada» (paused)
+     sincronizando  → «Sincronizando» / «Sincronizando cambios pendientes» (paused)
+     pendientes > 0 → «Pendiente»     / «N cambio(s) pendiente(s)» (paused)
+     si no          → «En línea»      / «En línea y sincronizado» (synced)
+   El contador cuenta escrituras locales REALES encoladas, nunca un
+   número decorativo. */
+function ConnectionStatus() {
+  const [network, setNetwork] = useState<OfflineState>(() => getOfflineState())
+  useEffect(() => subscribeOfflineState(setNetwork), [])
+
+  // Una operación lenta o un 5xx temporal no significa que Internet cayó.
+  // El estado visual cambia solo tras una desconexión confirmada o mientras
+  // hay cambios locales pendientes de sincronizar.
+  const state = !network.online
+    ? 'paused'
+    : network.pending > 0 || network.syncing
+      ? 'paused'
+      : 'synced'
+  const detail = !network.online
+    ? 'Sin conexión confirmada'
+    : network.syncing
+      ? 'Sincronizando cambios pendientes'
+      : network.pending > 0
+        ? `${network.pending} cambio${network.pending === 1 ? '' : 's'} pendiente${network.pending === 1 ? '' : 's'}`
+        : 'En línea y sincronizado'
+  const label = !network.online ? 'Sin conexión' : network.syncing ? 'Sincronizando' : network.pending > 0 ? 'Pendiente' : 'En línea'
+
+  return (
+    <button
+      type="button"
+      onClick={requestOfflineSync}
+      aria-label={`${detail}. Toca para comprobar de nuevo.`}
+      aria-live="polite"
+      data-connection-state={state}
+      title={network.error || detail}
+      className={`connection-status connection-status-${state}`}
+    >
+      <span className="connection-status-dot" aria-hidden="true" />
+      <span>{label}</span>
+    </button>
+  )
+}
+
+/* Pantalla de bloqueo del acceso rápido (decisión del dueño,
+   2026-10-26 14:33): si este dispositivo tiene acceso rápido
+   activado para el usuario de la sesión guardada, al abrir la app
+   se ofrecen las vías rápidas — PIN y biometría — y siempre la
+   contraseña (que manda: si la sesión ya no es válida o es otro
+   dispositivo, se entra por el acceso normal). El PIN vive hasheado
+   con sal en el dispositivo (lib/quickAccess) con intentos
+   limitados; la biometría reutiliza la ceremonia verificada en el
+   servidor (lib/webauthn.requireBiometricUnlock). */
+function LockScreen({ session, onUnlock, onUsePassword }: {
+  session: Session
+  onUnlock: () => void
+  onUsePassword: () => void
+}) {
+  const quick = getQuickAccess(session.profileId)
+  const [pin, setPin] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [pinGone, setPinGone] = useState(false)
+  const pinEnabled = !!quick?.pinEnabled && !pinGone
+  const bioEnabled = !!quick?.biometricEnabled && SB_MODE
+
+  const submitPin = async (e: FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const check = await verifyQuickPin(session.profileId, pin)
+      if (check.ok) { onUnlock(); return }
+      /* Los intentos fallidos también se registran (precisión del
+         dueño, 15:10): un PIN atacado es justo lo que hay que
+         poder rastrear desde Cronología. */
+      if (check.reason === 'locked') {
+        setPinGone(true)
+        logActivity('fallido', 'PIN de desbloqueo desactivado tras demasiados intentos fallidos en este dispositivo', { actor: session })
+        setError('Demasiados intentos fallidos: el PIN quedó desactivado en este dispositivo. Entra con tu contraseña y, si quieres, crea un PIN nuevo en Ajustes → Seguridad.')
+      } else if (check.reason === 'wrong') {
+        logActivity('fallido', `Intento de desbloqueo con PIN incorrecto (quedan ${check.attemptsLeft} intentos)`, { actor: session })
+        setError(`PIN incorrecto. Te quedan ${check.attemptsLeft} intento${check.attemptsLeft === 1 ? '' : 's'} antes de que se desactive.`)
+      } else {
+        setPinGone(true)
+        setError('Este dispositivo ya no tiene PIN activo. Entra con tu contraseña.')
+      }
+    } finally {
+      setBusy(false)
+      setPin('')
+    }
+  }
+
+  const useBiometric = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      const unlock = await requireBiometricUnlock()
+      if (unlock.ok) { onUnlock(); return }
+      logActivity('fallido', 'Intento de desbloqueo biométrico no completado', { actor: session })
+      setError(unlock.reason ?? 'La verificación biométrica no se completó.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="auth-wrap">
+      <section className="card auth-card">
+        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
+        <h1>{SYSTEM_NAME}</h1>
+        <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
+        <h2 style={{ fontSize: '1.05rem', marginBottom: 4 }}>Hola, {session.name}</h2>
+        <p className="small" style={{ marginBottom: 14 }}>
+          Tu sesión sigue guardada en este dispositivo ({session.role === 'admin' ? 'Administrador' : 'Solo lectura'}).
+          Desbloquéala con tu acceso rápido o entra con tu contraseña.
+        </p>
+        {error ? <div className="error-box" style={{ marginBottom: 12 }}>{error}</div> : null}
+        {pinEnabled ? (
+          <form onSubmit={(e) => void submitPin(e)}>
+            <div className="field">
+              <label htmlFor="lock-pin">PIN de este dispositivo</label>
+              <input
+                id="lock-pin" type="password" inputMode="numeric" autoComplete="off"
+                pattern="[0-9]*" maxLength={6} className="auth-pin-input"
+                value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} required
+              />
+            </div>
+            <button className="btn primary block" type="submit" disabled={busy || pin.length < 4}>
+              {busy ? 'Comprobando…' : 'Desbloquear con PIN'}
+            </button>
+          </form>
+        ) : null}
+        {bioEnabled ? (
+          <button type="button" className="btn block" style={{ marginTop: pinEnabled ? 10 : 0 }} disabled={busy} onClick={() => void useBiometric()}>
+            <Icon name="fingerprint" size={16} /> Usar huella o cara
+          </button>
+        ) : null}
+        <button type="button" className="auth-forgot" onClick={onUsePassword}>Entrar con contraseña</button>
+        <button type="button" className="auth-forgot" onClick={onUsePassword}>Cambiar de usuario</button>
+      </section>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
+  const [locked, setLocked] = useState(false)
   const [mustChange, setMustChange] = useState(false)
+  /* Recuperación de contraseña en curso (llegada por el enlace del
+     correo): mientras esté activa manda sobre el acceso normal. */
+  const [recovery, setRecovery] = useState<{ active: boolean; error: string | null }>({ active: false, error: null })
   const [section, setSection] = useState<Section>('inicio')
   const [data, setData] = useState<StoredData>(() => (SB_MODE ? { ...EMPTY_DATA } : loadData()))
   const [ready, setReady] = useState(false)
@@ -243,25 +668,36 @@ export default function App() {
   useEffect(() => {
     if (SB_MODE) {
       let cancelled = false
+      /* Enlace de recuperación en la URL: la app arranca en la pantalla
+         de contraseña nueva aunque la sesión se restaure. */
+      const fromUrl = recoveryParamsFromUrl()
+      if (fromUrl.isRecovery) setRecovery({ active: true, error: fromUrl.error })
+      const offRecovery = sbOnPasswordRecovery(() => {
+        if (!cancelled) setRecovery({ active: true, error: null })
+      })
       void (async () => {
         try {
           const remote = await sbRestoreSession()
           if (!cancelled && remote) {
             setSession(remote.session)
             setMustChange(remote.mustChange)
+            /* Acceso rápido: la sesión restaurada en un dispositivo
+               con desbloqueo activado pasa primero por el bloqueo. */
+            if (hasQuickAccess(remote.session.profileId)) setLocked(true)
           }
         } catch {
           // Sin sesión restaurable: se queda la pantalla de acceso.
         }
         if (!cancelled) setReady(true)
       })()
-      return () => { cancelled = true }
+      return () => { cancelled = true; offRecovery() }
     }
     ensureProfiles()
     const s = getSession()
     if (s) {
       setSession(s)
       setMustChange(profileMustChange(s.profileId))
+      if (hasQuickAccess(s.profileId)) setLocked(true)
     }
     setReady(true)
   }, [])
@@ -289,21 +725,146 @@ export default function App() {
     setData(loadData())
   }, [refreshRemote])
 
-  const doLogout = () => {
+  /* Cuando la cola offline termina de reenviar escrituras, los datos
+     del servidor ya las incluyen: se relee todo (D-03/D-68). */
+  useEffect(() => {
+    const onFlushed = () => refresh()
+    window.addEventListener('queen-offline-flushed', onFlushed)
+    return () => window.removeEventListener('queen-offline-flushed', onFlushed)
+  }, [refresh])
+
+  /* ===== Registro de actividad (decisión del dueño, 15:02) =====
+     Cronología —solo del administrador— refleja lo que hacen Yan,
+     Jesús y Dayami. Aquí se fija el actor y se mantiene la lista
+     al día; las ediciones se detectan comparando fotos de los
+     datos (ver el efecto de diffActivity más abajo) y las
+     exportaciones y el uso de Queen se registran en su punto
+     exacto (Documentos, Inicio, Queen). */
+  const [activityEntries, setActivityEntries] = useState<ActivityEntry[]>(() => loadActivityLog())
+  useEffect(() => subscribeActivityLog(() => setActivityEntries(loadActivityLog())), [])
+  useEffect(() => { setActivityActor(session) }, [session])
+  useEffect(() => {
+    if (!SB_MODE) { setActivityRemoteSaver(null); return }
+    setActivityRemoteSaver(async (entries) => {
+      await sbSaveActivityLog(entries as unknown as Array<Record<string, unknown>>)
+    })
+    if (session) {
+      void sbLoadActivityLog()
+        .then((items) => { if (items.length) mergeActivityLog(items as unknown as ActivityEntry[]) })
+        .catch(() => { /* el registro local sigue valiendo */ })
+    }
+  }, [session])
+
+  /* Detalle rastreable (precisión del dueño, 15:10): se guarda la
+     foto anterior de los datos y cada cambio de una sesión que no
+     es del administrador se describe por campo (qué cambió y, en
+     importes, valor anterior → nuevo) con diffActivity. Al cambiar
+     de sesión la foto se reinicia: nada se atribuye a quien no lo
+     hizo. */
+  const prevData = useRef<StoredData | null>(null)
+  const prevProfileId = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevProfileId.current !== (session?.profileId ?? null)) {
+      prevProfileId.current = session?.profileId ?? null
+      prevData.current = null
+    }
+    const prev = prevData.current
+    prevData.current = data
+    if (!prev || !session || session.role === 'admin') return
+    for (const entry of diffActivity(prev, data)) {
+      logActivity(entry.kind, entry.detail, { section: entry.section })
+    }
+  }, [data, session])
+
+  /* Errores de sincronización de la cola offline: también quedan
+     registrados como intentos fallidos (una escritura que no subió
+     es exactamente lo que el administrador quiere poder rastrear). */
+  const lastSyncError = useRef<string | null>(null)
+  useEffect(() => subscribeOfflineState((state) => {
+    if (state.error && state.error !== lastSyncError.current) {
+      lastSyncError.current = state.error
+      logActivity('fallido', `Una escritura no se pudo sincronizar: ${state.error}`)
+    }
+    if (!state.error) lastSyncError.current = null
+  }), [])
+
+  /* ===== «Entrar como» (decisión del dueño, 2026-10-26 15:09) =====
+     El administrador entra a la cuenta de otro usuario autorizándose
+     con SU PIN o SU biometría (la autorización vive en el selector
+     de acceso y en Ajustes → «Entrar como otro usuario»). La sesión
+     suplantada vive solo en memoria: la sesión guardada sigue
+     siendo la del administrador. La entrada y la salida quedan en
+     Cronología firmadas por el administrador, y lo que haga dentro
+     se atribuye a él dentro de la cuenta ajena (viaAdmin). */
+  const [impersonation, setImpersonation] = useState<{ byName: string; adminSession: Session | null } | null>(null)
+  useEffect(() => { setImpersonationMarker(impersonation?.byName ?? null) }, [impersonation])
+  const enterAs = (target: { id: string; name: string; email: string; role: Session['role'] }, adminName: string) => {
+    const fromAdminSession = session && session.role === 'admin' ? session : null
+    logImpersonationEvent(adminName, `${adminName.split(' ')[0]} entró a la cuenta de ${target.name} («entrar como»)`)
+    setImpersonation({ byName: adminName, adminSession: fromAdminSession })
+    setSession({ profileId: target.id, name: target.name, email: target.email, role: target.role })
+    setLocked(false)
+    setMustChange(false)
+    setSection('inicio')
+  }
+  const exitImpersonation = () => {
+    if (!impersonation || !session) return
+    logImpersonationEvent(impersonation.byName, `${impersonation.byName.split(' ')[0]} salió de la cuenta de ${session.name} y volvió a su sesión de administrador`)
+    const back = impersonation.adminSession
+    setImpersonation(null)
+    if (back) {
+      setSession(back)
+    } else {
+      /* Entró desde el selector, sin sesión propia viva: la salida
+         es la pantalla de acceso. */
+      setSession(null)
+    }
+    setSection('inicio')
+  }
+
+  const endSession = (clearQuick: boolean) => {
+    /* Cerrar sesión apaga el acceso rápido de este dispositivo
+       (decisión del dueño): el próximo ingreso será con contraseña
+       y habrá que volver a activarlo en Ajustes. El «Entrar con
+       contraseña» de la pantalla de bloqueo NO lo apaga: solo deja
+       la sesión guardada y pasa por el acceso completo. Dentro de
+       una cuenta ajena («entrar como») cerrar sesión NO apaga el
+       acceso rápido de esa persona: no es su dispositivo. */
+    if (clearQuick && session && !impersonation) clearQuickAccess(session.profileId)
+    setImpersonation(null)
     if (SB_MODE) void sbLogout().catch(() => { /* la sesión local ya quedó cerrada */ })
     logout()
     setSession(null)
+    setLocked(false)
     setMustChange(false)
     setSection('inicio')
     setRemoteError(null)
     if (SB_MODE) setData({ ...EMPTY_DATA })
   }
+  const doLogout = () => endSession(true)
 
   /* Los retornos tempranos de arranque/acceso van DESPUÉS de todos
      los hooks (más abajo): llamarlos antes rompía la app al pasar de
      «sin sesión» a «con sesión» (React: más hooks que en el render
      anterior). Corregido en la puerta de calidad final. */
   const isAdmin = session?.role === 'admin'
+
+  /* Acceso por sección (matriz de Yan + regla general del dueño):
+     canEdit da a cada pantalla su «isAdmin» real — para Yan es
+     verdadero en sus secciones de escritura y falso en las de solo
+     lectura; para Jesús y Dayami, falso en todas; el administrador
+     lo tiene todo. La guardia de vista bloquea también el acceso
+     directo a una sección sin permiso (no basta con ocultarla). */
+  const accessOf = (s: Section) => sectionAccess(session, s)
+  const canEdit = (s: Section) => canModifyIn(session, s)
+  useEffect(() => {
+    if (session && section !== 'inicio' && sectionAccess(session, section) === 'none') {
+      /* Acceso denegado: también queda registrado (precisión del
+         dueño, 15:10 — no solo lo que sale bien se rastrea). */
+      logActivity('fallido', `Acceso denegado a la sección «${section}» (sin permiso para su rol); se le devolvió a Inicio`, { section })
+      setSection('inicio')
+    }
+  }, [session, section])
 
   /* Boletines: un boletín pendiente por cada día importado que aún
      no lo tenga (generación al importar, como el original). Se
@@ -452,13 +1013,71 @@ export default function App() {
     if (id === 'sistema') return remoteError ? 'bad' : 'ok'
     return null
   }
+  /* Insignias de la navegación (D-67): las definiciones del original.
+     Cobrar = cuentas pendientes (ya coincidía). Queen = avisos de
+     Queen aún no vistos (su queenUnseenCount: la firma de los avisos
+     se guarda al abrir Queen, como su «queen-alerts-seen») MÁS las
+     notificaciones de su servidor, que no
+     viajan en el respaldo (D-50): aquí cuentan las observaciones que
+     el núcleo de Queen deriva de los datos reales de esta copia.
+     Sistema = notificaciones TÉCNICAS (las suyas son kind
+     sistema/task_* del mismo servidor que no viaja): aquí cuentan los
+     asuntos técnicos derivables de esta copia — días descuadrados,
+     boletines con error, corridas de automatización con error y el
+     fallo de conexión vivo —, nunca las morosas (eso es de Cobrar). */
+  const queenObservations = useMemo(() => {
+    try { return buildQueenObservations(data, ref).filter((o) => o.level === 'alert') } catch { return [] }
+  }, [data, ref])
+  const queenAlertSig = queenObservations.map((o) => `${o.kind}:${o.text}`).join('|')
+  const [queenSeenSig, setQueenSeenSig] = useState<string>(() => {
+    try { return localStorage.getItem('queen-alerts-seen') ?? '' } catch { return '' }
+  })
+  const queenUnseenCount = section !== 'queen' && queenAlertSig && queenSeenSig !== queenAlertSig ? queenObservations.length : 0
+  const openQueen = useCallback(() => {
+    setSection('queen')
+    setQueenSeenSig((current) => {
+      if (queenAlertSig && current !== queenAlertSig) {
+        try { localStorage.setItem('queen-alerts-seen', queenAlertSig) } catch { /* almacenamiento no disponible */ }
+        return queenAlertSig
+      }
+      return current
+    })
+  }, [queenAlertSig])
+  const technicalCount = useMemo(() => {
+    let n = 0
+    if (remoteError) n += 1
+    n += data.days.filter((d) => d.cuadre !== 0).length
+    n += bulletins.filter((b) => b.status === 'error').length
+    n += data.automationRuns.filter((r) => r.status === 'error').length
+    return n
+  }, [data, bulletins, remoteError])
   const badgeFor = (id: Section): number => {
     if (id === 'cobrar') return pendingCount
-    if (id === 'sistema') return vencidasCount
+    if (id === 'queen') return Math.min(99, queenUnseenCount)
+    if (id === 'sistema') return Math.min(99, technicalCount)
     return 0
   }
   if (!ready) return <BootScreen slow={bootSlow} onRetry={() => window.location.reload()} />
-  if (!session) return <LoginScreen onLogin={(s, mc) => { setSession(s); setMustChange(mc) }} />
+  if (recovery.active) {
+    return (
+      <ResetPasswordScreen
+        session={session}
+        linkError={recovery.error}
+        onDone={() => {
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+          setRecovery({ active: false, error: null })
+          setMustChange(false)
+        }}
+        onLogout={() => {
+          window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+          setRecovery({ active: false, error: null })
+          doLogout()
+        }}
+      />
+    )
+  }
+  if (!session) return <LoginScreen onLogin={(s, mc, via) => { setSession(s); setMustChange(mc); logActivity('sesion', `Inicio de sesión con ${via ?? 'contraseña'}`, { actor: s }) }} onImpersonate={(target, adminName) => enterAs(target, adminName)} />
+  if (locked) return <LockScreen session={session} onUnlock={() => { setLocked(false); logActivity('sesion', 'Desbloqueo rápido en este dispositivo (PIN o biometría)', { actor: session }) }} onUsePassword={() => endSession(false)} />
   if (mustChange) return <ChangePasswordScreen session={session} onDone={() => setMustChange(false)} onLogout={doLogout} />
 
   const initials = session.name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
@@ -467,7 +1086,7 @@ export default function App() {
     <button
       key={item.id}
       className={`nav-btn ${section === item.id ? 'active' : ''}`}
-      onClick={() => setSection(item.id)}
+      onClick={() => (item.queen ? openQueen() : setSection(item.id))}
       aria-current={section === item.id ? 'page' : undefined}
     >
       {item.queen
@@ -480,22 +1099,18 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <header className="topbar ambient-bar-surface">
-        <div className="brand">
-          <QueenOrb size={34} stageId={queenSnapshot?.stageId ?? 'juvenil'} />
-          <div>
-            <div className="brand-name">{SYSTEM_NAME}</div>
-            <div className="brand-sub">Sistema de Automatización de Datos V2.0 · {PLACE}</div>
-          </div>
+      {/* SIN cabecera superior propia (D-65): el original no lleva
+          barra con marca + usuario + «Salir» sobre el contenido; la
+          marca vive en la lateral de escritorio y arriba del área
+          principal solo va la cabecera de sección con el clúster de
+          perfil y conexión (ver <main>). «Cerrar sesión» vive en el
+          pie de la lateral, como acción de la cuenta. */}
+      {impersonation ? (
+        <div className="impersonation-banner" role="status">
+          <span>Estás viendo como <strong>{session.name}</strong> · entrando como administrador ({impersonation.byName}). Todo lo que hagas aquí queda registrado a tu nombre dentro de esta cuenta.</span>
+          <button type="button" className="btn" onClick={exitImpersonation}>Volver a mi sesión</button>
         </div>
-        <div className="spacer" />
-        <div className="user-chip">
-          <strong>{session.name}</strong>
-          {isAdmin ? 'Administrador' : 'Solo lectura'}
-        </div>
-        <button className="btn" onClick={doLogout}>Salir</button>
-      </header>
-
+      ) : null}
       <div className="layout">
         <nav className="sidenav ambient-bar-surface" aria-label="Navegación principal">
           <div className="side-brand">
@@ -505,7 +1120,7 @@ export default function App() {
               <div className="brand-sub">Sistema de Automatización de Datos V2.0</div>
             </div>
           </div>
-          <button className="side-profile" onClick={() => setSection('sistema')} aria-label="Tu perfil y acceso">
+          <button className="side-profile" onClick={accessOf('ajustes') !== 'none' ? () => setSection('ajustes') : undefined} aria-label="Tu perfil y acceso" aria-disabled={accessOf('ajustes') === 'none'}>
             <MediaImage
             kind="foto-perfil" entityKey="perfil-admin" alt=""
             className="avatar" style={{ objectFit: 'cover', padding: 0 }}
@@ -517,15 +1132,45 @@ export default function App() {
             </span>
           </button>
           <div className="side-group-label">Principal</div>
-          {SIDE_PRINCIPAL.map(renderSideItem)}
+          {SIDE_PRINCIPAL.filter((i) => accessOf(i.id) !== 'none').map(renderSideItem)}
           <div className="side-group-label">Más secciones</div>
-          {SIDE_MAS.map(renderSideItem)}
+          {SIDE_MAS.filter((i) => accessOf(i.id) !== 'none').map(renderSideItem)}
           <div className="side-foot">
             {fmtInt(data.days.length)} días importados · Dinero en la calle: {fmtCUP(dineroCalle)} (solo cuentas de clientes)
           </div>
+          <button className="nav-btn" onClick={doLogout}>
+            <Icon name="x" size={20} strokeWidth={1.8} />
+            <span className="nav-label">Cerrar sesión</span>
+          </button>
         </nav>
 
         <main className="main">
+          {/* Cabecera de sección del original: SOLO el clúster de
+              perfil y conexión a la derecha (píldora «En línea» +
+              avatar que abre Ajustes); sin título propio aquí — cada
+              pestaña abre con su TabHeader, como en el original la
+              abre el suyo desde la carcasa. */}
+          <header className="oneui-section-header">
+            <p className="sr-only" aria-live="polite">{session.name}: {isAdmin ? 'Administrador' : 'Solo lectura'}</p>
+            <div className="oneui-section-actions">
+              <div className="profile-status-cluster" aria-label="Perfil y conectividad">
+                <ConnectionStatus />
+                <button
+                  type="button"
+                  onClick={accessOf('ajustes') !== 'none' ? () => setSection('ajustes') : undefined}
+                  className="oneui-profile-button"
+                  aria-label={`Ir a mi perfil: ${session.name}`}
+                  aria-disabled={accessOf('ajustes') === 'none'}
+                  title={session.name}
+                >
+                  <MediaImage
+                    kind="foto-perfil" entityKey="perfil-admin" alt=""
+                    fallback={<img src={BRAND_LOGO_URL} alt="" />}
+                  />
+                </button>
+              </div>
+            </div>
+          </header>
           {remoteError ? <div className="error-box" style={{ marginBottom: 14 }}>{remoteError}</div> : null}
           <Suspense fallback={(
             <section className="card" role="status" aria-live="polite" style={{ textAlign: 'center' }}>
@@ -536,45 +1181,52 @@ export default function App() {
               <div className="queen-boot-progress" aria-hidden="true"><i /></div>
             </section>
           )}>
-          {section === 'inicio' ? <Inicio data={data} isAdmin={isAdmin} onImportClick={() => setSection('sistema')} onNavigate={setSection} /> : null}
-          {section === 'dias' ? <Dias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'cuentas' ? <Cuentas data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'cobrar' ? <Cobrar data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {/* Carcasa .md-page del original (D-21): cada pestaña entra
+              con sda-tab-enter (shell.css); la key por sección
+              re-dispara la entrada al cambiar de pestaña, como el
+              remontaje del original. */}
+          <div className="md-page" key={section}>
+          {section === 'inicio' ? <Inicio data={data} isAdmin={canEdit('inicio')} onImportClick={() => setSection('sistema')} onNavigate={setSection} /> : null}
+          {section === 'dias' ? <Dias data={data} isAdmin={canEdit('dias')} onChanged={refresh} /> : null}
+          {section === 'cuentas' ? <Cuentas data={data} isAdmin={canEdit('cuentas')} onChanged={refresh} /> : null}
+          {section === 'cobrar' ? <Cobrar data={data} isAdmin={canEdit('cobrar')} onChanged={refresh} /> : null}
           {section === 'queen' ? (
             <QueenScreen
               data={data}
               supabaseMode={SB_MODE}
               onTestLanguage={SB_MODE ? sbQueenChat : undefined}
+              chatOnly={accessOf('queen') === 'chat'}
             />
           ) : null}
           {section === 'sistema' ? <Sistema data={data} session={session} onChanged={refresh} onNavigate={setSection} onRunAutomation={isAdmin ? handleRunAutomation : undefined} /> : null}
-          {section === 'rh' ? <RHScreen data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'economia' ? <Economia data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'transferencias' ? <Transferencias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'rh' ? <RHScreen data={data} isAdmin={canEdit('rh')} onChanged={refresh} /> : null}
+          {section === 'economia' ? <Economia data={data} isAdmin={canEdit('economia')} onChanged={refresh} onGoCobrar={() => setSection('cobrar')} /> : null}
+          {section === 'transferencias' ? <Transferencias data={data} isAdmin={canEdit('transferencias')} onChanged={refresh} /> : null}
           {section === 'productos' ? <Productos data={data} /> : null}
-          {section === 'elaboracion' ? <Elaboracion data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'almacen' ? <Almacen data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'inventario' ? <Inventario data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'elaboracion' ? <Elaboracion data={data} isAdmin={canEdit('elaboracion')} onChanged={refresh} /> : null}
+          {section === 'almacen' ? <Almacen data={data} isAdmin={canEdit('almacen')} onChanged={refresh} /> : null}
+          {section === 'inventario' ? <Inventario data={data} isAdmin={canEdit('inventario')} onChanged={refresh} /> : null}
           {section === 'laboratorio' ? <Laboratorio data={data} /> : null}
-          {section === 'documentos' ? <Documentos data={data} today={ref} /> : null}
+          {section === 'documentos' ? <Documentos data={data} today={ref} isAdmin={isAdmin} /> : null}
           {section === 'historial' ? (
-            <Historial data={data} bulletins={bulletins} today={ref} isAdmin={isAdmin} onBulletinsChange={handleBulletinsChange} />
+            <Historial data={data} bulletins={bulletins} today={ref} isAdmin={canEdit('historial')} onBulletinsChange={handleBulletinsChange} />
           ) : null}
-          {section === 'archivo' ? <Archivo data={data} bulletins={bulletins} onNavigate={setSection} /> : null}
+          {section === 'archivo' ? <Archivo data={data} bulletins={bulletins} isAdmin={canEdit('archivo')} onChanged={refresh} onNavigate={setSection} /> : null}
           {section === 'entradas' ? <Entradas data={data} /> : null}
-          {section === 'extras' ? <Extras data={data} /> : null}
-          {section === 'existencias' ? <Existencias data={data} onNavigate={setSection} /> : null}
-          {section === 'cronologia' ? <Cronologia data={data} bulletins={bulletins} onNavigate={setSection} /> : null}
+          {section === 'extras' ? <Extras data={data} isAdmin={canEdit('extras')} onChanged={refresh} /> : null}
+          {section === 'existencias' ? <Existencias data={data} isAdmin={canEdit('existencias')} onChanged={refresh} onNavigate={setSection} /> : null}
+          {section === 'cronologia' ? <Cronologia data={data} bulletins={bulletins} activity={activityEntries} onNavigate={setSection} /> : null}
           {section === 'ajustes' && session ? (
-            <Ajustes data={data} session={session} isAdmin={isAdmin} onChanged={refresh} onNavigate={setSection} />
+            <Ajustes data={data} session={session} isAdmin={isAdmin} onChanged={refresh} onNavigate={setSection} onEnterAs={(target) => enterAs(target, session.name)} />
           ) : null}
-          {section === 'mas' ? <MasScreen onNavigate={setSection} data={data} /> : null}
+          {section === 'mas' ? <MasScreen onNavigate={setSection} data={data} hidden={(['ajustes', 'archivo', 'cronologia', 'dias', 'historial', 'sistema'] as Section[]).filter((s) => accessOf(s) === 'none')} /> : null}
+          </div>
           </Suspense>
         </main>
       </div>
 
       <nav className="bottomnav ambient-bar-surface" aria-label="Navegación inferior">
-        {NAV.map((item) => {
+        {NAV.filter((item) => accessOf(item.id) !== 'none').map((item) => {
           const active = section === item.id
           const dot = dotFor(item.id)
           const badge = badgeFor(item.id)
@@ -582,7 +1234,7 @@ export default function App() {
             <button
               key={item.id}
               className={`${active ? 'active' : ''} ${item.queen ? 'queen-btn' : ''}`}
-              onClick={() => setSection(item.id)}
+              onClick={() => (item.queen ? openQueen() : setSection(item.id))}
               aria-current={active ? 'page' : undefined}
             >
               <span className="nav-capsule">

@@ -4402,12 +4402,29 @@ html { scrollbar-color: color-mix(in srgb, var(--accent) 45%, var(--border)) tra
 .system-mirror-startup-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; }
 .system-mirror-startup-ms { border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--dim); white-space: nowrap; }
 .system-mirror-startup-detail { display: block; font-size: 13px; line-height: 1.45; color: var(--dim); overflow-wrap: anywhere; }
-.system-mirror-dna-timeline { display: grid; gap: 7px; margin-top: 10px; list-style: none; }
-.system-mirror-dna-timeline li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 9px; align-items: start; padding: 9px 10px; border-radius: 10px; background: rgb(8 31 33 / .72); min-width: 0; }
-.system-mirror-dna-timeline li > i { width: 8px; height: 8px; margin-top: 4px; border-radius: 50%; background: #41d39f; box-shadow: 0 0 7px rgb(65 211 159 / .34); }
-.system-mirror-dna-timeline strong { display: block; color: #eaf6f3; font-size: 11px; overflow-wrap: anywhere; }
-.system-mirror-dna-timeline p { margin-top: 2px; color: #9bb1ac; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
-.system-mirror-dna-timeline time { color: #63827b; font-size: 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* Panel de mutaciones del original, VERBATIM (theme.css:7329):
+   altura fija con scroll interno y tipografía de 9,5/8,5px. Sustituye
+   a la lista abierta anterior (.system-mirror-dna-timeline), que
+   volcaba todas las mutaciones en una columna de miles de píxeles —
+   el defecto de las capturas del dueño del 26-oct. */
+.dna-mutation-timeline { display:flex; flex-direction:column; height:clamp(238px,36svh,300px); margin-top:10px; padding:11px; overflow:hidden; contain:layout paint; border:1px solid var(--system-border,var(--border)); border-radius:12px; background:var(--system-surface,var(--surface)); }
+.dna-mutation-timeline header { flex:0 0 auto; display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.dna-mutation-timeline header strong,.dna-mutation-timeline header span { display:block; }
+.dna-mutation-timeline header strong { color:var(--system-text,var(--text)); font-size:11px; }
+.dna-mutation-timeline header span,.dna-mutation-timeline header time { color:var(--system-muted,var(--dim)); font-size:8.5px; }
+.dna-mutation-timeline ol { display:grid; align-content:start; gap:6px; min-height:0; margin:9px 0 0; padding:0; list-style:none; overflow-y:auto; overscroll-behavior:contain; scrollbar-gutter:stable; }
+.dna-mutation-timeline li { display:grid; grid-template-columns:8px minmax(0,1fr) auto; align-items:center; gap:8px; animation:dna-mutation-settle .2s ease-out both; }
+.dna-mutation-timeline li > i { width:7px; height:7px; border-radius:50%; background:#2fd17f; box-shadow:0 0 8px currentColor; }
+.dna-mutation-timeline li.is-modified > i { background:#f0bd3d; }
+.dna-mutation-timeline li.is-critical > i { background:#ff4968; }
+.dna-mutation-timeline li strong,.dna-mutation-timeline li span { display:block; }
+.dna-mutation-timeline li strong { color:var(--system-text,var(--text)); font-size:9.5px; overflow-wrap:anywhere; }
+.dna-mutation-timeline li span { color:var(--system-muted,var(--dim)); font-size:8.5px; overflow-wrap:anywhere; }
+.dna-mutation-timeline li time { color:var(--system-muted,var(--dim)); font-size:8.5px; font-variant-numeric:tabular-nums; white-space:nowrap; }
+.dna-mutation-timeline .dna-mutation-empty { margin-top:9px; color:var(--system-muted,var(--dim)); font-size:8.5px; }
+.dna-mutation-note { margin-top:8px; }
+.dna-mutation-note summary { cursor:pointer; color:var(--dim); font-size:11px; font-weight:600; }
+.dna-mutation-note p { margin-top:4px; }
 .system-mirror-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .system-mirror-actions .btn { flex: 0 1 auto; }
 .system-mirror-wrap { min-width: 0; max-width: 100%; }
@@ -4922,3 +4939,115 @@ html[data-ultralight="true"] :where(
 @media (prefers-color-scheme: light) {
   .system-area { box-shadow: 0 1px 2px rgb(10 42 31 / .045), 0 8px 24px rgb(10 42 31 / .055); }
 }
+
+/* ===== Corrección 2026-10-26 (señalada por el dueño, 12:15): el
+   icono de perfil de Queen SIN cuadrado =====
+   El clon solo había portado el bloque temprano de theme.css
+   (líneas 981–1341), donde el organismo aún era una tarjeta
+   redondeada con borde y fondo. La cascada FINAL del original
+   manda otra cosa: «Identidad unificada de Queen» (theme.css
+   ~5338: todos los avatares «se presentan como una foto de perfil
+   circular, limpia y sin marcos cuadrados») y los bloques tardíos
+   (~8395, ~8489 y el bloque final ~10849: sin sombra, sin filtro,
+   sin animación en organismo, orbe y miniaturas de etapa). Aquí
+   se portan esas reglas finales; ganan por ir las últimas. */
+.queen-organism {
+  overflow: hidden;
+  border: 0 !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  animation: none !important;
+  filter: none !important;
+}
+.system-evolution .queen-organism {
+  position: relative;
+  display: block;
+  width: clamp(176px, 48vw, 220px);
+  height: auto;
+  aspect-ratio: 1;
+  margin: -2px auto 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+@media (min-width: 700px) {
+  .system-evolution .queen-organism { width: clamp(224px, 28vw, 288px); }
+}
+@media (max-width: 420px) {
+  .system-evolution .queen-organism { width: min(190px, 66vw); }
+}
+.queen-organism-picture {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+.queen-organism-picture svg { width: 100%; height: 100%; }
+.queen-organism-expression { box-shadow: none !important; animation: none !important; }
+.queen-evolution-stage-image {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  filter: none;
+}
+.queen-evolution-stage-image svg { width: 100%; height: 100%; }
+.queen-evolution-stages li.is-current .queen-evolution-stage-image {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+/* Héroe «cabecera tipo perfil» del original (theme.css ~5374):
+   columna centrada y sin fondo; la copia se ordena como allí
+   (etiqueta, nombre, estado en vivo, descripción, medición). */
+.queen-evolution-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px 16px;
+  border-radius: 0;
+  background: transparent;
+  text-align: center;
+}
+.queen-evolution-hero .queen-profile-orb-wrap { display: contents; }
+.queen-evolution-stage-copy { display: flex; flex-direction: column; align-items: center; }
+.queen-evolution-stage-copy .queen-evolution-kicker { order: 1; }
+.queen-evolution-stage-copy h3 { order: 2; font-size: clamp(32px, 10vw, 46px); }
+.queen-evolution-stage-copy .queen-evolution-live { order: 3; }
+.queen-evolution-stage-copy > p:not(.queen-evolution-kicker) { order: 4; }
+.queen-evolution-stage-copy small { order: 5; }
+
+/* D-20: @keyframes portados VERBATIM de theme.css del original (flujos y esqueletos de Sistema).
+   Las reglas que los consumen se portan con cada superficie; donde la
+   superficie no existe en esta copia, la definición queda como en el
+   original (p. ej. queen-boot-orbit también es huérfano allí). */
+@keyframes system-data-sweep {
+  from { background-position-x: -70%; }
+  to { background-position-x: 170%; }
+}
+@keyframes system-dna-read {
+  0%, 100% { transform: translateY(-110%); opacity: 0; }
+  15%, 85% { opacity: .3; }
+  50% { transform: translateY(345%); opacity: .42; }
+}
+@keyframes system-flow-current { 50% { opacity: .12; } }
+@keyframes system-node-breathe {
+  0%, 100% { opacity: .55; transform: scale(.82); }
+  50% { opacity: 1; transform: scale(1.18); box-shadow: 0 0 12px currentColor; }
+}
+@keyframes system-skeleton { from { background-position: 200% 0; } to { background-position: -20% 0; } }
