@@ -1209,6 +1209,53 @@ export async function sbSaveRhSettings(patch: {
 }
 
 /**
+ * Guardado del perfil propio desde Ajustes con Supabase (paridad
+ * con el original: «Guardar perfil y acceso»): el nombre visible
+ * se escribe en profiles.display_name de la cuenta autenticada y
+ * el cambio de contraseña se hace con Supabase Auth tras
+ * re-verificar la contraseña actual (nueva sesión de verificación
+ * con signInWithPassword; si falla, no se toca nada). El correo
+ * de acceso NO se cambia aquí: es la identidad de Supabase Auth y
+ * su cambio exige el flujo de confirmación del servidor.
+ */
+export async function sbUpdateOwnProfile(patch: {
+  name?: string
+  currentPassword?: string
+  newPassword?: string
+}): Promise<{ ok: boolean; error?: string }> {
+  const client = sb()
+  const { data: userData } = await client.auth.getUser()
+  const user = userData.user
+  if (!user) return { ok: false, error: 'No hay sesión activa.' }
+  if (patch.newPassword !== undefined) {
+    if (!patch.currentPassword) return { ok: false, error: 'Escribe tu contraseña actual para cambiarla.' }
+    if (patch.newPassword.length < 6) return { ok: false, error: 'La contraseña nueva debe tener al menos 6 caracteres.' }
+    if (!user.email) return { ok: false, error: 'La cuenta no tiene correo de acceso.' }
+    const check = await client.auth.signInWithPassword({ email: user.email, password: patch.currentPassword })
+    if (check.error) return { ok: false, error: 'La contraseña actual no coincide.' }
+    const upd = await client.auth.updateUser({ password: patch.newPassword })
+    if (upd.error) return { ok: false, error: `No se pudo cambiar la contraseña: ${upd.error.message}` }
+  }
+  const name = patch.name?.trim()
+  if (name) {
+    const { error } = await client.from('profiles').update({ display_name: name }).eq('id', user.id)
+    if (error) return { ok: false, error: `No se pudo guardar el nombre: ${error.message}` }
+  }
+  return { ok: true }
+}
+
+/** Verifica la contraseña de la cuenta autenticada sin cambiar
+ *  nada (la usa el restablecimiento del PIN de Ajustes). */
+export async function sbVerifyPassword(password: string): Promise<boolean> {
+  const client = sb()
+  const { data } = await client.auth.getUser()
+  const email = data.user?.email
+  if (!email || !password) return false
+  const check = await client.auth.signInWithPassword({ email, password })
+  return !check.error
+}
+
+/**
  * Registra abonos de Cobrar en la tabla payments (origin='cobrar').
  * RLS solo deja insertar al admin; el llamador debe ser admin en la interfaz
  * y el servidor impone la misma regla aunque alguien la saltara.

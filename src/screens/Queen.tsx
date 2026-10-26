@@ -325,7 +325,10 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
         recogRef.current = null
         setListening(false)
         setInterim('')
-        setVoiceMsg(message)
+        // El aviso queda visible hasta que el dueño lo cierre, y si
+        // el modo conversación estaba activo se dice que se detuvo:
+        // nada se apaga en silencio.
+        setVoiceMsg(convRef.current ? `${message} El modo conversación quedó desactivado.` : message)
         // Un error de escucha detiene el modo conversación: sin
         // esto, un «no te escuché» repetido reabriría el micrófono
         // en bucle en un local con ruido.
@@ -938,13 +941,20 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
         </div>
       )}
       {(speaking || listening || voiceMsg) && (
-        <p className="queen-voice-status" role="status" aria-live="polite">
-          {speaking
-            ? <span className="queen-speaking-tag"><QueenVoiceOrb size={22} state="speaking" /> Queen está hablando…</span>
-            : listening
-              ? <><QueenVoiceOrb size={22} state="listening" /> Escuchando… {interim ? <span className="queen-voice-interim">«{interim}»</span> : 'habla ahora; toca el micrófono para enviar.'}</>
-              : voiceMsg}
-        </p>
+        <div className="queen-voice-status" role="status" aria-live="polite">
+          <span style={{ flex: 1, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
+            {speaking
+              ? <span className="queen-speaking-tag"><QueenVoiceOrb size={22} state="speaking" /> Queen está hablando…</span>
+              : listening
+                ? <><QueenVoiceOrb size={22} state="listening" /> Escuchando… {interim ? <span className="queen-voice-interim">«{interim}»</span> : 'habla ahora; toca el micrófono para enviar.'}</>
+                : voiceMsg}
+          </span>
+          {/* El aviso de un fallo de voz NO se quita solo: queda hasta
+              que el dueño lo cierre (defecto del dueño, 26-oct). */}
+          {!speaking && !listening && voiceMsg ? (
+            <button type="button" className="queen-voice-dismiss" onClick={() => setVoiceMsg('')} aria-label="Cerrar el aviso de voz">✕</button>
+          ) : null}
+        </div>
       )}
 
       <div className="queen-composer-wrap">

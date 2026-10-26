@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Category, Receivable, SmsLog, StoredData } from '../types'
-import { ActionMenu, Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { ActionMenu, Card, EmptyState, InfoHelp, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { addLocalPayments, saveReceivables, supabaseConfigured } from '../lib/backend'
 import { sbAddCobrarPayments, sbSaveReceivables } from '../lib/supabaseBackend'
@@ -576,13 +576,6 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
   )
 }
 
-const VIEW_TABS: Array<{ id: CobrarView; label: string; icon: IconName }> = [
-  { id: 'cuentas', label: 'Cuentas', icon: 'receipt' },
-  { id: 'clientes', label: 'Clientes', icon: 'people' },
-  { id: 'comprobantes', label: 'Comprobantes de pago', icon: 'doc' },
-  { id: 'entidades', label: 'Entidades', icon: 'grid' },
-]
-
 export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuentas' }: {
   data: StoredData
   isAdmin: boolean
@@ -591,8 +584,8 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
 }) {
   const [view, setView] = useState<CobrarView>(initialView)
   const [filter, setFilter] = useState<AccountFilter>('pendientes')
+  const [catFilter, setCatFilter] = useState<'todas' | Category>('todas')
   const [query, setQuery] = useState('')
-  const [showHelp, setShowHelp] = useState(false)
   const [receiptPreview, setReceiptPreview] = useState<ReceiptPreview | null>(null)
   const ref = todayISO()
 
@@ -780,15 +773,31 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
     const rows = data.receivables.map((rec) => ({ rec, saldo: effectiveSaldo(rec, data.localPayments) }))
     const q = query.trim().toLowerCase()
     const named = q ? rows.filter((x) => x.rec.client.toLowerCase().includes(q)) : rows
+    const byCat = catFilter === 'todas' ? named : named.filter((x) => x.rec.category === catFilter)
     if (filter === 'pagadas') {
-      return named
+      return byCat
         .filter((x) => x.rec.status === 'pagada' || Boolean(x.rec.closeKind) || x.saldo <= 0)
         .sort((a, b) => (b.rec.paidDate ?? b.rec.date).localeCompare(a.rec.paidDate ?? a.rec.date))
     }
-    const pend = named.filter((x) => x.rec.status !== 'pagada' && !x.rec.closeKind && x.saldo > 0)
+    const pend = byCat.filter((x) => x.rec.status !== 'pagada' && !x.rec.closeKind && x.saldo > 0)
     if (filter === 'morosas') return pend.filter((x) => isMorosa(x.rec, x.saldo, ref)).sort((a, b) => a.rec.date.localeCompare(b.rec.date))
     return pend.sort((a, b) => a.rec.date.localeCompare(b.rec.date))
-  }, [data, filter, query, ref])
+  }, [data, filter, catFilter, query, ref])
+
+  /* Conteos de las filas de píldoras del original: vista
+     (pendientes/morosas con su total) y categoría (total
+     pendiente y conteo por categoría). */
+  const pendientesAll = pendingOf()
+  const morosasAll = pendientesAll.filter((x) => isMorosa(x.rec, x.saldo, ref))
+  const morosasTotal = morosasAll.reduce((s, x) => s + x.saldo, 0)
+  const pagadasCount = data.receivables.filter((r) => r.status === 'pagada' || Boolean(r.closeKind)).length
+  const calleMorosas = pendingOf('cliente').filter((x) => isMorosa(x.rec, x.saldo, ref)).reduce((s, x) => s + x.saldo, 0)
+  const calleCobrar = dineroCalle - calleMorosas
+  const catChipData = (key: 'todas' | Category) => {
+    const rows = key === 'todas' ? data.receivables : data.receivables.filter((r) => r.category === key)
+    const total = pendingOf(key === 'todas' ? undefined : key).reduce((s, x) => s + x.saldo, 0)
+    return { count: rows.length, total }
+  }
 
   /* Grupos por deudor de la vista de cuentas pendientes/morosas:
      puerto de `gruposPendientes` del original (App.tsx:11990+). En
@@ -979,65 +988,92 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
     onChanged()
   }
 
-  const cuentasTitle = filter === 'morosas' ? 'Cuentas morosas' : filter === 'pagadas' ? 'Cuentas pagadas' : 'Cuentas pendientes'
+  /* Fila de secciones del original: una sola fila desplazable
+     de píldoras, la activa en verde oscuro relleno y «Clientes»
+     con su conteo. Sin iconos. */
+  const cuentasTitle = filter === 'morosas' ? 'Cuentas morosas' : 'Cobrar'
+  const sectionTabs = (
+    <div className="chips-row" role="tablist" aria-label="Cobrar y clientes" style={{ marginTop: 12 }}>
+      <button type="button" role="tab" aria-selected={view === 'cuentas'} className={`chip ${view === 'cuentas' ? 'chip-active' : 'chip-idle'}`} onClick={() => setView('cuentas')}>Cuentas</button>
+      <button type="button" role="tab" aria-selected={view === 'clientes'} className={`chip ${view === 'clientes' ? 'chip-active' : 'chip-idle'}`} onClick={() => setView('clientes')}>Clientes · {fmtInt(persons.length)}</button>
+      <button type="button" role="tab" aria-selected={view === 'entidades'} className={`chip ${view === 'entidades' ? 'chip-active' : 'chip-idle'}`} onClick={() => setView('entidades')}>Entidades</button>
+      <button type="button" role="tab" aria-selected={view === 'comprobantes'} className={`chip ${view === 'comprobantes' ? 'chip-active' : 'chip-idle'}`} onClick={() => setView('comprobantes')}>Comprobantes</button>
+    </div>
+  )
 
   return (
     <div>
-      <TabHeader icon="wallet" title="Cobrar" desc="Cuentas pendientes y vencidas" badge={TAB_BADGES.cobrar} />
-
-      <div className="view-chips" role="tablist" aria-label="Cobrar y clientes">
-        {VIEW_TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={view === t.id} className={`view-chip${view === t.id ? ' active' : ''}`} onClick={() => setView(t.id)}>
-            <Icon name={t.icon} size={16} /> {t.label}
-          </button>
-        ))}
-      </div>
+      <TabHeader icon="wallet" title="Cobrar" desc="Cuentas por cobrar y dinero en la calle" badge={TAB_BADGES.cobrar} />
 
       {view === 'cuentas' ? (
         <>
-          <Card>
-            <div className="legend-head">
-              <h3 style={{ margin: 0 }}>Plazos y estados</h3>
-              <button type="button" className="icon-btn" onClick={() => setShowHelp((v) => !v)} aria-expanded={showHelp} aria-label="Ayuda sobre plazos y estados">
-                <Icon name="info" size={18} />
-              </button>
-            </div>
-            <div className="legend-chips">
-              <span className="chip">Clientes · 7 días</span>
-              <span className="chip">Trabajadores · 15 días hábiles</span>
-              <span className="chip casa">Casa · siempre amarillo</span>
-              <span className="chip pagada">Pagadas · azul</span>
-            </div>
-            {showHelp ? (
-              <div className="help-box">
-                <p>Cada cuenta vence según su categoría: los clientes a los 7 días y los trabajadores a los 15 días hábiles; pasada la fecha, la cuenta es <strong>morosa</strong>. La marca de antigüedad de cada tarjeta envejece de verde claro a rojo dentro de su propio plazo.</p>
-                <p>«Dinero en la calle» son solo las cuentas de clientes. Un abono se aplica siempre a la cuenta más antigua primero, y registrarlo es una acción del administrador{SB_MODE ? ' (el servidor lo impone)' : ''}. El saldo sale del respaldo del SDA: esta pantalla no ajusta cifras.</p>
-              </div>
-            ) : null}
-            <div className="grid-3" style={{ marginTop: 14 }}>
-              {(['cliente', 'trabajador', 'administrativo'] as Category[]).map((cat) => (
-                <div className="stat" key={cat}>
-                  <div className="label">{CATEGORY_LABEL[cat]}</div>
-                  <div className="value">{fmtCUP(pendingOf(cat).reduce((s, x) => s + x.saldo, 0))}</div>
-                  <div className="hint">{fmtInt(pendingOf(cat).length)} cuentas</div>
-                </div>
-              ))}
-            </div>
-            <p className="small muted" style={{ marginTop: 10 }}>
-              Dinero en la calle (solo clientes): <strong>{fmtCUP(dineroCalle)}</strong>
-              {!isAdmin ? ' · Tu perfil es de solo lectura: puedes ver las cuentas, pero registrar abonos es del administrador.' : ''}
-            </p>
-          </Card>
+          <div className="section-big-title" style={{ marginTop: 16 }}>
+            <span className="sbt-ico"><Icon name="wallet" size={24} /></span>
+            <h2>{cuentasTitle}</h2>
+            <InfoHelp label={filter === 'morosas' ? 'Cómo funcionan las morosas' : 'Cómo funciona Cobrar'}>
+              {filter === 'morosas'
+                ? 'Los clientes tienen 7 días para pagar y los trabajadores 15 días hábiles, porque suelen saldar el día hábil 16. Al superar su propio plazo, la cuenta se ve en rojo: sigue incluida en «Todas pendientes» y también aparece aquí, en «Morosas». Las cuentas de Daya/Dayami, Alejandro y Jesús son consumo de la casa: nunca entran aquí ni se marcan en rojo.'
+                : 'Saldo restante en cada cuenta: «Debe X de Y». Pago parcial o total, en efectivo o por transferencia. Cada cuenta del IPV es una partida con su fecha: el «ok» en Observaciones paga solo esa cuenta concreta de ese día, no las demás de la misma persona. Los clientes tienen 7 días naturales y los trabajadores 15 días hábiles. En ambos casos, la cuenta nace en verde claro y su color avanza hacia rojo durante el plazo que le corresponde; si no se paga al terminarlo, pasa automáticamente a morosa. Las cuentas de Daya/Dayami, Alejandro y Jesús son consumo de la casa y permanecen amarillas, sin vencimiento. Las ya pagadas se ven en azul.'}
+            </InfoHelp>
+          </div>
+          {sectionTabs}
 
-          <div className="view-chips sub" role="tablist" aria-label="Filtro de cuentas">
-            {([['pendientes', 'Todas pendientes'], ['morosas', 'Morosas'], ['pagadas', 'Pagadas']] as Array<[AccountFilter, string]>).map(([id, label]) => (
-              <button key={id} type="button" role="tab" aria-selected={filter === id} className={`view-chip${filter === id ? ' active' : ''}`} onClick={() => setFilter(id)}>{label}</button>
-            ))}
+          <div className="cobrar-legend" role="img" aria-label="Leyenda: clientes con plazo de 7 días, trabajadores con plazo de 15 días hábiles, consumo de la casa siempre amarillo y pagadas en azul" style={{ marginTop: 12 }}>
+            <div className="cobrar-legend-row">
+              <span className="cobrar-legend-item"><span aria-hidden="true" className="cobrar-legend-dot" style={{ backgroundColor: 'hsl(142, 72%, 54%)' }} />Recién creada</span>
+              <span className="cobrar-legend-note">Cliente 7 días · trabajador 15 hábiles →</span>
+              <span className="cobrar-legend-item"><span aria-hidden="true" className="cobrar-legend-dot" style={{ backgroundColor: 'var(--danger)' }} />Plazo superado · morosa</span>
+              <span className="cobrar-legend-item"><span aria-hidden="true" className="cobrar-legend-dot" style={{ backgroundColor: HOUSE_MARK.color }} />Casa · siempre amarillo</span>
+              <span className="cobrar-legend-item"><span aria-hidden="true" className="cobrar-legend-dot" style={{ backgroundColor: PAID_MARK.color }} />Pagada</span>
+            </div>
+            <div className="cobrar-legend-bar" aria-hidden="true" />
+            <p className="cobrar-legend-text">Clientes y trabajadores cambian de verde a rojo según la parte de su plazo que ya pasó: 7 días naturales para clientes y 15 días hábiles para trabajadores. Al superar su fecha, pasan a morosas. Daya/Dayami, Alejandro y Jesús permanecen amarillos. Las pagadas se marcan en azul.</p>
           </div>
 
-          <h3 className="cuentas-title">{cuentasTitle}</h3>
-          <div className="field">
-            <input type="search" placeholder="Buscar por nombre…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Buscar por nombre" />
+          <div className="chips-row" role="group" aria-label="Vista de cuentas" style={{ marginTop: 12 }}>
+            <button type="button" aria-pressed={filter === 'pendientes'} className={`chip ${filter === 'pendientes' ? 'chip-active' : 'chip-idle'}`} onClick={() => setFilter('pendientes')}>Todas pendientes · {fmtInt(pendientesAll.length)}</button>
+            <button type="button" aria-pressed={filter === 'morosas'} className={`chip ${filter === 'morosas' ? 'chip-active' : 'chip-idle'}`} onClick={() => setFilter('morosas')}>Morosas · {fmtInt(morosasAll.length)} · {fmtCUP(morosasTotal)}</button>
+            <button type="button" aria-pressed={filter === 'pagadas'} className={`chip ${filter === 'pagadas' ? 'chip-active' : 'chip-idle'}`} onClick={() => setFilter('pagadas')}>Pagadas · {fmtInt(pagadasCount)}</button>
+          </div>
+
+          <div className="chips-row" role="group" aria-label="Agrupar cuentas por categoría" style={{ marginTop: 4 }}>
+            {([['todas', 'Todas'], ['cliente', 'Clientes'], ['trabajador', 'Trabajadores'], ['administrativo', 'Administrativo']] as Array<['todas' | Category, string]>).map(([key, label]) => {
+              const d = catChipData(key)
+              return (
+                <button key={key} type="button" aria-pressed={catFilter === key} className={`chip ${catFilter === key ? 'chip-active' : 'chip-idle'}`} onClick={() => setCatFilter(key)}>
+                  {label} · {fmtCUP(d.total)} · {fmtInt(d.count)}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="calle-card" aria-label="Dinero en la calle" style={{ marginTop: 12 }}>
+            <p className="calle-title">Dinero en la calle</p>
+            <p className="calle-amount">{fmtInt(dineroCalle)} <span>CUP</span></p>
+            <p className="calle-break">En Cobrar {fmtCUP(calleCobrar)} · Clientes en morosas {fmtCUP(calleMorosas)}</p>
+            <p className="calle-note">Solo cuentas de clientes. Las cuentas de trabajadores y administrativas no entran en este total.</p>
+            <div className="calle-details-grid">
+              {([['Clientes', 'cliente'], ['Trabajadores', 'trabajador'], ['Administrativo', 'administrativo']] as Array<[string, Category]>).map(([label, cat]) => {
+                const rows = pendingOf(cat)
+                const total = rows.reduce((s, x) => s + x.saldo, 0)
+                return (
+                  <details key={cat} className="calle-details">
+                    <summary>{label}: {fmtCUP(total)}</summary>
+                    {rows.length ? (
+                      <ul>{rows.map((x) => <li key={`${x.rec.origin}-${x.rec.id}`}>{x.rec.client}: <strong>{fmtCUP(x.saldo)}</strong></li>)}</ul>
+                    ) : (
+                      <p className="calle-empty">Sin cuentas pendientes.</p>
+                    )}
+                  </details>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="cobrar-search" style={{ marginTop: 16 }}>
+            <label htmlFor="cobrar-buscar">Buscar cuenta por nombre</label>
+            <input id="cobrar-buscar" aria-label="Buscar cuenta por nombre" type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+            {query.trim() ? <p className="cobrar-search-status" role="status">Mostrando las cuentas que coinciden con «{query.trim()}» en la pestaña activa.</p> : null}
           </div>
 
           {data.receivables.length === 0 ? (
@@ -1171,7 +1207,12 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
 
       {view === 'clientes' ? (
         <>
-          <div className="contact-search">
+          <div className="section-big-title" style={{ marginTop: 16 }}>
+            <span className="sbt-ico"><Icon name="people" size={24} /></span>
+            <h2>Clientes</h2>
+          </div>
+          {sectionTabs}
+          <div className="contact-search" style={{ marginTop: 12 }}>
             <label htmlFor="buscar-clientes" className="sr-only">Buscar clientes</label>
             <Icon name="search" size={17} className="contact-search-ico" />
             <input id="buscar-clientes" type="search" value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} placeholder="Buscar por nombre, teléfono o correo" aria-label="Buscar clientes" />
@@ -1232,10 +1273,11 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
 
       {view === 'comprobantes' ? (
         <>
-          <div className="section-big-title">
-            <span className="sbt-ico"><Icon name="doc" size={24} /></span>
+          <div className="section-big-title" style={{ marginTop: 16 }}>
+            <span className="sbt-ico"><Icon name="receipt" size={24} /></span>
             <h2>Comprobantes de pago</h2>
           </div>
+          {sectionTabs}
           {receipts.length === 0 ? (
             <Card><EmptyState icon="doc" title="Sin comprobantes todavía" text="Aquí se listan los abonos reales registrados en las cuentas (del respaldo y de Cobrar). Sin abonos, no hay comprobantes que mostrar." /></Card>
           ) : (
@@ -1270,10 +1312,12 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
 
       {view === 'entidades' ? (
         <>
-          <div className="section-big-title">
-            <span className="sbt-ico"><Icon name="grid" size={24} /></span>
+          <div className="section-big-title" style={{ marginTop: 16 }}>
+            <span className="sbt-ico"><Icon name="wallet" size={24} /></span>
             <h2>Entidades</h2>
+            <InfoHelp label="Cómo funcionan las entidades">Servicios prestados a empresas e instituciones que no pagan en efectivo, sino por movimientos bancarios. Cada servicio queda pendiente aquí hasta que el banco hace el movimiento: entonces tocas «Registrar cobro bancario» y escribes la fecha y la referencia del movimiento. No son cuentas de clientes: no vencen a los 7 días, no pasan a morosas y no entran en «Dinero en la calle».</InfoHelp>
           </div>
+          {sectionTabs}
           <Card>
             <EmptyState icon="grid" title="Sin entidades en esta copia" text="Las entidades (servicios a instituciones con cobro bancario) llegan con su propia fase del sistema externo. No se muestra ningún servicio inventado." />
           </Card>

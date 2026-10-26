@@ -331,9 +331,14 @@
 .queen-evolution-section-head > span { min-width: 27px; border-radius: 999px; background: var(--surface-tonal); color: var(--deep); padding: 4px 8px; font-size: 11px; font-weight: 800; text-align: center; }
 .queen-evolution-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .queen-evolution-metric { min-width: 0; border-radius: 14px; background: var(--surface-tonal); padding: 11px; }
-.queen-evolution-metric > div:first-child { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
-.queen-evolution-metric > div:first-child span { color: var(--dim); font-size: 10.5px; line-height: 1.25; }
-.queen-evolution-metric > div:first-child strong { flex: none; font-size: 19px; line-height: 1; }
+/* flex-wrap: con valores medidos (cifras cortas) la fila se ve como
+   en el original; con el estado «Sin medir» de esta copia — que el
+   original no pinta porque sus métricas viajan en su base — la
+   cifra baja a su propia línea dentro de la tarjeta en vez de
+   desbordarla y cortarse («Sin me…», defecto del dueño, 26-oct). */
+.queen-evolution-metric > div:first-child { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 2px 8px; }
+.queen-evolution-metric > div:first-child span { min-width: 0; color: var(--dim); font-size: 10.5px; line-height: 1.25; }
+.queen-evolution-metric > div:first-child strong { flex: none; margin-left: auto; font-size: 19px; line-height: 1; }
 .queen-evolution-mini-track { height: 4px; margin-top: 8px; background: color-mix(in srgb, var(--border) 72%, transparent); }
 .queen-evolution-metric p { margin-top: 7px; color: var(--dim); font-size: 10px; line-height: 1.4; }
 .queen-evolution-metric small { display: block; margin-top: 5px; color: var(--deep); font-size: 9px; font-weight: 700; }

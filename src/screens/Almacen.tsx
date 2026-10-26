@@ -313,7 +313,7 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
                 )
               }
               return (
-                <div className="row" key={entry.id}>
+                <div className="row alm-row" key={entry.id}>
                   <MediaImage kind="foto-almacen" entityKey={slug(entry.product)} alt="" className="media-thumb alm-photo" />
                   <span>
                     <strong>{entry.product}</strong>

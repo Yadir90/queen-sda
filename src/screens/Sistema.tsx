@@ -317,12 +317,13 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
     ;[next[idx], next[swap]] = [next[swap], next[idx]]
     saveOrder(next)
   }
-  // Modo ultraligero: el original lo marca en <html data-ultralight>
-  // y su CSS literal (portado a systemMirror.css) apaga paquetes y
-  // anillos; aquí se marca igual mientras Sistema está montada.
+  // Modo ultraligero GLOBAL: el original lo aplica a todo el
+  // sistema y queda activo; el estado vive en localStorage
+  // (lib/ultralight, misma clave) y se aplica al <html> desde el
+  // arranque. Aquí solo se refleja el valor: al desmontar NO se
+  // borra el atributo, porque el ajuste es del sistema entero.
   useEffect(() => {
     document.documentElement.dataset.ultralight = ultra ? 'true' : 'false'
-    return () => { delete document.documentElement.dataset.ultralight }
   }, [ultra])
   const toggleUltra = () => {
     setUltra((v) => {
@@ -961,15 +962,27 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
         </Card>
       ) : null}
 
-      <div className="sistema-stack">
-        {visibleOrder.map((id) => (
-          <div key={id} className="sistema-slot" style={{ order: order.indexOf(id) }}>
-            {renderCard(id)}
-          </div>
-        ))}
-        {visibleOrder.length === 0 ? (
-          <Card><p className="sub" style={{ margin: 0 }}>Ninguna tarjeta coincide con esa búsqueda.</p></Card>
-        ) : null}
+      {/* Consola del original (su App.tsx, componente de red del
+          sistema): TODA la pila vive dentro de
+          .system-dna.system-network-system. Sin ese ancestro, las
+          reglas con ámbito del puerto (fondos claros de Actividad
+          de IA y del detalle de ADN, tokens --system-* de claro,
+          mapa neuronal transparente e integrado) nunca se activan
+          y las tarjetas caen a sus bases oscuras también en modo
+          claro — defectos 2 y 3 del dueño (26-oct). La cabecera de
+          la pestaña y la barra de controles quedan fuera, como en
+          el original. */}
+      <div className="system-dna system-network-system" aria-label="Red de inteligencia artificial y ADN del sistema">
+        <div className="sistema-stack">
+          {visibleOrder.map((id) => (
+            <div key={id} className="sistema-slot" style={{ order: order.indexOf(id) }}>
+              {renderCard(id)}
+            </div>
+          ))}
+          {visibleOrder.length === 0 ? (
+            <Card><p className="sub" style={{ margin: 0 }}>Ninguna tarjeta coincide con esa búsqueda.</p></Card>
+          ) : null}
+        </div>
       </div>
 
       {/* Procedencia de las cuentas: plegable cerrado por defecto. */}

@@ -333,10 +333,17 @@ export function IpvNeuralMap({ days }: { days: IpvOrbitDay[] }) {
   // Pausa fuera de pantalla del original: la constelación solo anima
   // cuando se ve (IntersectionObserver + visibilitychange); fuera de
   // pantalla lleva is-paused y sus animaciones se detienen.
-  const constellationRef = useRef<HTMLDivElement | null>(null)
+  /* La constelación solo existe cuando ya hay días: con un ref
+     leído una sola vez al montar, si los días llegan después el
+     observador nunca se enganchaba y el mapa quedaba en pausa
+     para siempre («parece foto», defecto 3 del dueño). Ref de
+     devolución de llamada: el efecto corre cuando el elemento
+     aparece de verdad. */
+  const [constellationEl, setConstellationEl] = useState<HTMLDivElement | null>(null)
+  const constellationRef = (el: HTMLDivElement | null) => { setConstellationEl(el) }
   const [constellationVisible, setConstellationVisible] = useState(false)
   useEffect(() => {
-    const element = constellationRef.current
+    const element = constellationEl
     if (!element) { setConstellationVisible(false); return }
     const updateDocumentVisibility = () => {
       if (document.hidden) setConstellationVisible(false)
@@ -361,7 +368,7 @@ export function IpvNeuralMap({ days }: { days: IpvOrbitDay[] }) {
       observer.disconnect()
       document.removeEventListener('visibilitychange', resumeWhenVisible)
     }
-  }, [])
+  }, [constellationEl])
   const orbitNodes = useMemo(() => buildIpvOrbitNodes(days), [days])
   const selected = days.find((d) => d.date === selectedDay) ?? null
   return (
@@ -409,7 +416,7 @@ export function IpvNeuralMap({ days }: { days: IpvOrbitDay[] }) {
             return (
               <div key={node.date} role="listitem" className={`ipv-orbit-item is-${visualStatus}${selectedDay === node.date ? ' is-selected' : ''}`} style={orbitStyle}>
                 <button type="button" onClick={() => setSelectedDay((cur) => (cur === node.date ? null : node.date))} aria-pressed={selectedDay === node.date} aria-label={`IPV del ${node.date}: ${statusLabel}. ${selectedDay === node.date ? 'Tocar otra vez para ocultar la leyenda' : 'Tocar para mostrar la leyenda'}`}>
-                  <span className="ipv-planet-code">IPV · {node.date.slice(5)}</span>
+                  <span className="ipv-planet-code">IPV · {node.date.slice(8)}</span>
                   <span className="ipv-neural-node"><i aria-hidden="true" /><b aria-hidden="true" /></span>
                   <span className="ipv-planet-state">{shortStatus}</span>
                   <span className="ipv-orbit-meta">

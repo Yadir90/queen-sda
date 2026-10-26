@@ -80,13 +80,20 @@ export interface RecognitionCallbacks {
 }
 
 const ERROR_TEXT: Record<string, string> = {
-  'not-allowed': 'El micrófono no tiene permiso en este navegador. El chat de texto sigue disponible.',
-  'service-not-allowed': 'El servicio de voz del navegador no está permitido. El chat de texto sigue disponible.',
+  'not-allowed': 'El micrófono no tiene permiso en este navegador. Toca el candado junto a la dirección y permite el micrófono para esta página; el chat de texto sigue disponible.',
+  'service-not-allowed': 'El servicio de voz del navegador no está permitido en este dispositivo. El chat de texto sigue disponible.',
   'audio-capture': 'No se encontró micrófono en este dispositivo. El chat de texto sigue disponible.',
   'no-speech': 'No te escuché. Toca el micrófono e inténtalo de nuevo.',
-  network: 'La voz del navegador necesita conexión para reconocer. El chat de texto sigue disponible.',
-  aborted: '',
+  network: 'La voz del navegador necesita conexión a internet para reconocer lo que dices. Revisa la conexión e inténtalo de nuevo; el chat de texto sigue disponible.',
+  'language-not-supported': 'Este dispositivo no tiene reconocimiento de voz en español. El chat de texto sigue disponible.',
 }
+/* La escucha se cortó sola antes de empezar (error «aborted» sin que
+   el usuario la detuviera): jamás en silencio (defecto del dueño,
+   26-oct: «aparece algo que se quita y no pasa nada»). */
+const ABORTED_TEXT = 'La escucha se interrumpió antes de empezar. Suele pasar si el micrófono quedó ocupado por otra aplicación o si el servicio de voz del navegador falló al arrancar. Toca el micrófono para intentarlo otra vez; el chat de texto sigue disponible.'
+/* La sesión terminó sin error y sin captar nada (onend desnudo):
+   tampoco puede quedar en silencio. */
+const SILENT_END_TEXT = 'La escucha terminó sin captar nada. Puede que el servicio de voz no esté disponible en este dispositivo o que el micrófono se haya cerrado. Toca el micrófono para intentarlo de nuevo; el chat de texto sigue disponible.'
 
 /** Arranca una sesión de escucha (pulsar para hablar). Devuelve null
  *  si el navegador no soporta reconocimiento. Nunca lanza: los
@@ -100,10 +107,21 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
   let langIndex = 0
   const langs = ['es-ES', 'es']
   let finalText = ''
+  /* Contabilidad de la sesión para que NINGÚN final quede en
+     silencio: si la escucha termina sin entregar texto, sin que el
+     usuario la detuviera y sin un error ya avisado, se avisa. */
+  let delivered = false
+  let reported = false
+  const report = (message: string) => {
+    if (reported) return
+    reported = true
+    callbacks.onError(message)
+  }
 
   const finish = () => {
     if (ended) return
     ended = true
+    if (!stopped && !reported && !delivered) report(SILENT_END_TEXT)
     callbacks.onEnd()
   }
 
@@ -124,6 +142,7 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
       if (finalText.trim()) {
         const text = finalText.trim()
         finalText = ''
+        delivered = true
         callbacks.onFinal(text)
       } else if (interim.trim()) {
         callbacks.onInterim(interim.trim())
@@ -131,22 +150,30 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
     }
     recognition.onerror = (event) => {
       // Sin soporte del idioma pedido: se reintenta una vez con el
-      // español genérico antes de dar el error por definitivo.
+      // español genérico antes de dar el error por definitivo. Los
+      // handlers de la instancia vieja se desconectan ANTES de
+      // abortarla: su onend tardío no debe cerrar la sesión nueva.
       if (event.error === 'language-not-supported' && langIndex < langs.length - 1 && !stopped) {
         langIndex += 1
-        try { recognition?.abort() } catch { /* noop */ }
+        const old = recognition
+        if (old) { old.onresult = null; old.onerror = null; old.onend = null }
+        try { old?.abort() } catch { /* noop */ }
         launch()
         return
       }
-      const message = ERROR_TEXT[event.error] ?? `La escucha se detuvo (${event.error}). El chat de texto sigue disponible.`
-      if (message) callbacks.onError(message)
+      // «aborted» solo es silencioso cuando lo pidió el usuario
+      // (stop/abort del asa); si llega solo, es un fallo de arranque
+      // y se avisa como cualquier otro error.
+      if (event.error === 'aborted' && !stopped) { report(ABORTED_TEXT); finish(); return }
+      if (event.error === 'aborted') { finish(); return }
+      report(ERROR_TEXT[event.error] ?? `La escucha se detuvo (${event.error}). El chat de texto sigue disponible.`)
       finish()
     }
     recognition.onend = () => finish()
     try {
       recognition.start()
     } catch {
-      callbacks.onError('La escucha no pudo empezar. El chat de texto sigue disponible.')
+      report('La escucha no pudo empezar. El chat de texto sigue disponible.')
       finish()
     }
   }

@@ -135,6 +135,53 @@ export function changePassword(profileId: string, tempPassword: string, newPassw
   return { ok: true }
 }
 
+/**
+ * Guardado del perfil propio desde Ajustes (paridad con el
+ * original: «Guardar perfil y acceso»): nombre visible y correo de
+ * acceso editables, y cambio de contraseña verificando la actual.
+ * Persiste en los perfiles locales y refresca la sesión guardada
+ * si es la de este perfil. Nada se finge: cada cambio se escribe
+ * o se devuelve el error.
+ */
+export function updateOwnProfile(profileId: string, patch: {
+  name?: string
+  email?: string
+  currentPassword?: string
+  newPassword?: string
+}): { ok: boolean; error?: string } {
+  const profiles = ensureProfiles()
+  const profile = profiles.find((p) => p.id === profileId)
+  if (!profile) return { ok: false, error: 'Perfil no encontrado.' }
+  const name = patch.name?.trim()
+  if (name !== undefined && !name) return { ok: false, error: 'El nombre visible no puede quedar vacío.' }
+  const email = patch.email?.trim().toLowerCase()
+  if (email !== undefined) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: 'El correo de acceso no tiene un formato válido.' }
+    if (profiles.some((p) => p.id !== profileId && p.email.toLowerCase() === email)) {
+      return { ok: false, error: 'Ese correo ya lo usa otra cuenta.' }
+    }
+  }
+  if (patch.newPassword !== undefined) {
+    if (!patch.currentPassword || profile.passHash !== hash(patch.currentPassword)) {
+      return { ok: false, error: 'La contraseña actual no coincide.' }
+    }
+    if (patch.newPassword.length < 6) return { ok: false, error: 'La contraseña nueva debe tener al menos 6 caracteres.' }
+    if (patch.newPassword === patch.currentPassword) return { ok: false, error: 'La contraseña nueva debe ser distinta de la actual.' }
+  }
+  if (name !== undefined) profile.name = name
+  if (email !== undefined) profile.email = email
+  if (patch.newPassword !== undefined) {
+    profile.passHash = hash(patch.newPassword)
+    profile.mustChange = false
+  }
+  writeJSON(K_PROFILES, profiles)
+  const stored = getSession()
+  if (stored && stored.profileId === profileId) {
+    writeJSON(K_SESSION, { ...stored, name: profile.name, email: profile.email })
+  }
+  return { ok: true }
+}
+
 export function logout() {
   localStorage.removeItem(K_SESSION)
 }

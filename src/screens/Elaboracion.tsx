@@ -283,6 +283,14 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
   const [exportAllMsg, setExportAllMsg] = useState('')
   const [wasteDraft, setWasteDraft] = useState({ preparedServings: 0, baseAmount: 0, actualWasteAmount: 0, reason: '', note: '' })
   const [wasteMessage, setWasteMessage] = useState('')
+  /* Estos tres estados vivían tras el return anticipado de la ficha
+     abierta: al abrir una ficha, React ejecutaba menos hooks que en
+     el render anterior y la pantalla se caía («la ficha no abre»,
+     defecto del dueño, 26-oct). Todos los hooks van antes de
+     cualquier return condicional. */
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('alerts')
+  const [compareLeft, setCompareLeft] = useState('')
+  const [compareRight, setCompareRight] = useState('')
 
   const openProduct = (product: ElabProduct) => {
     const saved = store.recipes.find((r) => r.productKey === product.productKey)
@@ -871,10 +879,6 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
   }
 
   /* ---------- Vista: listas (sin ficha abierta) ---------- */
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('alerts')
-  const [compareLeft, setCompareLeft] = useState('')
-  const [compareRight, setCompareRight] = useState('')
-
   const filtered = products.filter((p) => {
     const q = search.trim().toLowerCase()
     return !q || p.name.toLowerCase().includes(q) || p.dept.toLowerCase().includes(q)

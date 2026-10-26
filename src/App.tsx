@@ -16,6 +16,7 @@ import { Icon, AlertDot, type IconName } from './components/icons'
 import { QueenOrb, QueenReactorMark } from './components/QueenReactor'
 import { MediaImage } from './components/MediaImage'
 import { BRAND_LOGO_URL } from './lib/brandAssets'
+import { applyUltralight, getUltralight, setUltralight } from './lib/ultralight'
 import { getOfflineState, requestOfflineSync, subscribeOfflineState, type OfflineState } from './lib/offlineQueue'
 import { buildQueenObservations } from './lib/queenCore.mjs'
 import { effectiveSaldo, fmtCUP, fmtInt, isMorosa, todayISO } from './lib/utils'
@@ -201,6 +202,10 @@ function LoginScreen({ onLogin, onImpersonate }: {
   /* Recuperación de contraseña (Supabase): vista de pedir el enlace y
      confirmación de envío, dentro de la misma tarjeta de acceso. */
   const [view, setView] = useState<'login' | 'forgot' | 'sent'>('login')
+  /* Modo ultraligero global del original: vive también en esta
+     pantalla de acceso y se aplica a todo el sistema. */
+  const [ultra, setUltra] = useState(() => getUltralight())
+  const toggleUltra = () => { const next = !ultra; setUltra(next); setUltralight(next) }
   const [forgotError, setForgotError] = useState<string | null>(null)
   const [forgotBusy, setForgotBusy] = useState(false)
   const submitForgot = async (e: FormEvent) => {
@@ -236,11 +241,24 @@ function LoginScreen({ onLogin, onImpersonate }: {
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        {/* La etapa del Reactor pinta también la pantalla de acceso:
-            marca de 84px en estado thinking, como en el original. */}
-        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
-        <h1>{SYSTEM_NAME}</h1>
-        <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
+        {/* Cabecera del acceso del original, elemento a elemento:
+            logotipo de La Reina, título completo de bienvenida,
+            línea del negocio, fila del reactor e interruptor del
+            modo ultraligero. Debajo sigue el selector de usuario
+            del dueño y sus vías de entrada. */}
+        <div className="auth-head">
+          <img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" />
+          <h1 className="auth-welcome">Bienvenido a Queen SDA el Sistema de Automatización de Datos del PDL La Reina V2.0</h1>
+          <p className="auth-tagline">El negocio, día a día: IPV, gastos, cobrar, RH y Queen.</p>
+          <div className="auth-reactor-row">
+            <QueenReactorMark stageId="juvenil" state="idle" size={30} />
+            <span>Queen · Núcleo del reactor</span>
+          </div>
+        </div>
+        <button type="button" className={`system-ultralight-toggle${ultra ? ' is-active' : ''}`} aria-pressed={ultra} onClick={toggleUltra} style={{ width: '100%', marginBottom: 16 }}>
+          <Icon name={ultra ? 'check' : 'sparkle'} size={16} />
+          <span><strong>Modo ultraligero</strong><small>{ultra ? 'Activo en todo el sistema · se mantiene hasta que lo desactives' : 'Para conexiones muy malas: se aplica a todo el sistema y queda activo'}</small></span>
+        </button>
         {view === 'forgot' ? (
           <>
             <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Recuperar contraseña</h2>
@@ -342,8 +360,11 @@ function LoginScreen({ onLogin, onImpersonate }: {
                 ) : null}
               </div>
             ) : null}
+            <p className="auth-note">La sesión queda recordada en este dispositivo. Ciérrala en Ajustes → Perfil cuando quieras.</p>
             {SB_MODE ? (
-              <button type="button" className="auth-forgot" onClick={() => { setView('forgot'); setError(null) }}>¿Olvidaste tu contraseña?</button>
+              <div className="auth-recovery">
+                <button type="button" className="auth-forgot" onClick={() => { setView('forgot'); setError(null) }}>¿Olvidaste tu contraseña?</button>
+              </div>
             ) : null}
           </>
         )}
@@ -387,7 +408,7 @@ function ResetPasswordScreen({ session, linkError, onDone, onLogout }: {
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
+        <div className="auth-mark"><img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" /></div>
         <h1>Contraseña nueva</h1>
         <p className="auth-sub">{SYSTEM_FULL}<br />{PLACE}</p>
         {linkError || !session ? (
@@ -447,7 +468,7 @@ function ChangePasswordScreen({ session, onDone, onLogout }: { session: Session;
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
+        <div className="auth-mark"><img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" /></div>
         <h1>Cambiar contraseña</h1>
         <p className="auth-sub">{SYSTEM_FULL}<br />{PLACE}</p>
         <p className="small">Hola, {session.name}. Por seguridad, debes crear una contraseña nueva antes de continuar.</p>
@@ -610,7 +631,7 @@ function LockScreen({ session, onUnlock, onUsePassword }: {
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
+        <div className="auth-mark"><img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" /></div>
         <h1>{SYSTEM_NAME}</h1>
         <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
         <h2 style={{ fontSize: '1.05rem', marginBottom: 4 }}>Hola, {session.name}</h2>
@@ -664,6 +685,10 @@ export default function App() {
     const timer = window.setTimeout(() => setBootSlow(true), 7000)
     return () => window.clearTimeout(timer)
   }, [ready])
+
+  /* El modo ultraligero guardado vale desde el arranque, en
+     todo el sistema (como en el original). */
+  useEffect(() => { applyUltralight() }, [])
 
   useEffect(() => {
     if (SB_MODE) {
@@ -1217,7 +1242,7 @@ export default function App() {
           {section === 'existencias' ? <Existencias data={data} isAdmin={canEdit('existencias')} onChanged={refresh} onNavigate={setSection} /> : null}
           {section === 'cronologia' ? <Cronologia data={data} bulletins={bulletins} activity={activityEntries} onNavigate={setSection} /> : null}
           {section === 'ajustes' && session ? (
-            <Ajustes data={data} session={session} isAdmin={isAdmin} onChanged={refresh} onNavigate={setSection} onEnterAs={(target) => enterAs(target, session.name)} />
+            <Ajustes data={data} session={session} isAdmin={isAdmin} onChanged={refresh} onNavigate={setSection} onEnterAs={(target) => enterAs(target, session.name)} onLogout={doLogout} />
           ) : null}
           {section === 'mas' ? <MasScreen onNavigate={setSection} data={data} hidden={(['ajustes', 'archivo', 'cronologia', 'dias', 'historial', 'sistema'] as Section[]).filter((s) => accessOf(s) === 'none')} /> : null}
           </div>

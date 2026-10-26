@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import type { StoredData, TransferMovement } from '../types'
-import { ActionMenu, Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { BANK_COMMISSION, conciliationDates, conciliationForDay, isEffectiveMovement, transferSummary } from '../lib/economiaCore.mjs'
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
@@ -330,31 +330,29 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
                     <span className={`mov-amount ${m.amount >= 0 ? 'pos' : 'neg'}`}>
                       {m.amount >= 0 ? '+' : '−'}{fmtCUP(Math.abs(m.amount))}
                     </span>
+                    {/* Acciones como en el original: botones de texto
+                        compactos en línea (Editar · No es de La Reina ·
+                        Borrar, 12 px). La versión anterior los metía en
+                        un ActionMenu cuya etiqueta visible era el detalle
+                        COMPLETO del movimiento: el disparador se pintaba
+                        como una burbuja gigante con el texto cortado
+                        (defecto del dueño, 26-oct). */}
                     {isAdmin && !m.superseded ? (
-                      <button
-                        type="button"
-                        className="btn mov-toggle"
-                        disabled={busyId === m.id}
-                        onClick={() => void toggleExcluded(m)}
-                        title={m.excluded ? 'Volver a contar este movimiento en el saldo' : 'Marcar como «No es de La Reina»: sale del saldo sin borrarse'}
-                      >
-                        <Icon name={m.excluded ? 'eye' : 'eyeOff'} size={16} />
-                        {m.excluded ? 'Contarlo' : 'No es de La Reina'}
-                      </button>
-                    ) : null}
-                    {isAdmin && !m.superseded && (EDITABLE.includes(m.source) || DELETABLE.includes(m.source)) ? (
-                      <ActionMenu label={`Acciones del movimiento ${m.detail || SOURCE_LABEL[m.source]}`}>
+                      <span className="mov-actions">
                         {EDITABLE.includes(m.source) ? (
-                          <button type="button" onClick={() => { setEditing({ id: m.id, date: m.date, amount: String(Math.abs(m.amount)), detail: m.detail }); setEditError(''); setConfirmDeleteId(null) }}>
-                            <Icon name="edit" size={14} /> Editar
+                          <button type="button" className="mov-action" onClick={() => { setEditing({ id: m.id, date: m.date, amount: String(Math.abs(m.amount)), detail: m.detail }); setEditError(''); setConfirmDeleteId(null) }} aria-label={`Editar movimiento del ${fmtDate(m.date)}`}>
+                            <Icon name="edit" size={13} /> Editar
                           </button>
                         ) : null}
+                        <button type="button" className="mov-action" disabled={busyId === m.id} onClick={() => void toggleExcluded(m)} aria-label={m.excluded ? 'Volver a contar este movimiento en el saldo' : 'Marcar como «No es de La Reina»: sale del saldo sin borrarse'}>
+                          {m.excluded ? 'Incluir en el cuadre' : 'No es de La Reina'}
+                        </button>
                         {DELETABLE.includes(m.source) ? (
-                          <button type="button" className="danger" onClick={() => { setConfirmDeleteId(m.id); setEditing(null) }}>
-                            <Icon name="trash" size={14} /> Borrar movimiento
+                          <button type="button" className="mov-action is-danger" onClick={() => { setConfirmDeleteId(m.id); setEditing(null) }} aria-label={`Borrar movimiento del ${fmtDate(m.date)}`}>
+                            <Icon name="trash" size={13} /> Borrar
                           </button>
                         ) : null}
-                      </ActionMenu>
+                      </span>
                     ) : null}
                     {isAdmin && editing?.id === m.id ? (
                       <form

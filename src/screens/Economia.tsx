@@ -236,7 +236,7 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
             </ChartCard>
           </div>
 
-          <div className="grid-2" style={{ marginTop: 14 }}>
+          <div className="economy-pair-grid">
             <ChartCard title="Rentabilidad por categoría">
               {profitabilityByCategory.length === 0 ? (
                 <p className="small muted">Los IPV de este período no tienen categorías con ventas para analizar.</p>
@@ -261,7 +261,7 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
             </ChartCard>
           </div>
 
-          <div className="grid-2" style={{ marginTop: 14 }}>
+          <div className="economy-pair-grid">
             <ChartCard title="Indicadores de eficiencia">
               <div className="rec-detail" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>
                 <div className="row" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}><span>Costo de lo vendido</span><strong>{fmtCUP(costOfSales)}<span className="small muted"> · {pctTxt(currentRatios.costShare)} de las ventas</span></strong></div>
@@ -287,7 +287,7 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
             </ChartCard>
           </div>
 
-          <div className="grid-2" style={{ marginTop: 14 }}>
+          <div className="economy-pair-grid">
             <ChartCard title="Participación de gastos por categoría">
               {eco.gastosPorCategoria.length === 0 ? (
                 <p className="small muted">No hay gastos registrados en este período.</p>

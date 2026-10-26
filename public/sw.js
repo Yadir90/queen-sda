@@ -7,11 +7,27 @@
    no sea un asset de la carcasa va directo a la red, sin interceptar.
    v3: al activarse se borran las cachés anteriores (v2 incluida),
    que servían primero lo cacheado para JS/CSS. */
-const CACHE = 'queen-sda-shell-v3'
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/sad-192.png', '/icons/sad-512.png']
+const CACHE = 'queen-sda-shell-v4'
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/queen-maduro-192.png', '/icons/queen-maduro-512.png']
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE)
+    await cache.addAll(SHELL)
+    /* Los JS/CSS de entrada llevan hash en el nombre y no se
+       pueden listar aquí a mano: se descubren del propio
+       index.html ya cacheado. Sin esto, la primera carga (que
+       ocurre antes de que el SW controle la página) nunca dejaba
+       los activos en caché y la app no abría sin conexión hasta
+       la segunda visita. Si el descubrimiento falla, la
+       instalación sigue con la carcasa básica. */
+    try {
+      const html = await (await fetch('/index.html')).text()
+      const assets = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1])
+      if (assets.length) await cache.addAll([...new Set(assets)])
+    } catch { /* la red manda: se reintenta en la próxima activación */ }
+    await self.skipWaiting()
+  })())
 })
 
 self.addEventListener('activate', (event) => {

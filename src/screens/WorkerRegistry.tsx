@@ -27,6 +27,7 @@ import { InfoHelp } from '../components/ui'
 import { Icon } from '../components/icons'
 import { WorkerPhoto } from '../components/MediaImage'
 import WorkerFichaCompleta, { WorkerQrScanner } from '../components/WorkerFichaCompleta'
+import { FichaBoundary } from '../components/FichaBoundary'
 import { effectiveSaldo, fmtDate, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
 import { saveWorkersRegistry, supabaseConfigured } from '../lib/backend'
 import { sbSaveWorkersRegistry } from '../lib/supabaseBackend'
@@ -606,11 +607,13 @@ function WorkerCard({ model, ctx, historialEntry }: {
       </button>
 
       {open && (
-        enHistorial && historialEntry ? (
-          <HistorialFicha model={model} ctx={ctx} entry={historialEntry} />
-        ) : (
-          <FichaEditor model={model} ctx={ctx} />
-        )
+        <FichaBoundary bloque="la ficha">
+          {enHistorial && historialEntry ? (
+            <HistorialFicha model={model} ctx={ctx} entry={historialEntry} />
+          ) : (
+            <FichaEditor model={model} ctx={ctx} />
+          )}
+        </FichaBoundary>
       )}
     </article>
   )
@@ -925,7 +928,9 @@ function FichaEditor({ model, ctx }: { model: FichaModel; ctx: CardCtx }) {
         </dl>
       )}
 
-      <WorkerFichaCompleta worker={w} extended={ext} isAdmin={isAdmin} />
+      <FichaBoundary bloque="Documentos y contrato">
+        <WorkerFichaCompleta worker={w} extended={ext} isAdmin={isAdmin} />
+      </FichaBoundary>
 
       {w.roleKind !== 'direccion' && (
         <div className="wr-aus-box" aria-label={`Ausencias justificadas de ${w.nombre}`}>

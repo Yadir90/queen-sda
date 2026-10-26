@@ -347,7 +347,7 @@ async function waitScreen(page, conf) {
       if (sel && main.querySelector(sel)) ok = true
       if (!ok && text && (main.innerText || '').includes(text)) ok = true
       if (ok && chip) {
-        const active = main.querySelector('.view-chip.active, .chip-btn.active, [aria-pressed="true"]')
+        const active = main.querySelector('.view-chip.active, .chip-btn.active, .chip.chip-active, [aria-pressed="true"]')
         return active ? (active.textContent || '').includes(chip) : false
       }
       return ok
