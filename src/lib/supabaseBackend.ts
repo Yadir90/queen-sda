@@ -25,11 +25,12 @@
 // (el admin sí puede). La app no se bloquea por eso: tras cambiarla, entra;
 // el aviso volverá a salir en su próximo ingreso hasta que el admin lo marque.
 
-import type { AutomationRun, Bulletin, DayData, Expense, LocalPayment, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionSnapshot, QueenLearningState, Receivable, Role, Session, StoredData, TransferMovement, Worker } from '../types'
+import type { AutomationRun, Bulletin, DayData, Expense, LocalPayment, MonthlyArchive, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionHistoryEntry, QueenEvolutionSnapshot, QueenLearningState, Receivable, ReceivablePhoto, Role, Session, SmsLog, SmsOutboxItem, StoredData, TransferMovement, VenueInventoryItem, WarehouseEntry, WarehouseProductMeta, Worker, WorkerExtended, WorkerPayment } from '../types'
 import { EMPTY_DATA, type LoginResult } from './backend'
 import { getSupabase } from './supabaseClient'
 import { normalizeDay, normalizeExpense, normalizePayroll, normalizeReceivable, normalizeWorkerRecord, parseBackup } from './backupCore.mjs'
 import { applyImportedPaidAccounts, buildWorkersRegistry, canonicalPersonKey, clientKeyOf, deriveSuppressedEntries, firstNameKeyOf, syncDerivedData } from './syncCore.mjs'
+import { venueItemFromRaw, warehouseEntryFromRaw, warehouseMetaFromRaw } from './modulosExtended'
 
 /** Sesión remota ya resuelta: el Session de la app + si debe cambiar la contraseña. */
 export interface RemoteSession {
@@ -392,6 +393,153 @@ async function fetchCoreSettings(): Promise<CoreSettings> {
   return data.value
 }
 
+/** Estado extendido de trabajadores + historial de evolución de
+ *  Queen: dos claves propias de app_settings, extraídas del servidor
+ *  original (no viajan en el respaldo). Si la fila no existe aún en
+ *  el proyecto, se leen como vacías y la app sigue. */
+interface RawExtendedWorker {
+  id?: number
+  worker_key?: string
+  nombre?: string
+  ocupacion?: string
+  rest_weekday?: number | null
+  work_weekday?: number | null
+  work_weekdays?: number[] | string | null
+  turno_asignado?: number | null
+  turno_correccion?: number | null
+  estrellas?: number | null
+  genero?: string
+  escolaridad?: string
+  contrato_cancelado_el?: string | null
+  contrato_cancelado_ciclo?: string | null
+}
+
+function parseWeekdays(raw: RawExtendedWorker['work_weekdays']): number[] {
+  const list = Array.isArray(raw) ? raw : typeof raw === 'string' ? (() => { try { const p = JSON.parse(raw) as unknown; return Array.isArray(p) ? p : [] } catch { return [] } })() : []
+  return list.filter((n): n is number => typeof n === 'number' && Number.isFinite(n))
+}
+
+function extendedFromRaw(r: RawExtendedWorker): WorkerExtended {
+  const turno = (v: number | null | undefined): 1 | 2 | null => (v === 1 || v === 2 ? v : null)
+  return {
+    id: typeof r.id === 'number' ? r.id : 0,
+    workerKey: String(r.worker_key ?? ''),
+    nombre: String(r.nombre ?? ''),
+    ocupacion: String(r.ocupacion ?? ''),
+    restWeekday: typeof r.rest_weekday === 'number' ? r.rest_weekday : null,
+    workWeekday: typeof r.work_weekday === 'number' ? r.work_weekday : null,
+    workWeekdays: parseWeekdays(r.work_weekdays),
+    turnoAsignado: turno(r.turno_asignado),
+    turnoCorreccion: turno(r.turno_correccion),
+    estrellas: typeof r.estrellas === 'number' && Number.isFinite(r.estrellas) ? Math.max(0, Math.min(5, Math.round(r.estrellas))) : 0,
+    genero: String(r.genero ?? ''),
+    escolaridad: String(r.escolaridad ?? ''),
+    contratoCanceladoEl: r.contrato_cancelado_el ?? null,
+    contratoCanceladoCiclo: r.contrato_cancelado_ciclo ?? null,
+  }
+}
+
+interface RawHistoryEntry {
+  stage_id?: string
+  stage_name?: string
+  score?: number
+  metrics?: Record<string, number> | string | null
+  reason?: string
+  reached_at?: number | string | null
+}
+
+function historyFromRaw(r: RawHistoryEntry): QueenEvolutionHistoryEntry {
+  let metrics: Record<string, number> = {}
+  if (typeof r.metrics === 'string') {
+    try { metrics = JSON.parse(r.metrics) as Record<string, number> } catch { metrics = {} }
+  } else if (r.metrics && typeof r.metrics === 'object') metrics = r.metrics
+  const reached = typeof r.reached_at === 'number' && Number.isFinite(r.reached_at)
+    ? new Date(r.reached_at).toISOString()
+    : typeof r.reached_at === 'string' ? r.reached_at : null
+  return {
+    stageId: String(r.stage_id ?? ''),
+    stageName: String(r.stage_name ?? ''),
+    score: typeof r.score === 'number' ? r.score : 0,
+    metrics: metrics && typeof metrics === 'object' ? metrics : {},
+    reason: String(r.reason ?? ''),
+    reachedAt: reached,
+  }
+}
+
+export interface ExtendedSettings {
+  workersExtended: WorkerExtended[]
+  queenEvolutionHistory: QueenEvolutionHistoryEntry[]
+  warehouseEntries: WarehouseEntry[]
+  warehouseMeta: Record<string, WarehouseProductMeta>
+  venueInventory: VenueInventoryItem[]
+  receivablePhotos: ReceivablePhoto[]
+  smsLogs: SmsLog[]
+  smsOutbox: SmsOutboxItem[]
+  monthlyArchives: MonthlyArchive[]
+  workerPayments: WorkerPayment[]
+}
+
+const EMPTY_EXTENDED: ExtendedSettings = {
+  workersExtended: [], queenEvolutionHistory: [],
+  warehouseEntries: [], warehouseMeta: {}, venueInventory: [],
+  receivablePhotos: [], smsLogs: [], smsOutbox: [], monthlyArchives: [], workerPayments: [],
+}
+
+async function fetchExtendedSettings(): Promise<ExtendedSettings> {
+  const client = sb()
+  const { data, error } = await client
+    .from('app_settings')
+    .select('key, value')
+    .in('key', ['workers-extended', 'queen-evolution-history', 'almacen-extended', 'venue-inventory', 'backup-collections'])
+  if (error || !data) return EMPTY_EXTENDED
+  const rows = data as Array<{ key: string; value: Record<string, unknown> | null }>
+  const byKey = new Map(rows.map((r) => [r.key, r.value]))
+  const extRow = byKey.get('workers-extended') as { workers?: RawExtendedWorker[] } | undefined
+  const histRow = byKey.get('queen-evolution-history') as { history?: RawHistoryEntry[] } | undefined
+  // Oleada 2: almacén manual e Inventario de bienes, extraídos del
+  // servidor original por la coordinación (modulos-extended-import.sql).
+  const almRow = byKey.get('almacen-extended') as { entries?: Array<Record<string, unknown>>; meta?: unknown } | undefined
+  const venRow = byKey.get('venue-inventory') as { items?: Array<Record<string, unknown>> } | undefined
+  // Las cinco colecciones del respaldo, persistidas aquí al importar
+  // (sbImportBackup): no tienen tabla propia en el clon.
+  const colRow = byKey.get('backup-collections') as Partial<Pick<ExtendedSettings, 'receivablePhotos' | 'smsLogs' | 'smsOutbox' | 'monthlyArchives' | 'workerPayments'>> | undefined
+  const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
+  return {
+    workersExtended: Array.isArray(extRow?.workers) ? extRow.workers.map(extendedFromRaw) : [],
+    queenEvolutionHistory: Array.isArray(histRow?.history) ? histRow.history.map(historyFromRaw) : [],
+    warehouseEntries: Array.isArray(almRow?.entries) ? almRow.entries.map(warehouseEntryFromRaw) : [],
+    warehouseMeta: warehouseMetaFromRaw(almRow?.meta),
+    venueInventory: Array.isArray(venRow?.items) ? venRow.items.map(venueItemFromRaw) : [],
+    receivablePhotos: arr<ReceivablePhoto>(colRow?.receivablePhotos),
+    smsLogs: arr<SmsLog>(colRow?.smsLogs),
+    smsOutbox: arr<SmsOutboxItem>(colRow?.smsOutbox),
+    monthlyArchives: arr<MonthlyArchive>(colRow?.monthlyArchives),
+    workerPayments: arr<WorkerPayment>(colRow?.workerPayments),
+  }
+}
+
+/** Guarda una clave completa de app_settings (solo admin, RLS). */
+async function saveAppSetting(key: string, value: unknown, errorLabel: string): Promise<void> {
+  const client = sb()
+  const { error } = await client
+    .from('app_settings')
+    .upsert({ key, value, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+  if (error) throw new Error(`El servidor rechazó guardar ${errorLabel}. Solo el administrador puede cambiarlo, o falló la conexión.`)
+}
+
+/**
+ * Guarda el almacén manual completo (movimientos + metadatos) en
+ * app_settings 'almacen-extended' — la misma clave de la que se lee.
+ */
+export async function sbSaveWarehouseExtended(entries: WarehouseEntry[], meta: Record<string, WarehouseProductMeta>): Promise<void> {
+  await saveAppSetting('almacen-extended', { entries, meta }, 'el almacén manual')
+}
+
+/** Guarda el Inventario de bienes completo en 'venue-inventory'. */
+export async function sbSaveVenueInventory(items: VenueInventoryItem[]): Promise<void> {
+  await saveAppSetting('venue-inventory', { items }, 'el inventario de bienes')
+}
+
 async function saveCoreSettings(settings: CoreSettings): Promise<void> {
   const client = sb()
   const { error } = await client
@@ -497,6 +645,7 @@ export async function sbFetchStoredData(): Promise<StoredData> {
     ? (learningRow.payload as QueenLearningState)
     : null
   const settings = await fetchCoreSettings().catch(() => ({} as CoreSettings))
+  const extended = await fetchExtendedSettings().catch(() => EMPTY_EXTENDED)
   const workers = buildWorkersRegistry(rawWorkers, days, payrollHistory, settings.anchorDate ?? EMPTY_DATA.anchorDate) as Worker[]
 
   const stamps = [
@@ -521,6 +670,16 @@ export async function sbFetchStoredData(): Promise<StoredData> {
     queenEvolution,
     automationRuns,
     queenLearning,
+    workersExtended: extended.workersExtended,
+    queenEvolutionHistory: extended.queenEvolutionHistory,
+    warehouseEntries: extended.warehouseEntries,
+    warehouseMeta: extended.warehouseMeta,
+    venueInventory: extended.venueInventory,
+    receivablePhotos: extended.receivablePhotos,
+    smsLogs: extended.smsLogs,
+    smsOutbox: extended.smsOutbox,
+    monthlyArchives: extended.monthlyArchives,
+    workerPayments: extended.workerPayments,
     aliases: settings.aliases ?? {},
     learnedKinds: settings.learnedKinds ?? {},
     cuentasOverrides: settings.cuentasOverrides ?? {},
@@ -844,6 +1003,16 @@ export async function sbImportBackup(raw: unknown): Promise<{ days: number; rece
       console.warn('No se pudo guardar el historial de transferencias:', movError.message)
     }
   }
+  // Las cinco colecciones sin tabla propia se persisten ÍNTEGRAS en
+  // app_settings 'backup-collections' (oleada 2): sin esto, en modo
+  // Supabase se perdían igual que antes en el importador local.
+  await saveAppSetting('backup-collections', {
+    receivablePhotos: parsed.receivablePhotos,
+    smsLogs: parsed.smsLogs,
+    smsOutbox: parsed.smsOutbox,
+    monthlyArchives: parsed.monthlyArchives,
+    workerPayments: parsed.workerPayments,
+  }, 'las colecciones del respaldo').catch(() => undefined)
   const settings = await fetchCoreSettings().catch(() => ({} as CoreSettings))
   const knownPersons = new Set<string>()
   for (const r of parsed.receivables) {

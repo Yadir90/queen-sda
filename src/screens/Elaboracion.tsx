@@ -9,6 +9,8 @@ import {
   type DerivedPackage, type PackageSuggestion,
 } from '../lib/productosCore.mjs'
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
+import { MediaImage } from '../components/MediaImage'
+import { productMediaKey } from '../lib/media'
 import { savePackageReference, deletePackageReference, supabaseConfigured } from '../lib/backend'
 import { sbDeletePackageReference, sbSavePackageReference } from '../lib/supabaseBackend'
 import '../components/sectionsMirror.css'
@@ -203,7 +205,11 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
                         return (
                           <div key={prod.productKey} className="elaboration-product-card-wrap">
                             <div className={`elaboration-product-card ${cardState}`} aria-label={`${prod.name}: ${stateLabel}`}>
-                              <span className="elaboration-product-placeholder" aria-hidden="true">{prod.name.slice(0, 1).toUpperCase()}</span>
+                              <MediaImage
+                                kind="foto-producto" entityKey={productMediaKey(prod.dept, prod.name, prod.um)} alt=""
+                                className="elab-photo"
+                                fallback={<span className="elaboration-product-placeholder" aria-hidden="true">{prod.name.slice(0, 1).toUpperCase()}</span>}
+                              />
                               <span className="elaboration-product-copy">
                                 <strong>{prod.name}</strong>
                                 <span>{prod.dept} · {prod.menuFamily}</span>
@@ -433,6 +439,7 @@ function BarraMl({ catalog }: { catalog: ReturnType<typeof buildProductsCatalog>
         <div className="list">
           {cantina.map((p) => (
             <div className="row" key={p.productKey}>
+              <MediaImage kind="foto-producto" entityKey={productMediaKey(p.dept, p.name, p.um)} alt="" className="media-thumb elab-photo" />
               <span><strong>{p.name}</strong><br /><span className="small muted">{p.menuFamily} · existencia {fmtInt(p.currentStock)} {p.um}</span></span>
               <span className="mono">{p.precioVentaVigente != null ? fmtCUP(p.precioVentaVigente) : '—'}</span>
             </div>

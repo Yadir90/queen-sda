@@ -13,6 +13,13 @@
   border-radius: 24px; border: 1px solid var(--border);
   background: var(--surface); padding: 16px; margin-bottom: 16px;
   box-shadow: var(--card-shadow);
+  /* Auditoría visual 2026-10-26: la tarjeta es ítem de la rejilla
+     «El día y su cierre» de Inicio; sin min-width:0 el tamaño mínimo
+     automático (el min-content de la cinta, 540px) la estiraba y la
+     página desbordaba a 590px en un teléfono de 360px. Con 0, la
+     tarjeta se encoge a su contenedor y la cinta se desplaza dentro
+     de su propio carril, como pide su texto («Arrastra la cinta»). */
+  min-width: 0;
 }
 @media (min-width: 640px) { .hm-future-card { padding: 20px; } }
 .hm-future-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text); margin: 0; }
@@ -27,7 +34,7 @@
 .hm-empty { font-size: 14px; color: var(--dim); margin: 0; line-height: 1.55; }
 
 /* ---------- DayTimeline del original ---------- */
-.hm-tl-scroll { overflow-x: auto; padding-bottom: 4px; }
+.hm-tl-scroll { overflow-x: auto; padding-bottom: 4px; min-width: 0; max-width: 100%; }
 .hm-tl-strip { position: relative; min-width: 540px; }
 .hm-tl-line {
   position: relative; height: 4px; border-radius: 999px;
@@ -76,7 +83,7 @@
 .smart-summary {
   position: relative; overflow: hidden; display: block;
   margin-bottom: 18px; padding: 15px 16px 15px 18px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border: 1px solid var(--border);
   border-radius: 18px;
   background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 6%, var(--surface)), var(--surface-tonal));
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .05);

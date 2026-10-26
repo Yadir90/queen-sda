@@ -1,0 +1,88 @@
+/* Queen SDA — ficha completa del trabajador (WorkerFichaCompleta):
+   firma, documentos, credencial 638/1011 y escáner de credenciales.
+   Valores portados del original (lienzo 300×110 en aspecto 30/11,
+   tarjeta de credencial con sus ondas y posiciones porcentuales). */
+
+/* ---------- Firma ---------- */
+.wf-signature { margin-top: 14px; border-radius: 16px; background: var(--surface-tonal); padding: 12px; }
+.wf-signature-title { font-size: 0.9rem; font-weight: 700; margin: 0; }
+.wf-signature-desc { font-size: 0.78rem; color: var(--dim); margin: 2px 0 0; }
+.wf-signature-canvas { margin-top: 8px; display: block; aspect-ratio: 30/11; width: 100%; max-width: 430px; border-radius: 12px; background: #fff; border: 1px solid var(--border); touch-action: none; user-select: none; }
+.wf-signature-actions { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.wf-signature-saved { margin-top: 8px; display: flex; flex-direction: column; gap: 4px; }
+.wf-signature-saved img { max-width: 430px; width: 100%; aspect-ratio: 30/11; object-fit: contain; background: #fff; border: 1px solid var(--border); border-radius: 12px; }
+
+/* ---------- Documentos ---------- */
+.wf-docs { margin-top: 16px; border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
+.wf-docs-title { font-size: 0.9rem; font-weight: 700; margin: 0 0 2px; }
+.wf-docs-grid { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+@media (min-width: 640px) { .wf-docs-grid { grid-template-columns: 1fr 1fr; } }
+.wf-doc { border-radius: 12px; background: var(--surface-tonal); padding: 10px; }
+.wf-doc-label { font-size: 0.78rem; font-weight: 700; margin: 0; }
+.wf-doc-empty { margin-top: 8px; aspect-ratio: 1.55; border-radius: 8px; border: 1px dashed var(--border); display: grid; place-items: center; font-size: 0.78rem; color: var(--dim); background: var(--surface); }
+.wf-doc-pdf { margin-top: 8px; width: 100%; aspect-ratio: 1.55; border-radius: 8px; border: 1px solid var(--border); background: #fff; display: grid; place-items: center; text-align: center; padding: 12px; color: var(--deep); cursor: pointer; font: inherit; }
+.wf-doc-thumb { margin-top: 8px; display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; }
+.wf-doc-thumb img { width: 100%; aspect-ratio: 1.55; object-fit: cover; border-radius: 8px; background: #fff; display: block; }
+.wf-doc-actions { margin-top: 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+.wf-docs-extra { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; padding: 10px; }
+.wf-docs-extra-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.wf-docs-extra-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+.wf-docs-extra-open { background: none; border: 0; text-align: left; cursor: pointer; color: inherit; font: inherit; min-width: 0; }
+.wf-docs-extra-form { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+.wf-docs-extra-form input { flex: 1; min-width: 180px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); padding: 10px 12px; min-height: 44px; font: inherit; }
+.wf-docs-compare { margin-top: 12px; border-radius: 12px; background: var(--surface-tonal); padding: 10px; }
+
+/* ---------- Credencial (638/1011, posiciones del original) ---------- */
+.wf-cred-wrap { margin-top: 14px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface-tonal); padding: 12px; }
+.wf-cred-title { font-size: 0.9rem; font-weight: 700; margin: 0; }
+.wf-cred-holder { margin-top: 10px; display: flex; justify-content: center; }
+@media (min-width: 640px) { .wf-cred-holder { justify-content: flex-start; } }
+.wf-cred { position: relative; aspect-ratio: 638/1011; width: 100%; max-width: 390px; overflow: hidden; border-radius: 28px; background: #fff; box-shadow: 0 14px 36px rgb(0 38 48 / .24); color: #16223a; outline: 1px solid rgb(0 0 0 / .1); }
+.wf-cred-bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wf-cred-logo { position: absolute; left: 20%; right: 20%; top: 2.4%; height: 17%; display: flex; align-items: center; justify-content: center; }
+.wf-cred-logo img { height: 100%; width: 100%; object-fit: contain; filter: drop-shadow(0 1px 2px rgb(0 0 0 / .22)); }
+.wf-cred-brand { position: absolute; left: 14%; right: 14%; top: 22.2%; text-align: center; font-family: var(--font-display, Georgia, serif); font-weight: 800; text-transform: uppercase; letter-spacing: .075em; line-height: 1.12; font-size: clamp(10px, 3.1vw, 18px); color: #12323f; margin: 0; }
+.wf-cred-brand span { font-size: .78em; letter-spacing: .055em; }
+.wf-cred-photo { position: absolute; left: 50%; top: 31.2%; width: 36%; aspect-ratio: 1; transform: translateX(-50%); overflow: hidden; border-radius: 50%; border: 6px solid #45bd54; background: #fff; box-shadow: 0 4px 12px rgb(0 0 0 / .12); display: grid; place-items: center; }
+.wf-cred-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wf-cred-photo-fallback { font-size: 2rem; font-weight: 800; color: var(--dim); }
+.wf-cred-data { position: absolute; left: 15%; right: 15%; top: 57.7%; text-align: center; }
+.wf-cred-name { font-family: var(--font-display, Georgia, serif); font-weight: 900; text-transform: uppercase; font-size: clamp(15px, 4.7vw, 27px); line-height: 1.02; letter-spacing: -.015em; color: #1d2940; margin: 0; overflow-wrap: break-word; }
+.wf-cred-role { margin: 2.5% 0 0; font-size: clamp(10px, 3.1vw, 17px); font-weight: 600; line-height: 1.25; color: #182239; overflow-wrap: break-word; }
+.wf-cred-ci { margin: 2% 0 0; font-size: clamp(9px, 2.8vw, 15px); line-height: 1.25; color: #182239; }
+.wf-cred-qrbox { position: absolute; bottom: 7.4%; left: 9%; width: 24%; border-radius: 4px; background: #fff; padding: 1.1%; box-shadow: 0 1px 3px rgb(0 0 0 / .16); }
+.wf-cred-qr { display: block; width: 100%; height: auto; aspect-ratio: 1; }
+.wf-cred-sign { position: absolute; bottom: 9.2%; right: 8%; height: 12.5%; width: 40%; text-align: center; }
+.wf-cred-sign-line { height: 75%; border-bottom: 1px solid #182239; display: flex; align-items: flex-end; justify-content: center; overflow: hidden; }
+.wf-cred-sign-line img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.wf-cred-sign p { margin: 2% 0 0; font-size: clamp(8px, 2.2vw, 12px); font-weight: 600; line-height: 1; color: #17243b; }
+.wf-cred-missing { margin-top: 10px; font-size: 0.8rem; color: #92400e; border: 1px solid #fde68a; background: #fffbeb; border-radius: 12px; padding: 8px 10px; }
+.wf-cred-actions { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.wf-cred-overlay { position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / .95); padding: max(16px, env(safe-area-inset-top)) 12px 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; overflow-y: auto; }
+.wf-cred-overlay-actions { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; text-align: center; }
+.wf-cred-overlay-actions p { color: rgb(255 255 255 / .8); font-size: 0.78rem; max-width: 420px; margin: 0; }
+
+/* ---------- Escáner ---------- */
+.wf-scanner-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.wf-scanner-video { position: relative; overflow: hidden; border-radius: 16px; background: #000; aspect-ratio: 4/3; max-width: 560px; }
+.wf-scanner-video video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.wf-scanner-frame { position: absolute; inset: 17%; border-radius: 16px; border: 2px solid rgb(255 255 255 / .9); box-shadow: 0 0 0 999px rgb(0 0 0 / .28); pointer-events: none; }
+.wf-scanner-manual { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.wf-scanner-manual label { display: block; font-size: 0.8rem; font-weight: 600; margin-bottom: 6px; }
+.wf-scanner-manual input { flex: 1; min-width: 180px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface); padding: 10px 12px; min-height: 44px; font: inherit; }
+.wf-scanner-found { margin-top: 12px; border-radius: 16px; background: var(--surface-tonal); padding: 12px; display: flex; align-items: flex-start; gap: 12px; }
+.wf-scanner-found-photo { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; border: 1px solid var(--border); }
+.wf-scanner-found-avatar { width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; flex-shrink: 0; }
+
+/* ---------- Media en listados y cuño ---------- */
+.media-thumb { object-fit: cover; border-radius: 12px; background: var(--surface-tonal); flex-shrink: 0; }
+.prod-photo { width: 52px; height: 52px; }
+.elab-photo { width: 44px; height: 44px; border-radius: 10px; }
+.alm-photo { width: 40px; height: 40px; border-radius: 10px; }
+.rh-worker-photo { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; display: inline-grid; place-items: center; color: #fff; font-weight: 700; font-size: .72rem; flex-shrink: 0; }
+.ficha-photo { width: 76px; height: 76px; border-radius: 50%; object-fit: cover; border: 2px solid var(--border); }
+.ficha-avatar { width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 1.3rem; border: 2px solid var(--border); flex-shrink: 0; }
+.cancelled-band { margin-top: 12px; border: 2px solid var(--danger); color: var(--danger); border-radius: 14px; padding: 10px 14px; text-align: center; font-weight: 900; letter-spacing: .14em; font-size: 1.05rem; background: var(--danger-soft); }
+.cancelled-band small { display: block; letter-spacing: normal; font-weight: 600; font-size: 0.8rem; margin-top: 2px; }
+.stamp-preview { max-width: 168px; width: 100%; height: auto; display: block; }
+.ipv-downloads { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

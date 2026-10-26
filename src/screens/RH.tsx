@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react'
-import type { PayrollEmployee, StoredData, Worker } from '../types'
+import type { PayrollEmployee, StoredData, Worker, WorkerExtended } from '../types'
 import { TabHeader, TAB_BADGES } from '../components/ui'
+import { Icon } from '../components/icons'
+import { WorkerPhoto } from '../components/MediaImage'
+import WorkerFichaCompleta, { WorkerQrScanner } from '../components/WorkerFichaCompleta'
+import { extendedByWorker } from '../lib/workersExtended'
 import { effectiveSaldo, fmtCUP, fmtDate, fmtDateShort, fmtInt, todayISO } from '../lib/utils'
 import { saveRhSettings, supabaseConfigured } from '../lib/backend'
 import { sbSaveRhSettings } from '../lib/supabaseBackend'
@@ -11,6 +15,8 @@ import {
 import '../components/sectionsMirror.css'
 
 /* RH · Pagos — puerto del módulo de RH del sistema original:
+   - Al principio, el organigrama del equipo en flujo de trabajo
+     (OrganigramaEquipo, más abajo en este mismo archivo).
    - Ciclos exactos de 15 días desde el ancla configurable (def.
      2026-09-23); el pago cae el día 16. La quincena de RH NO es la
      quincena natural de Contabilidad.
@@ -78,6 +84,308 @@ function RhSquares({
 
 const SQUARES_LEGEND = 'Cuadrados del mes: lleno trabajó · medio tono, medio día · gris descanso · punteado aún sin foto · borde dorado, hoy. (En el original la «A» en ámbar marca ausencias justificadas del registro de trabajadores; ese registro no viaja en el respaldo, así que aquí no se pinta ninguna «A».)'
 
+/* ============ Organigrama del equipo (puerto de OrganigramaEquipo,
+   App.tsx del original ~5617-5750, con sus helpers areaOrganigrama
+   ~5536, esJefeDeCocina, ORDEN_AREAS_ORGANIGRAMA/ordenAreaOrganigrama
+   ~5563 y EstrellaSvg/EstrellasValor ~5590) ============
+   Al PRINCIPIO de RH, en flujo de trabajo: raíz «La Reina · Equipo»,
+   de ahí bajan las áreas ordenadas; camareras/cajeras/cocina se
+   parten en Turno 1 y Turno 2; en Cocina el jefe de cocina va encima
+   de los turnos; cada persona es una cajita y tocarla abre su ficha
+   (el mismo setSelectedKey con el que esta pantalla abre la ficha
+   desde la nómina y desde el registro). Sin cifras de salario.
+   FUENTE DE DATOS en el clon y desviaciones honestas:
+   - El turno válido sigue la precedencia del original (corrección
+     manual → detectado del IPV → puesto a mano). El puesto a mano,
+     su corrección y las estrellas YA viajan en esta copia por
+     app_settings 'workers-extended' (extraído del servidor
+     original); el detectado se calcula con el MISMO algoritmo del
+     servidor del original (detectarTurnoAlterno,
+     server/src/actions.ts: patrón alterno de 14 días anclado en el
+     martes 2026-09-22 sobre la línea continua de marcas del IPV —
+     buildMarksByWorker —, sin inventar días: si las marcas no
+     encajan enteras en un turno, no se detecta).
+   - Ausencias justificadas: la cajita las pinta si la ficha las
+     trae (EstrellasValor no pinta nada con 0, como el original);
+     las ausencias no vienen en el estado extendido, así que no se
+     pinta ninguna — igual que la «A» de los cuadrados.
+   - Foto: llega por la media autenticada (tabla media,
+     'foto-trabajador' por slug del nombre); sin foto se usan las
+     iniciales con su color, como en Cobrar y en Queen. */
+
+function areaOrganigrama(ocupacion: string): string {
+  const raw = (ocupacion ?? '').trim().replace(/\s+/g, ' ')
+  if (!raw) return 'Sin cargo registrado'
+  const n = raw.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  if (/direcci/.test(n)) return 'Dirección'
+  if (/econom|contabil/.test(n)) return 'Economía y contabilidad'
+  if (/camarer/.test(n)) return 'Camareras'
+  if (/cajer/.test(n)) return 'Cajeras'
+  if (/cociner|ayudante de cocina|chef/.test(n)) return 'Cocina'
+  if (/bartender|barman|cantina/.test(n)) return 'Bartender'
+  if (/limpieza|limpiador/.test(n)) return 'Limpieza'
+  if (/seguridad|vigilante|guardi/.test(n)) return 'Seguridad'
+  if (/custodi/.test(n)) return 'Custodios'
+  if (/pizz/.test(n)) return 'Pizzas'
+  if (/apoyo|ayudante|auxiliar/.test(n)) return 'Apoyo'
+  if (/administr|encargad|gerente|jefe/.test(n)) return 'Administración'
+  // Otro cargo escrito tal cual va: se respeta su texto.
+  return raw.charAt(0).toUpperCase() + raw.slice(1)
+}
+
+function esJefeDeCocina(ocupacion: string): boolean {
+  const n = (ocupacion ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return /chef|jefe de cocina|jefa de cocina/.test(n)
+}
+
+const ORDEN_AREAS_ORGANIGRAMA = ['Dirección', 'Administración', 'Economía y contabilidad', 'Camareras', 'Cajeras', 'Cocina', 'Bartender', 'Pizzas', 'Limpieza', 'Seguridad', 'Custodios', 'Apoyo', 'Sin cargo registrado']
+function ordenAreaOrganigrama(a: string): number {
+  const i = ORDEN_AREAS_ORGANIGRAMA.indexOf(a)
+  return i >= 0 ? i : ORDEN_AREAS_ORGANIGRAMA.length - 1
+}
+
+function compararNombresTrabajador(a: string, b: string): number {
+  return a.localeCompare(b, 'es', { sensitivity: 'base', numeric: true }) || a.localeCompare(b, 'es', { numeric: true })
+}
+function ordenarPorNombre<T extends { nombre: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort((x, y) => compararNombresTrabajador(x.nombre, y.nombre))
+}
+
+/* Turnos de camareras, cajeras y cocineras — puerto de esCargoDeTurno,
+   trabajaSegunTurno y detectarTurnoAlterno del servidor del original:
+   el Turno 1 queda definido por el patrón de 14 días anclado en el
+   martes 2026-09-22 (bloque largo martes, miércoles, sábado, domingo
+   y lunes una semana; bloque corto jueves y viernes la siguiente);
+   el Turno 2 hace siempre lo contrario. */
+const TURNO_ANCLA_FECHA = '2026-09-22'
+const PATRON_TURNO_UNO: boolean[] = [true, true, false, false, true, true, true, false, false, true, true, false, false, false]
+function esCargoDeTurno(ocupacion: string): boolean {
+  const n = (ocupacion ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return /(camarer|cajer|cociner)/.test(n)
+}
+function trabajaSegunTurno(iso: string, turno: 1 | 2): boolean {
+  const idx = (((diffDays(TURNO_ANCLA_FECHA, iso) % 14) + 14) % 14)
+  const base = PATRON_TURNO_UNO[idx]!
+  return turno === 1 ? base : !base
+}
+function detectarTurnoAlterno(obs: Array<{ fecha: string; on: boolean }>): 1 | 2 | null {
+  if (obs.length < 7) return null
+  const ons = obs.filter((o) => o.on).length
+  if (ons === 0 || ons === obs.length) return null
+  const encaja1 = obs.every((o) => trabajaSegunTurno(o.fecha, 1) === o.on)
+  const encaja2 = obs.every((o) => trabajaSegunTurno(o.fecha, 2) === o.on)
+  if (encaja1 === encaja2) return null
+  return encaja1 ? 1 : 2
+}
+
+function EstrellaSvg({ llena, size }: { llena: boolean; size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d="M12 3.4l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.7l-5.2 2.7 1-5.8L3.6 9.5l5.8-.8z" fill={llena ? '#F59E0B' : 'none'} stroke={llena ? '#D97706' : 'currentColor'} strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function EstrellasValor({ value, size = 13 }: { value: number; size?: number }) {
+  if (!value) return null
+  return (
+    <span className="org-stars" role="img" aria-label={`Evaluación del desempeño: ${value} de 5 estrellas`}>
+      {[1, 2, 3, 4, 5].map((n) => <EstrellaSvg key={n} llena={n <= value} size={size} />)}
+    </span>
+  )
+}
+
+/* Campos de la ficha que el organigrama del original lee: llegan
+   del estado extendido (app_settings 'workers-extended') — el
+   turno puesto a mano, su corrección y las estrellas son reales
+   del servidor original. Las ausencias justificadas no vienen en
+   el extendido: quedan vacías y no se pinta ninguna, como la «A»
+   de los cuadrados (0 estrellas = no se pinta nada). */
+interface OrgFields {
+  estrellas: number
+  ausencias: Array<{ fecha: string; motivo: string }>
+  turnoAsignado: 1 | 2 | null
+  turnoCorreccion: 1 | 2 | null
+}
+function orgFields(w: Worker, ext: WorkerExtended | null): OrgFields {
+  const r = w as unknown as Record<string, unknown>
+  const turno = (v: unknown): 1 | 2 | null => (v === 1 || v === 2 ? v : null)
+  const ausencias = Array.isArray(r.ausencias)
+    ? r.ausencias.filter((a): a is { fecha: string; motivo: string } => Boolean(a) && typeof a === 'object' && typeof (a as { fecha?: unknown }).fecha === 'string' && typeof (a as { motivo?: unknown }).motivo === 'string')
+    : []
+  return {
+    estrellas: ext ? ext.estrellas : (typeof r.estrellas === 'number' && Number.isFinite(r.estrellas) ? Math.max(0, Math.min(5, Math.round(r.estrellas))) : 0),
+    ausencias,
+    turnoAsignado: ext ? ext.turnoAsignado : turno(r.turnoAsignado),
+    turnoCorreccion: ext ? ext.turnoCorreccion : turno(r.turnoCorreccion),
+  }
+}
+
+const ORG_PERSON_COLORS = ['#0e9f6e', '#0ea5bd', '#3b82f6', '#8b5cf6', '#e9a13b', '#287c5c', '#d64541', '#0b7285']
+function orgPersonColor(key: string): string {
+  let h = 0
+  for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0
+  return ORG_PERSON_COLORS[h % ORG_PERSON_COLORS.length]
+}
+function orgInitials(name: string): string {
+  return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·'
+}
+
+interface OrgPerson {
+  w: Worker
+  fields: OrgFields
+  turnoAplica: boolean
+  turnoValido: 1 | 2 | null
+}
+
+function OrganigramaEquipo({ workers, marks, today, onOpenWorker, extendedMap }: {
+  workers: Worker[]
+  marks: Record<string, Record<string, number>>
+  today: string
+  onOpenWorker: (worker: Worker) => void
+  extendedMap: Map<string, WorkerExtended>
+}) {
+  const personas = useMemo<OrgPerson[]>(() => workers.map((w) => {
+    const fields = orgFields(w, extendedMap.get(w.key) ?? null)
+    const turnoAplica = esCargoDeTurno(w.ocupacion)
+    const ausSet = new Set(fields.ausencias.map((a) => a.fecha))
+    const obs = Object.entries(marks[w.key] ?? {})
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .filter(([f]) => f <= today && !ausSet.has(f))
+      .map(([fecha, v]) => ({ fecha, on: v > 0 }))
+    const turnoDetectado = turnoAplica ? detectarTurnoAlterno(obs) : null
+    const turnoValido: 1 | 2 | null = !turnoAplica ? null : (fields.turnoCorreccion ?? turnoDetectado ?? fields.turnoAsignado)
+    return { w, fields, turnoAplica, turnoValido }
+  }), [workers, marks, today, extendedMap])
+
+  const grupos = useMemo(() => {
+    const map = new Map<string, OrgPerson[]>()
+    for (const p of personas) {
+      const area = areaOrganigrama(p.w.ocupacion)
+      map.set(area, [...(map.get(area) ?? []), p])
+    }
+    return [...map.entries()]
+      .map(([area, lista]) => ({ area, lista: [...lista].sort((a, b) => compararNombresTrabajador(a.w.nombre, b.w.nombre)) }))
+      .sort((a, b) => ordenAreaOrganigrama(a.area) - ordenAreaOrganigrama(b.area) || a.area.localeCompare(b.area, 'es'))
+  }, [personas])
+  if (!workers.length) return null
+
+  const nodoPersona = (p: OrgPerson) => (
+    <>
+      <WorkerPhoto nombre={p.w.nombre} className="org-photo" avatarClassName="org-avatar" colorKey={p.w.key} />
+      <span className="org-name">{p.w.nombre}</span>
+      <EstrellasValor value={p.fields.estrellas} />
+      {p.fields.ausencias.length > 0 && (
+        <span className="org-aus-chip" title={p.fields.ausencias.map((a) => `${fmtDateShort(a.fecha)}: ${a.motivo}`).join(' · ')}>
+          {p.fields.ausencias.length} aus. justif.
+        </span>
+      )}
+    </>
+  )
+  const flujoPersonas = (arr: OrgPerson[], etiqueta: string) => (
+    <ul className="org-flow" aria-label={etiqueta}>
+      {arr.map((p) => (
+        <li key={p.w.key}>
+          <span aria-hidden="true" className="org-flow-branch" />
+          <button type="button" onClick={() => onOpenWorker(p.w)} aria-label={`Abrir ficha de ${p.w.nombre}`} className="org-person">
+            {nodoPersona(p)}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+  const conectorAbajo = (etiqueta: string) => (
+    <div aria-hidden="true" className="org-connector" title={etiqueta}>
+      <span className="org-connector-line" />
+      <span className="org-connector-arrow" />
+    </div>
+  )
+
+  return (
+    <div className="org-root" aria-label="Organigrama del equipo por áreas y turnos, en flujo de trabajo">
+      <div className="org-head">
+        <h3 className="org-title"><Icon name="people" size={20} className="org-title-icon" /> Organigrama del equipo</h3>
+        <span className="org-count-chip">{workers.length} en el equipo</span>
+      </div>
+      <p className="org-intro">Flujo de trabajo: el equipo baja a cada área, el área a sus turnos (camareras, cajeras y cocina) y el turno a cada persona. El turno que se muestra es el válido: tu corrección a mano si la pusiste; si no, el detectado del IPV; si aún no se detecta, el puesto a mano. (En esta copia el turno puesto a mano, su corrección y las estrellas llegan por el estado extendido del servidor — app_settings — y el detectado sale de las marcas del IPV.)</p>
+
+      {/* Nivel 0: raíz del flujo */}
+      <div className="org-rootwrap" aria-label="Raíz del organigrama: La Reina, equipo completo">
+        <div className="org-rootbox">
+          <p className="org-rootbox-title">La Reina · Equipo</p>
+          <p className="org-rootbox-sub">{workers.length} {workers.length === 1 ? 'persona' : 'personas'} · {grupos.length} {grupos.length === 1 ? 'área' : 'áreas'}</p>
+        </div>
+        {conectorAbajo('Del equipo a las áreas')}
+        <span aria-hidden="true" className="org-hbar" />
+      </div>
+
+      {/* Nivel 1: áreas; Nivel 2: turnos; Nivel 3: personas */}
+      <div className="org-grid">
+        {grupos.map(({ area, lista }) => {
+          const jefeCocina = area === 'Cocina' ? lista.find((p) => esJefeDeCocina(p.w.ocupacion)) ?? null : null
+          const resto = jefeCocina ? lista.filter((p) => p.w.key !== jefeCocina.w.key) : lista
+          const conTurno = resto.some((p) => p.turnoAplica)
+          const porNombre = (arr: OrgPerson[]) => [...arr].sort((a, b) => compararNombresTrabajador(a.w.nombre, b.w.nombre))
+          const t1 = conTurno ? porNombre(resto.filter((p) => p.turnoValido === 1)) : []
+          const t2 = conTurno ? porNombre(resto.filter((p) => p.turnoValido === 2)) : []
+          const sinTurno = conTurno ? porNombre(resto.filter((p) => p.turnoValido === null)) : resto
+          const bloqueTurno = (titulo: string, arr: OrgPerson[], vacio: string) => (
+            <div className="org-turno">
+              <p className="org-turno-title">
+                <span>{titulo}</span>
+                <span className="org-turno-count">{arr.length}</span>
+              </p>
+              {conectorAbajo(`De ${titulo} a las personas`)}
+              {arr.length ? flujoPersonas(arr, `${titulo} de ${area}`) : <p className="org-empty">{vacio}</p>}
+            </div>
+          )
+          return (
+            <div key={area} className="org-area">
+              {/* Ramal que une esta área con la raíz */}
+              <span aria-hidden="true" className="org-area-stem" />
+              <span aria-hidden="true" className="org-area-dot" />
+              <div className="org-area-head">
+                <p className="org-area-name">{area}</p>
+                <span className="org-area-count">{lista.length}</span>
+              </div>
+              {conectorAbajo(`De ${area} a ${jefeCocina ? 'su jefe de cocina' : conTurno ? 'sus turnos' : 'las personas'}`)}
+              {jefeCocina && (
+                <>
+                  <div className="org-jefe">
+                    <p className="org-jefe-title">Jefe de cocina</p>
+                    {flujoPersonas([jefeCocina], `Jefe de cocina de ${area}`)}
+                  </div>
+                  {conectorAbajo(`Del jefe de cocina a ${conTurno ? 'los turnos de cocina' : 'las cocineras'}`)}
+                </>
+              )}
+              {conTurno ? (
+                <div className="org-stack">
+                  {bloqueTurno('Turno 1', t1, 'Sin nadie con Turno 1 válido todavía.')}
+                  {bloqueTurno('Turno 2', t2, 'Sin nadie con Turno 2 válido todavía.')}
+                  {sinTurno.length > 0 && (
+                    <div className="org-sinturno">
+                      <p className="org-sinturno-title">
+                        <span>Sin turno válido aún</span>
+                        <span className="org-sinturno-count">{sinTurno.length}</span>
+                      </p>
+                      {conectorAbajo('De sin turno válido a las personas')}
+                      {flujoPersonas(sinTurno, `Sin turno válido aún en ${area}`)}
+                      <p className="org-sinturno-note">Pon su turno en la ficha o espera a que el IPV lo detecte de sus días.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                flujoPersonas(resto, `Personas de ${area}`)
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <p className="org-final">Cómo se lee: <strong>La Reina · Equipo</strong> arriba → cada <strong>área</strong> → sus <strong>turnos</strong> donde aplica → cada <strong>persona</strong>. En <strong>Cocina</strong> manda el jefe de cocina (el chef): su cajita va encima de los turnos y de él bajan las cocineras. Si un cargo está mal, corrígelo en su ficha del sistema original (ahí manda sobre el IPV, queda guardado y el organigrama se actualiza solo al importar el respaldo actualizado); los datos del IPV no se reescriben.</p>
+    </div>
+  )
+}
+
 function monthDates(yearMonth: string): { dates: string[]; lead: number } {
   const [y, m] = yearMonth.split('-').map(Number)
   const count = new Date(y, m, 0).getDate()
@@ -108,6 +416,9 @@ export default function RHScreen({
   const [busy, setBusy] = useState(false)
 
   const marks = useMemo(() => buildMarksByWorker(data.days) as Record<string, Record<string, number>>, [data.days])
+  /* Estado extendido del servidor (turnos a mano, estrellas, días
+     fijos, contratos cancelados) emparejado por ficha. */
+  const extMap = useMemo(() => extendedByWorker(data.workersExtended, data.workers), [data.workersExtended, data.workers])
   const recorded = recordedPayroll(data.payrollHistory, win.start)
   const adjustment = data.payrollAdjustments[win.start] ?? null
   const derived = useMemo(
@@ -200,6 +511,31 @@ export default function RHScreen({
   return (
     <div>
       <TabHeader icon="people" title="RH · Pagos" desc="Trabajadores, ciclos de 15 días y nómina" badge={TAB_BADGES.rh} />
+
+      {/* Organigrama del equipo: AL PRINCIPIO de RH, como en el
+          original; tocar una cajita abre la ficha de esa persona
+          (la misma ficha de abajo, a la que se desplaza la vista). */}
+      <OrganigramaEquipo
+        workers={data.workers}
+        marks={marks}
+        today={today}
+        extendedMap={extMap}
+        onOpenWorker={(w) => {
+          setSelectedKey(w.key)
+          requestAnimationFrame(() => document.getElementById('rh-ficha-trabajador')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+        }}
+      />
+
+      {/* Escáner de credenciales del original: lee el QR con la
+          cámara (o el código a mano) y abre la ficha. */}
+      <WorkerQrScanner
+        workers={data.workers}
+        extendedList={data.workersExtended}
+        onOpenWorker={(w) => {
+          setSelectedKey(w.key)
+          requestAnimationFrame(() => document.getElementById('rh-ficha-trabajador')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+        }}
+      />
 
       {/* Cabecera de ciclo del original (RHTab): tarjeta verde profundo
           con Inicio / Fin (día 15) / Pago (día 16, en dorado) y el estado. */}
@@ -443,6 +779,23 @@ export default function RHScreen({
         )}
       </section>
 
+      {/* Pagos a trabajadores fuera de nómina (workerPayments del respaldo) */}
+      <section className="card">
+        <h3 className="font-display">Pagos fuera de nómina (del respaldo)</h3>
+        {data.workerPayments.length === 0 ? (
+          <p className="small muted">El respaldo cargado no trae pagos a trabajadores fuera de la nómina (workerPayments). La colección viaja íntegra de ida y vuelta desde la oleada 2; si el sistema principal registra uno, aparecerá aquí tal como venga.</p>
+        ) : (
+          <div className="list">
+            {data.workerPayments.map((p, i) => (
+              <div className="row" key={`${p.workerKey}-${p.fecha}-${i}`}>
+                <span><strong>{p.workerKey}</strong><span className="small muted"> · {fmtDate(p.fecha)}{p.concepto ? ` · ${p.concepto}` : ''}</span></span>
+                <span className="mono">{fmtCUP(p.monto)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
       {/* Registro de trabajadores */}
       <section className="card">
         <h3 className="font-display">Trabajadores ({fmtInt(data.workers.length)})</h3>
@@ -452,10 +805,17 @@ export default function RHScreen({
             const worked = Object.entries(marks[w.key] ?? {})
               .filter(([f]) => f >= win.start && f <= win.end)
               .reduce((s, [, v]) => s + v, 0)
+            const ext = extMap.get(w.key)
             return (
               <button key={w.key} type="button" className={`rh-worker ${selectedKey === w.key ? 'active' : ''}`} onClick={() => setSelectedKey(w.key)}>
-                <span className="rh-worker-name">{w.nombre}</span>
-                <span className="small muted">{w.roleKind === 'direccion' ? 'Dirección' : w.ocupacion || 'Sin ocupación'} · {fmtDias(worked)} días en el ciclo</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <WorkerPhoto nombre={w.nombre} className="rh-worker-photo" avatarClassName="rh-worker-photo" colorKey={w.key} />
+                  <span>
+                    <span className="rh-worker-name">{w.nombre}</span>
+                    {ext && ext.estrellas > 0 ? <EstrellasValor value={ext.estrellas} size={11} /> : null}
+                    <span className="small muted" style={{ display: 'block' }}>{w.roleKind === 'direccion' ? 'Dirección' : w.ocupacion || 'Sin ocupación'} · {fmtDias(worked)} días en el ciclo{ext?.contratoCanceladoEl ? ' · Contrato cancelado' : ''}</span>
+                  </span>
+                </span>
               </button>
             )
           })}
@@ -464,17 +824,66 @@ export default function RHScreen({
 
       {/* Ficha del trabajador */}
       {selectedWorker ? (
-        <section className="card">
-          <h3 className="font-display">{selectedWorker.nombre}</h3>
+        <section className="card" id="rh-ficha-trabajador">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+            <WorkerPhoto nombre={selectedWorker.nombre} className="ficha-photo" avatarClassName="ficha-avatar" colorKey={selectedWorker.key} />
+            <div>
+              <h3 className="font-display" style={{ margin: 0 }}>{selectedWorker.nombre}</h3>
+              {(() => { const ext = extMap.get(selectedWorker.key); return ext && ext.estrellas > 0 ? <EstrellasValor value={ext.estrellas} size={16} /> : null })()}
+            </div>
+          </div>
           {selectedWorker.roleKind === 'direccion' ? (
             <p className="small muted">Dirección: ficha informativa. No entra en nómina ni en pagos.</p>
           ) : null}
+          {(() => {
+            const ext = extMap.get(selectedWorker.key)
+            return ext?.contratoCanceladoEl ? (
+              <div className="cancelled-band" role="status">
+                CANCELADO
+                <small>Contrato cancelado el {fmtDate(ext.contratoCanceladoEl)}{ext.contratoCanceladoCiclo ? ` · ciclo de la cancelación: ${fmtDate(ext.contratoCanceladoCiclo)}` : ''}</small>
+              </div>
+            ) : null
+          })()}
           <table className="kv">
             <tbody>
               <tr><td>Ocupación</td><td>{selectedWorker.ocupacion || '—'}</td></tr>
               <tr><td>Carnet</td><td>{selectedWorker.carnet || '—'}</td></tr>
               <tr><td>Cuenta bancaria</td><td>{selectedWorker.cuentaBancaria || '—'}</td></tr>
               <tr><td>Móvil</td><td>{selectedWorker.movil || '—'}</td></tr>
+              {(() => {
+                const ext = extMap.get(selectedWorker.key)
+                if (!ext) return null
+                const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+                const DIAS_PL = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados']
+                const fijos = ext.workWeekdays.length ? ext.workWeekdays : ext.workWeekday != null ? [ext.workWeekday] : []
+                // Turno válido con la precedencia del original:
+                // corrección → detectado del IPV → puesto a mano.
+                const aplica = esCargoDeTurno(selectedWorker.ocupacion)
+                const ausSet = new Set<string>()
+                const obs = Object.entries(marks[selectedWorker.key] ?? {})
+                  .sort((a, b) => a[0].localeCompare(b[0]))
+                  .filter(([f]) => f <= today && !ausSet.has(f))
+                  .map(([fecha, v]) => ({ fecha, on: v > 0 }))
+                const detectado = aplica ? detectarTurnoAlterno(obs) : null
+                const valido = ext.turnoCorreccion ?? detectado ?? ext.turnoAsignado
+                const fuente = ext.turnoCorreccion ? 'corrección manual' : detectado ? 'detectado del IPV' : ext.turnoAsignado ? 'puesto a mano' : null
+                return (
+                  <>
+                    {ext.estrellas > 0 ? <tr><td>Evaluación</td><td>{ext.estrellas} de 5 estrellas</td></tr> : null}
+                    {ext.genero ? <tr><td>Género</td><td>{ext.genero}</td></tr> : null}
+                    {ext.escolaridad ? <tr><td>Escolaridad</td><td>{ext.escolaridad}</td></tr> : null}
+                    {aplica ? (
+                      <tr>
+                        <td>Turno válido</td>
+                        <td>{valido ? <>Turno {valido} <span className="small muted">({fuente})</span></> : 'Sin turno válido aún'}</td>
+                      </tr>
+                    ) : null}
+                    {ext.turnoAsignado ? <tr><td>Turno puesto a mano</td><td>Turno {ext.turnoAsignado}</td></tr> : null}
+                    {fijos.length ? <tr><td>Días fijos de trabajo</td><td>{fijos.map((d) => DIAS_PL[d] ?? String(d)).join(', ')}</td></tr> : null}
+                    {ext.restWeekday != null ? <tr><td>Día de descanso semanal</td><td>Descansa los {DIAS_PL[ext.restWeekday] ?? ''} ({DIAS[ext.restWeekday] ?? ''})</td></tr> : null}
+                  </>
+                )
+              })()}
               {selectedWorker.notas ? <tr><td>Notas</td><td>{selectedWorker.notas}</td></tr> : null}
               <tr>
                 <td>Cuentas del ciclo</td>
@@ -523,6 +932,14 @@ export default function RHScreen({
               </p>
             </>
           ) : null}
+
+          {/* Ficha completa del original: documentos, firma y
+              credencial digital de esta persona. */}
+          <WorkerFichaCompleta
+            worker={selectedWorker}
+            extended={extMap.get(selectedWorker.key) ?? null}
+            isAdmin={isAdmin}
+          />
         </section>
       ) : null}
     </div>

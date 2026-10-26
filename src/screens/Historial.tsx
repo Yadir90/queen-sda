@@ -6,8 +6,9 @@ import {
 import { daysInMonthOf } from '../lib/economiaCore.mjs'
 import { downloadText } from '../lib/download'
 import type { Bulletin, StoredData } from '../types'
-import { fmtCUP, fmtDate } from '../lib/utils'
+import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
+import IpvDownloads from '../components/IpvDownloads'
 import '../components/sectionsMirror.css'
 
 /**
@@ -113,6 +114,28 @@ export default function Historial({ data, bulletins, today, isAdmin, onBulletins
         </div>
       </Card>
 
+      {data.monthlyArchives.length > 0 ? (
+        <Card>
+          <p className="eyebrow">Archivo mensual (del respaldo)</p>
+          <h2>Meses del archivo</h2>
+          <p className="small muted">
+            Los resúmenes mensuales que trae el respaldo (monthlyArchives, oleada 2: antes se descartaban al
+            importar y salían vacíos al reexportar). Se muestran tal como viajan, sin recalcularlos.
+          </p>
+          <div className="list">
+            {data.monthlyArchives.map((a) => (
+              <div className="row" key={a.monthKey}>
+                <span>
+                  <strong>{a.label || a.monthKey}</strong>
+                  <span className="small muted"> · {a.status}{a.isCurrent ? ' · mes en curso' : ''} · {fmtInt(a.daysCount)} días con IPV · ventas {fmtCUP(a.ventas)}</span>
+                </span>
+                <span className="mono">Resultado {fmtCUP(a.resultado)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <p className="eyebrow">Rejilla del mes</p>
         <h2>Boletines por día</h2>
@@ -209,6 +232,8 @@ export default function Historial({ data, bulletins, today, isAdmin, onBulletins
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
               <button className="btn" onClick={() => downloadText(b.html, `boletin-${b.date}.html`, 'text/html;charset=utf-8')}>Descargar correo (.html)</button>
               <button className="btn" onClick={() => downloadText(b.text, `boletin-${b.date}.txt`)}>Descargar texto (.txt)</button>
+              {/* IPV original/actualizado de ese día desde la media, cuando existe. */}
+              <IpvDownloads date={b.date} />
               {isAdmin ? <button className="btn" onClick={() => doRegenerate(b)}>Regenerar</button> : null}
               {isAdmin && b.status !== 'enviado' ? (
                 <button className="btn primary" onClick={() => void doSendAttempt(b)}>Enviar por correo</button>

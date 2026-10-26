@@ -718,3 +718,8 @@ html[data-queen-motion="paused"] .queen-typing-dots span,html[data-queen-motion=
       sección .queen-chat NO tiene alto máximo ni scroll propio — el
       hilo sigue el desplazamiento natural de la página. */
 section.queen-chat { max-height: none; gap: 0; padding: 0 0 136px; }
+
+/* ===== Oleada 3d: paridad claro/oscuro ===== */
+@media (prefers-color-scheme: dark) {
+  .queen-panel-count-warn { color: #fbbf24; background: #3a3117; }
+}

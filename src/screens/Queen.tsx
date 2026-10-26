@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent
 import type { StoredData } from '../types'
 import { Icon } from '../components/icons'
 import { QueenOrb, QueenReactorMark, QUEEN_REACTOR_STAGES } from '../components/QueenReactor'
+import { MediaImage } from '../components/MediaImage'
 import { fmtInt, todayISO } from '../lib/utils'
 import {
   answerQueen, applyQueenLearnedCorrections, buildQueenAnticipations, buildQueenErrorBank,
@@ -87,8 +88,12 @@ const QueenThread = memo(function QueenThread(props: {
                   <Icon name="message" size={14} /> Responder
                 </button>
               </div>
-              {/* Sin foto real en los datos del clon: avatar por iniciales («T» de Tú), con las medidas del original. No se inventa foto. */}
-              <span className="queen-user-initials" aria-label="Tu avatar">T</span>
+              {/* Foto de perfil del usuario desde la media autenticada ('foto-perfil' · perfil-admin); sin foto, la inicial «T», con las medidas del original. No se inventa foto. */}
+              <MediaImage
+                kind="foto-perfil" entityKey="perfil-admin" alt="Tu foto de perfil"
+                className="queen-user-initials" style={{ objectFit: 'cover', padding: 0 }}
+                fallback={<span className="queen-user-initials" aria-label="Tu avatar">T</span>}
+              />
             </div>
           ) : (
             <div key={messageKey} className="queen-message-row queen-message-row-queen">
@@ -545,16 +550,60 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage }: {
             </div>
             <span className="queen-sms-count">{smsDue.length} listos</span>
           </div>
-          <p className="queen-sms-notice" role="status">Estado real: sin transporte en esta copia. El original encola el SMS y lo despacha desde el Galaxy A16 con aprobación de Android; esa función en la nube no está desplegada aquí. Abajo están las cuentas que el original usaría — solo morosas, nunca una cuenta pagada — con su saldo verificado.</p>
+          <p className="queen-sms-notice" role="status">Estado real: sin transporte en esta copia para enviar SMS NUEVOS. El original encola el SMS y lo despacha desde el Galaxy A16 con aprobación de Android; esa función en la nube no está desplegada aquí. El historial de abajo SÍ es real: es el buzón (smsOutbox) y el registro de envíos (smsLogs) que trae el respaldo (oleada 2: antes se descartaban al importar). Abajo están también las cuentas que el original usaría — solo morosas, nunca una cuenta pagada — con su saldo verificado.</p>
           {smsNotice && <p className="queen-sms-notice" role="status">{smsNotice}</p>}
           <div className="queen-sms-outbox" aria-label="Historial de SMS de cobro">
             <strong>Historial de SMS</strong>
-            <div className="queen-sms-history-tabs" role="tablist" aria-label="Categorías del historial de SMS">
-              {([['enviados', 'Enviados'], ['pendientes', 'Pendientes'], ['cancelados', 'Cancelados'], ['reenvios', 'Reenvíos']] as const).map(([key, label]) => (
-                <button key={key} type="button" role="tab" aria-selected={smsTab === key} className={smsTab === key ? 'is-active' : ''} onClick={() => setSmsTab(key)}>{label}<span>0</span></button>
-              ))}
-            </div>
-            <p className="queen-sms-empty">No hay SMS en esta categoría.</p>
+            {(() => {
+              const outbox = data.smsOutbox
+              const isResend = (o: typeof outbox[number]) => o.requestKind === 'reenvio' || o.resendOfId != null
+              const cats: Record<typeof smsTab, typeof outbox> = {
+                reenvios: outbox.filter(isResend),
+                enviados: outbox.filter((o) => !isResend(o) && o.status === 'enviado'),
+                pendientes: outbox.filter((o) => !isResend(o) && (o.status === 'pendiente' || o.status === 'enviando' || o.status === 'fallido')),
+                cancelados: outbox.filter((o) => !isResend(o) && o.status === 'cancelado'),
+              }
+              const list = cats[smsTab]
+              return (
+                <>
+                  <div className="queen-sms-history-tabs" role="tablist" aria-label="Categorías del historial de SMS">
+                    {([['enviados', 'Enviados'], ['pendientes', 'Pendientes'], ['cancelados', 'Cancelados'], ['reenvios', 'Reenvíos']] as const).map(([key, label]) => (
+                      <button key={key} type="button" role="tab" aria-selected={smsTab === key} className={smsTab === key ? 'is-active' : ''} onClick={() => setSmsTab(key)}>{label}<span>{cats[key].length}</span></button>
+                    ))}
+                  </div>
+                  {list.length === 0 && !(smsTab === 'enviados' && data.smsLogs.length > 0) ? (
+                    <p className="queen-sms-empty">No hay SMS en esta categoría.</p>
+                  ) : (
+                    <ul className="queen-sms-list">
+                      {list.map((o) => (
+                        <li key={`outbox-${o.id}`}>
+                          <span className="queen-sms-initials" aria-hidden="true">{String(o.clientName ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·'}</span>
+                          <div className="queenm-minw0">
+                            <strong>{o.clientName}</strong>
+                            <span>{o.status} · {o.requestKind} · {String(o.sentAt ?? o.createdAt ?? '').slice(0, 10)}</span>
+                            <small>{o.message}</small>
+                            {o.lastError ? <small>{String(o.lastError)}</small> : null}
+                          </div>
+                        </li>
+                      ))}
+                      {smsTab === 'enviados' ? data.smsLogs.map((log, i) => (
+                        <li key={`log-${i}-${log.sentAt}`}>
+                          <span className="queen-sms-initials" aria-hidden="true">{String(log.client ?? '').split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·'}</span>
+                          <div className="queenm-minw0">
+                            <strong>{log.client}</strong>
+                            <span>enviado · registro del respaldo · {String(log.sentAt ?? '').slice(0, 10)}</span>
+                            <small>{log.message}</small>
+                          </div>
+                        </li>
+                      )) : null}
+                    </ul>
+                  )}
+                  <p className="queen-sms-empty" style={{ marginTop: 8 }}>
+                    Buzón del respaldo: {outbox.length} solicitudes · Registro de envíos: {data.smsLogs.length} SMS.
+                  </p>
+                </>
+              )
+            })()}
           </div>
           {smsDue.length > 0 ? (
             <ul className="queen-sms-list">

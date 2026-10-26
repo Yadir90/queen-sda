@@ -25,16 +25,14 @@ const outPath = process.argv[3]
   ? resolve(process.argv[3])
   : resolve(here, '../supabase/import-backup-2026-10-24.sql')
 
-const EXPECTED = {
-  count: 23,
-  from: '2026-10-01',
-  to: '2026-10-23',
-  ventas: 2662090,
-  gananciaBruta: 667141,
-  gananciaNeta: 645576,
-  cuadreTotal: 0,
-  receivables: 115,
+// Totales de control por respaldo (verificados contra fuente
+// independiente: ver scripts/verify-import.mjs).
+const EXPECTED_BY_FILE = {
+  'backup-sda-2026-10-24.json': { count: 23, from: '2026-10-01', to: '2026-10-23', ventas: 2662090, gananciaBruta: 667141, gananciaNeta: 645576, cuadreTotal: 0, receivables: 115, cardMovements: 20, cardBalance: 32625, bankPassed: 107625 },
+  'backup-sda-2026-10-26.json': { count: 24, from: '2026-10-01', to: '2026-10-24', ventas: 2786190, gananciaBruta: 718191, gananciaNeta: 696096, cuadreTotal: 0, receivables: 119, cardMovements: 21, cardBalance: 33725, bankPassed: 107625 },
 }
+const EXPECTED = EXPECTED_BY_FILE[backupPath.split('/').pop()]
+if (!EXPECTED) { console.error(`Sin totales de control registrados para ${backupPath}: no se genera a ciegas.`); process.exit(1) }
 
 const raw = JSON.parse(readFileSync(backupPath, 'utf8'))
 const parsed = parseBackup(raw)
@@ -49,13 +47,13 @@ const checks = [
   ['ganancia neta', s.gananciaNeta, EXPECTED.gananciaNeta],
   ['cuadre total', s.cuadreTotal, EXPECTED.cuadreTotal],
   ['n.º de cuentas', parsed.receivables.length, EXPECTED.receivables],
-  ['n.º de movimientos de la tarjeta', parsed.transferMovements.length, 20],
+  ['n.º de movimientos de la tarjeta', parsed.transferMovements.length, EXPECTED.cardMovements],
   [
     'saldo derivado de la tarjeta',
     parsed.transferMovements.filter((m) => !m.excluded && !m.superseded).reduce((s, m) => s + m.amount, 0),
-    32625,
+    EXPECTED.cardBalance,
   ],
-  ['pasado al banco derivado', parsed.transferMovements.filter((m) => !m.excluded && !m.superseded && m.source === 'pase' && m.paseKind === 'banco').reduce((s, m) => s + Math.abs(m.amount), 0), 107625],
+  ['pasado al banco derivado', parsed.transferMovements.filter((m) => !m.excluded && !m.superseded && m.source === 'pase' && m.paseKind === 'banco').reduce((s, m) => s + Math.abs(m.amount), 0), EXPECTED.bankPassed],
 ]
 let failed = 0
 for (const [label, got, want] of checks) {
@@ -192,7 +190,7 @@ lines.push('       sum(ventas_dia) as ventas, sum(ganancia_bruta) as bruta,')
 lines.push('       sum(ganancia_neta) as neta, sum(cuadre) as cuadre')
 lines.push('from public.days;')
 lines.push('select count(*) as cuentas from public.receivables;')
-lines.push("-- Control tarjeta: 20 movimientos · saldo derivado 32625 · pasado al banco 107625")
+lines.push(`-- Control tarjeta: ${EXPECTED.cardMovements} movimientos · saldo derivado ${EXPECTED.cardBalance} · pasado al banco ${EXPECTED.bankPassed}`)
 lines.push("select count(*) as movimientos,")
 lines.push("       sum(case when not excluded and not superseded then amount else 0 end) as saldo")
 lines.push('from public.transfer_movements;')

@@ -8,6 +8,8 @@ import {
   type CatalogProduct,
 } from '../lib/productosCore.mjs'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
+import { MediaImage } from '../components/MediaImage'
+import { productMediaKey } from '../lib/media'
 import '../components/sectionsMirror.css'
 
 /* Productos del externo: el catálogo maestro calculado desde los días
@@ -15,10 +17,14 @@ import '../components/sectionsMirror.css'
    costo promedio ponderado de las entradas, precio vigente del último
    IPV, margen y contraste de importes. Queen SEÑALA los cambios de
    precio detectados entre IPV consecutivos; nunca aplica un cambio
-   sola. Diferencia honesta: los cambios de precio/costo registrados a
-   mano, las excepciones de precio y los ajustes de existencia viven
-   en la base del original y no viajan en el respaldo; aquí la historia
-   sale solo de los IPV y los gastos. */
+   sola. La FOTO de cada producto llega por la media autenticada
+   (tabla media, 'foto-producto' por slug(dept+nombre+um), la clave
+   de productKeyOf): sin fila en media, la tarjeta va sin foto, como
+   ausencia, nunca con una imagen inventada. Diferencia honesta: los
+   cambios de precio/costo registrados a mano, las excepciones de
+   precio y los ajustes de existencia viven en la base del original
+   y no viajan en el respaldo; aquí la historia sale solo de los IPV
+   y los gastos. */
 
 type Vista = 'activos' | 'historial' | 'cambios'
 
@@ -229,6 +235,7 @@ export default function Productos({ data }: { data: StoredData }) {
             return (
               <Card key={p.productKey} className="prod-card"><span id={`prod-${p.productKey}`} style={{ display: 'block', height: 0, overflow: 'hidden' }} aria-hidden="true" />
                 <button type="button" className="prod-head" onClick={() => setOpenKey(open ? null : p.productKey)} aria-expanded={open}>
+                  <MediaImage kind="foto-producto" entityKey={productMediaKey(p.dept, p.name, p.um)} alt="" className="media-thumb prod-photo" />
                   <span className="prod-title">
                     <strong>{p.name}</strong>
                     <span className="small muted">{p.dept} · {p.menuFamily}{p.um ? ` · ${p.um}` : ''}</span>
@@ -243,6 +250,10 @@ export default function Productos({ data }: { data: StoredData }) {
                 {p.precioCambioHoy ? <p className="small" style={{ margin: '6px 0 0' }}><Icon name="alert" size={14} /> {p.precioCambioHoy} CUP — cambio detectado en el último IPV.</p> : null}
                 {open ? (
                   <div className="prod-detail">
+                    <MediaImage
+                      kind="foto-producto" entityKey={productMediaKey(p.dept, p.name, p.um)} alt={`Foto de ${p.name}`}
+                      style={{ width: '100%', maxHeight: 240, objectFit: 'cover', borderRadius: 14, marginBottom: 10, background: 'var(--surface-tonal)' }}
+                    />
                     <table className="kv">
                       <tbody>
                         <tr><td>Precio de venta vigente</td><td>{p.precioVentaVigente != null ? fmtCUP(p.precioVentaVigente) : '—'}</td></tr>

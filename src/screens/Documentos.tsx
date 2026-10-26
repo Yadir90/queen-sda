@@ -8,6 +8,8 @@ import { downloadBlob, downloadText, printHtml } from '../lib/download'
 import type { StoredData } from '../types'
 import { fmtCUP, fmtDate } from '../lib/utils'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
+import { MediaImage } from '../components/MediaImage'
+import { useMediaUrl } from '../lib/media'
 
 /**
  * Documentos del sistema: nómina, informe de Economía, menú de
@@ -20,11 +22,17 @@ import { Card, TabHeader, TAB_BADGES } from '../components/ui'
  *  - El original genera el PDF en el servidor y lo entrega por
  *    «Archivo listo»; aquí el documento se descarga en el
  *    momento (vista imprimible que el navegador guarda como PDF).
- *  - Los trazos de firma y la foto del cuño NO viajan en el
- *    respaldo: el bloque lleva nombres y roles reales con las
- *    marcas «Firma autorizada pendiente» / «Cuño no disponible
- *    en este dispositivo.», los mismos textos del original
- *    cuando el trazo no está en el dispositivo.
+ *  - El CUÑO APROBADO es un activo fijo del cliente y SÍ viaja
+ *    por la media autenticada (tabla media · activo-sistema ·
+ *    cuno-la-reina-aprobado): cuando está cargado, openDoc lo
+ *    incrusta en el bloque de certificación sustituyendo el texto
+ *    «Cuño no disponible en este dispositivo.» — el mismo cuño
+ *    que el original usa para certificar. En modo local (sin
+ *    Supabase) o sin la fila en media, el bloque queda con ese
+ *    texto del original. Los trazos de firma personales siguen
+ *    marcados «Firma autorizada pendiente»: la firma de cada
+ *    persona se guarda en su ficha de RH (media · firma-trabajador)
+ *    y el bloque de documentos no la sustituye por su cuenta.
  *  - El menú queda EXCLUIDO de firma y cuño (regla del dueño)
  *    y la regla de cocina deja fuera camarón, langosta, res y
  *    tortuga: los productos señalados se reportan, no se sirven.
@@ -51,8 +59,19 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
   const menu = useMemo(() => buildMenuData(data, today), [data, today])
   const [msg, setMsg] = useState<string | null>(null)
 
+  // Cuño APROBADO real desde la media autenticada (activo fijo).
+  const stampUrl = useMediaUrl('activo-sistema', 'cuno-la-reina-aprobado')
+
   const openDoc = (html: string, label: string) => {
-    setMsg(printHtml(html) ? `${label}: se abrió la vista del documento — desde ahí se imprime o se guarda como PDF.` : 'El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+    // Con el cuño cargado, el bloque de certificación lleva la
+    // imagen real en vez del texto de ausencia del núcleo.
+    const finalHtml = stampUrl
+      ? html.replace(
+          '<div class="sig-pending">Cuño no disponible en este dispositivo.</div>',
+          `<img src="${stampUrl}" alt="Cuño APROBADO de La Reina" style="width:150px;height:150px;object-fit:contain;display:block;margin:4px auto">`,
+        )
+      : html
+    setMsg(printHtml(finalHtml) ? `${label}: se abrió la vista del documento — desde ahí se imprime o se guarda como PDF.` : 'El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
   }
 
   return (
@@ -64,6 +83,27 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
         badge={TAB_BADGES.documentos}
       />
       {msg ? <div className="ok-box" style={{ marginBottom: 14 }}>{msg}</div> : null}
+
+      <Card>
+        <p className="eyebrow">Certificación</p>
+        <h2>Firmas y cuño</h2>
+        <p className="sub">
+          El cuño APROBADO es el activo real del sistema original y llega por la media autenticada:
+          se incrusta en el bloque de certificación de la nómina y el informe. Las firmas personales
+          se firman en la ficha de cada persona en RH; sin firma registrada, el documento lo declara.
+        </p>
+        <div style={{ display: 'flex', gap: 18, alignItems: 'center', flexWrap: 'wrap' }}>
+          <MediaImage
+            kind="activo-sistema" entityKey="cuno-la-reina-aprobado" alt="Cuño APROBADO de La Reina"
+            className="stamp-preview"
+            fallback={<p className="small muted">Cuño no disponible en este dispositivo: en esta copia (modo local) la media no está cargada.</p>}
+          />
+          <MediaImage
+            kind="activo-sistema" entityKey="la-reina-logo" alt="Logotipo de La Reina"
+            style={{ width: 120, height: 120, objectFit: 'contain' }}
+          />
+        </div>
+      </Card>
 
       <Card>
         <p className="eyebrow">Economía · Cierre del mes</p>

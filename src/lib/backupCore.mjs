@@ -361,7 +361,26 @@ export function parseBackup(raw) {
     .sort((a, b) => b.cycleStart.localeCompare(a.cycleStart))
   const { learnedKinds, cuentasOverrides } = deriveLearning(data)
   const transferMovements = normalizeTransferMovements(data)
+  // Cinco colecciones que el respaldo SÍ trae y que este importador
+  // DESCARTABA (fuga cerrada en la oleada 2): se conservan ÍNTEGRAS,
+  // tal como vienen — sin normalizar, sin recalcular, sin filtrar —
+  // para que la reexportación (documentosCore.buildBackupExport) las
+  // devuelva byte a byte en contenido y las pantallas que las usan
+  // (Cobrar: smsLogs y receivablePhotos · Queen/SMS: smsOutbox y
+  // smsLogs · Historial: monthlyArchives · RH: workerPayments) las
+  // lean de aquí. Si el archivo no las trae, quedan como [] (ausencia
+  // honesta, no invención).
+  const receivablePhotos = Array.isArray(data.receivablePhotos) ? data.receivablePhotos : []
+  const smsLogs = Array.isArray(data.smsLogs) ? data.smsLogs : []
+  const smsOutbox = Array.isArray(data.smsOutbox) ? data.smsOutbox : []
+  const monthlyArchives = Array.isArray(data.monthlyArchives) ? data.monthlyArchives : []
+  const workerPayments = Array.isArray(data.workerPayments) ? data.workerPayments : []
   return {
+    receivablePhotos,
+    smsLogs,
+    smsOutbox,
+    monthlyArchives,
+    workerPayments,
     meta: {
       backupOf: String(raw.backupOf ?? ''),
       exportedAt: String(raw.exportedAt ?? ''),

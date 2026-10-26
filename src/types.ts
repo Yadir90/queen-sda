@@ -251,6 +251,45 @@ export interface Expense {
   note: string
 }
 
+/**
+ * Estado extendido de un trabajador (app_settings 'workers-extended',
+ * extraído del servidor original): turno puesto a mano y su corrección,
+ * estrellas de evaluación, días fijos/descanso y contrato cancelado.
+ * NO viaja en el respaldo: llega por su propia clave de app_settings.
+ */
+export interface WorkerExtended {
+  /** Id numérico del trabajador en el servidor original (el de su credencial). */
+  id: number
+  workerKey: string
+  nombre: string
+  ocupacion: string
+  restWeekday: number | null
+  workWeekday: number | null
+  workWeekdays: number[]
+  turnoAsignado: 1 | 2 | null
+  turnoCorreccion: 1 | 2 | null
+  estrellas: number
+  genero: string
+  escolaridad: string
+  contratoCanceladoEl: string | null
+  contratoCanceladoCiclo: string | null
+}
+
+/**
+ * Una medición del historial de evolución de Queen del servidor
+ * original (app_settings 'queen-evolution-history'). Manda sobre el
+ * snapshot local cuando existe: son mediciones reales del servidor.
+ */
+export interface QueenEvolutionHistoryEntry {
+  stageId: string
+  stageName: string
+  score: number
+  metrics: Record<string, number>
+  reason: string
+  /** ISO de cuándo se alcanzó la etapa (del epoch del servidor). */
+  reachedAt: string | null
+}
+
 /** Ficha única de un trabajador (registro de RH). */
 export interface Worker {
   key: string
@@ -354,9 +393,139 @@ export interface StoredData {
   automationRuns: AutomationRun[]
   /** Estado persistente del aprendizaje nocturno de Queen (ver automatizacionesCore). */
   queenLearning: QueenLearningState | null
+  /** Estado extendido de trabajadores (app_settings 'workers-extended' en Supabase; vacío en local). */
+  workersExtended: WorkerExtended[]
+  /** Historial real de evolución de Queen del servidor (app_settings 'queen-evolution-history'). */
+  queenEvolutionHistory: QueenEvolutionHistoryEntry[]
+  /** Movimientos del almacén MANUAL real (app_settings 'almacen-extended'). */
+  warehouseEntries: WarehouseEntry[]
+  /** Metadatos de producto del almacén manual (warehouse_product_meta_v1). */
+  warehouseMeta: Record<string, WarehouseProductMeta>
+  /** Bienes reales del Inventario del local (app_settings 'venue-inventory'). */
+  venueInventory: VenueInventoryItem[]
+  /** Cinco colecciones del respaldo que antes se descartaban al
+   *  importar y salían [] al reexportar (fuga cerrada, oleada 2):
+   *  viajan ÍNTEGRAS de ida y vuelta, sin tocar su contenido. */
+  receivablePhotos: ReceivablePhoto[]
+  smsLogs: SmsLog[]
+  smsOutbox: SmsOutboxItem[]
+  monthlyArchives: MonthlyArchive[]
+  workerPayments: WorkerPayment[]
   expensesCount: number
   payrollCount: number
   workersCount: number
 }
 
-export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'laboratorio' | 'documentos' | 'historial'
+/** Movimiento del almacén MANUAL del original (app_settings
+ *  'almacen-extended', tabla warehouse_entries del servidor):
+ *  kind 'entrada' suma, 'rebaja' resta (salida con su motivo en
+ *  purpose, «Para qué se cogió»); note es la nota de la entrada. */
+export interface WarehouseEntry {
+  id: number
+  date: string
+  product: string
+  quantity: number
+  note: string
+  kind: 'entrada' | 'rebaja'
+  purpose: string
+  createdAt: number | null
+  updatedAt: number | null
+}
+
+/** Metadato de producto del almacén manual (warehouse_product_meta_v1):
+ *  código de barras y ficha de imagen/búsqueda del original, por clave
+ *  normalizada del producto (o '__barcode__:<código>'). */
+export interface WarehouseProductMeta {
+  product: string
+  barcode: string
+  imageStatus: string
+  sourceUrl: string
+  productSourceUrl: string
+  brand: string
+  category: string
+  description: string
+  aliases: string[]
+  lookupStatus: string
+  updatedAt: string
+}
+
+/** Bien del Inventario del local (app_settings 'venue-inventory',
+ *  tabla venue_inventory_items del servidor). Los campos que el dato
+ *  no trae quedan vacíos/null, nunca inventados. */
+export interface VenueInventoryItem {
+  id: number
+  inventoryId: string
+  acquisitionDate: string | null
+  article: string
+  unitCost: number | null
+  quantity: number
+  department: string
+  currentStatus: string
+  classification: string
+  model: string
+  manufacturer: string
+  observations: string
+  source: string
+}
+
+/** Foto contable diaria de las cuentas del IPV (exportData.receivablePhotos):
+ *  NO es una imagen: es el resumen por día {date,total,items[{client,amount}]}. */
+export interface ReceivablePhoto {
+  date: string
+  total: number
+  items: Array<{ client: string; amount: number }>
+  [key: string]: unknown
+}
+
+/** Registro de un SMS de cobro ya enviado a una cuenta (exportData.smsLogs). */
+export interface SmsLog {
+  origin: string
+  receivableId: number
+  client: string
+  phone: string
+  message: string
+  sentAt: string
+  [key: string]: unknown
+}
+
+/** Solicitud del buzón de salida de SMS (exportData.smsOutbox). Se
+ *  conservan TODOS sus campos tal como viajan (índice abierto). */
+export interface SmsOutboxItem {
+  id: number
+  clientId: number | null
+  clientKey: string
+  clientName: string
+  phone: string
+  message: string
+  status: string
+  requestKind: string
+  source: string
+  createdAt: string
+  sentAt: string | null
+  resendOfId: number | null
+  accountsQueued: number
+  [key: string]: unknown
+}
+
+/** Resumen de un mes del Archivo (exportData.monthlyArchives). */
+export interface MonthlyArchive {
+  monthKey: string
+  label: string
+  status: string
+  isCurrent: boolean
+  daysCount: number
+  ventas: number
+  resultado: number
+  [key: string]: unknown
+}
+
+/** Pago a un trabajador fuera de nómina (exportData.workerPayments). */
+export interface WorkerPayment {
+  workerKey: string
+  fecha: string
+  monto: number
+  concepto: string
+  [key: string]: unknown
+}
+
+export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'inventario' | 'laboratorio' | 'documentos' | 'historial' | 'archivo' | 'entradas' | 'extras' | 'existencias' | 'cronologia' | 'ajustes'

@@ -390,3 +390,49 @@ create policy "automation_state: lectura con rol" on public.automation_state
 drop policy if exists "automation_state: admin escribe" on public.automation_state;
 create policy "automation_state: admin escribe" on public.automation_state
   for all using (public.is_admin()) with check (public.is_admin());
+
+-- ============================================================
+-- FASE PARIDAD TOTAL — MEDIA AUTENTICADA (bloque nuevo,
+-- idempotente). Los binarios del sistema original (fotos de
+-- productos y de almacén, fotos de trabajadores y de clientes,
+-- documentos de trabajadores, foto de perfil, activos del
+-- sistema, IPV originales/actualizados y adjuntos/gráficos de
+-- boletines) viven SOLO aquí, tras el login: lectura con rol,
+-- escritura solo admin, igual que el resto de tablas. NUNCA se
+-- publican como archivos estáticos. La carga inicial se genera
+-- con scripts/generate-media-sql.mjs desde media-export/
+-- (extracción verificada del almacenamiento del original).
+-- Contrato de claves (entity_key):
+--   foto-producto      slug(departamento + nombre + um) = stem del archivo
+--   foto-almacen       slug(nombre del producto)
+--   foto-trabajador    slug(nombre del trabajador)
+--   documento-trabajador slug(nombre) + variant = carnet-frente |
+--                      carnet-reverso | tarjeta-bancaria | titulo
+--   foto-cliente       slug(nombre del cliente)
+--   foto-perfil        'perfil-admin'
+--   activo-sistema     stem del archivo (cuno-la-reina-aprobado, logos)
+--   ipv-original / ipv-actualizado  entity_key = fecha, variant = stem
+--   adjunto-correo / grafico-correo entity_key = id del boletín
+-- ============================================================
+
+create table if not exists public.media (
+  id bigint generated always as identity primary key,
+  kind text not null,
+  entity_key text not null,
+  variant text not null default '',
+  label text not null,
+  mime text not null,
+  bytes int not null,
+  sha256 text not null,
+  data_base64 text not null,
+  unique (kind, entity_key, variant)
+);
+
+alter table public.media enable row level security;
+
+drop policy if exists "media: lectura con rol" on public.media;
+create policy "media: lectura con rol" on public.media
+  for select using (public.current_role() is not null);
+drop policy if exists "media: admin escribe" on public.media;
+create policy "media: admin escribe" on public.media
+  for all using (public.is_admin()) with check (public.is_admin());

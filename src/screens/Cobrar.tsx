@@ -1,11 +1,14 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
-import type { Category, Receivable, StoredData } from '../types'
+import type { Category, Receivable, SmsLog, StoredData } from '../types'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { addLocalPayments, supabaseConfigured } from '../lib/backend'
 import { sbAddCobrarPayments } from '../lib/supabaseBackend'
+import { ClientAvatar } from '../components/MediaImage'
+import { addDaysISO, canonicalPersonKey, diffDays, personaOf, workerKeyForAccount } from '../lib/syncCore.mjs'
+import '../components/sectionsMirror.css'
 import {
-  CATEGORY_LABEL, CATEGORY_SINGULAR, agingRatio, dueDate, effectivePayments, effectiveSaldo,
+  CATEGORY_LABEL, CATEGORY_SINGULAR, addBusinessDaysISO, businessDaysElapsed, effectivePayments, effectiveSaldo,
   fmtCUP, fmtDate, fmtInt, isMorosa, todayISO,
 } from '../lib/utils'
 
@@ -15,7 +18,151 @@ export type CobrarView = 'cuentas' | 'clientes' | 'comprobantes' | 'entidades'
 type AccountFilter = 'pendientes' | 'morosas' | 'pagadas'
 
 interface PersonPending { clientKey: string; name: string; total: number }
-interface PersonGroup { clientKey: string; name: string; category: Category; pendingTotal: number }
+
+type PaymentStatus = 'verde' | 'rojo' | 'amarillo' | 'morado' | 'neutral'
+interface ContactInfo {
+  clientKey: string
+  name: string
+  category: Category
+  accountCount: number
+  pendingCount: number
+  pendingAmount: number
+  averageDaysToPay: number | null
+  status: PaymentStatus
+  label: string
+  color: string
+  phone: string
+  occupation: string
+  rhLinked: boolean
+  workerIdentity: string
+  workerBank: string
+}
+
+const STATUS_COLOR: Record<PaymentStatus, string> = {
+  amarillo: 'var(--gold)', morado: '#7c3aed', verde: '#16a34a', rojo: 'var(--danger)', neutral: '#94a3b8',
+}
+
+/** Contactos de Cobrar: la derivación del servidor del original
+ *  (loadClientProfiles) portada tal cual sobre lo que viaja en esta
+ *  copia — cuentas (conteos, pendiente de hoy, días medios al pagar,
+ *  estado y etiqueta de pago con la misma regla y los mismos textos)
+ *  y, para trabajadores, el enlace con RH por workerKeyForAccount
+ *  (móvil, ocupación, CI y cuenta bancaria de la ficha). La ficha
+ *  personal del original (teléfono/correo/CI/dirección/notas de
+ *  clientes) NO viaja en el respaldo: por eso el correo se muestra
+ *  con el texto de ausencia del propio original y el teléfono solo
+ *  aparece cuando sale del enlace con RH. */
+function buildContacts(data: StoredData, ref: string): ContactInfo[] {
+  const byKey = new Map<string, { name: string; category: Category; recs: Array<{ rec: Receivable; saldo: number }> }>()
+  for (const rec of data.receivables) {
+    const saldo = effectiveSaldo(rec, data.localPayments)
+    const g = byKey.get(rec.clientKey) ?? { name: rec.client, category: rec.category, recs: [] }
+    g.recs.push({ rec, saldo })
+    byKey.set(rec.clientKey, g)
+  }
+  const out: ContactInfo[] = []
+  for (const [clientKey, g] of byKey) {
+    const pending = g.recs.filter((x) => x.rec.status !== 'pagada' && !x.rec.closeKind && x.saldo > 0)
+    const paymentDays: number[] = []
+    for (const x of g.recs) {
+      if (x.saldo > 0) continue
+      const lastPay = effectivePayments(x.rec, data.localPayments).map((p) => p.paidDate).sort().pop()
+      const paidDate = x.rec.paidDate ?? lastPay
+      if (paidDate) paymentDays.push(Math.max(0, diffDays(x.rec.date, paidDate)))
+    }
+    const averageDaysToPay = paymentDays.length ? Math.round((paymentDays.reduce((s, v) => s + v, 0) / paymentDays.length) * 10) / 10 : null
+    const isHouse = personaOf(clientKey) !== 'general' || personaOf(g.name) !== 'general'
+    const category: Category = isHouse ? 'administrativo' : g.category
+    const hasOverdue = !isHouse && pending.some((x) => isMorosa(x.rec, x.saldo, ref))
+    const workerKey = !isHouse && g.category === 'trabajador' ? workerKeyForAccount(g.name, data.workers) : null
+    const worker = workerKey ? data.workers.find((w) => canonicalPersonKey(w.key, w.nombre) === workerKey) : undefined
+    const status: PaymentStatus = isHouse
+      ? 'amarillo'
+      : g.category === 'trabajador'
+        ? hasOverdue ? 'rojo' : 'morado'
+        : hasOverdue || (averageDaysToPay != null && averageDaysToPay > 7)
+          ? 'rojo'
+          : averageDaysToPay != null && averageDaysToPay <= 7 ? 'verde' : 'neutral'
+    const label = status === 'amarillo'
+      ? 'Administrativo · consumo de la casa'
+      : status === 'morado'
+        ? worker ? 'Trabajador · datos enlazados con RH · plazo de 15 días hábiles' : 'Trabajador · plazo de 15 días hábiles para pagar'
+        : status === 'verde'
+          ? 'Buena paga: suele pagar dentro del plazo de 7 días'
+          : status === 'rojo'
+            ? g.category === 'trabajador' ? 'Trabajador con saldo vencido tras superar 15 días hábiles' : 'Superó el plazo de 7 días: tiene una cuenta morosa'
+            : category === 'administrativo' ? 'Administrativo' : 'Sin historial suficiente para clasificar'
+    out.push({
+      clientKey, name: g.name, category,
+      accountCount: g.recs.length,
+      pendingCount: pending.length,
+      pendingAmount: pending.reduce((s, x) => s + x.saldo, 0),
+      averageDaysToPay, status, label, color: STATUS_COLOR[status],
+      phone: worker?.movil ?? '', occupation: worker?.ocupacion ?? '',
+      rhLinked: Boolean(worker), workerIdentity: worker?.carnet ?? '', workerBank: worker?.cuentaBancaria ?? '',
+    })
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name, 'es'))
+}
+
+/** Tarjeta de contacto del original (ClientesPanel): fila de llamada
+ *  con avatar de 64px, botón de llamada, identidad centrada (nombre,
+ *  Móvil, Correo, estado con su punto de color y categoría, ocupación
+ *  si es de RH), botón de SMS, banda de enlace con RH, las tres
+ *  cifras (Cuentas · Pendientes · Días al pagar) y «Debe ahora» SOLO
+ *  si debe algo hoy. El degradado ambiental usa --card-accent con el
+ *  color exacto de su estado de pago (account-tinted-card). Tocar la
+ *  tarjeta (fuera de los botones) filtra sus cuentas, como en la
+ *  copia hasta ahora. Sin teléfono, los botones van deshabilitados,
+ *  igual que en el original; con teléfono, llamada y SMS abren las
+ *  apps del teléfono (el original prepara el SMS dentro de la app:
+ *  esa cola no existe en esta copia). */
+function ContactCard({ c, onOpen }: { c: ContactInfo; onOpen: (c: ContactInfo) => void }) {
+  const phoneTarget = c.phone.replace(/[^+\d]/g, '')
+  const hasPhone = phoneTarget.length > 0
+  const catLabel = c.category === 'cliente' ? 'Cliente' : c.category === 'trabajador' ? 'Trabajador' : 'Administrativo'
+  return (
+    <article
+      className="contact-card-oneui account-tinted-card"
+      style={{ '--card-accent': c.color } as CSSProperties}
+      onClick={(e) => { if ((e.target as HTMLElement).closest('a,button')) return; onOpen(c) }}
+      aria-label={`Contacto ${c.name}. Toca para ver sus cuentas.`}
+    >
+      <div className="contact-call-row">
+        <ClientAvatar name={c.name} clientKey={c.clientKey} className="contact-call-avatar" />
+        {hasPhone
+          ? <a href={`tel:${phoneTarget}`} className="contact-call-button contact-call-button-phone" aria-label={`Llamar a ${c.name} al ${c.phone}`} onClick={(e) => e.stopPropagation()}><Icon name="phone" size={21} /></a>
+          : <span className="contact-call-button contact-call-button-disabled" aria-label={`${c.name} no tiene número para llamar`}><Icon name="phone" size={21} /></span>}
+        <div className="contact-call-identity">
+          <h3 className="contact-call-name">{c.name}</h3>
+          <p className="contact-call-number"><span>Móvil</span>{hasPhone ? <a className="contact-call-value" href={`tel:${phoneTarget}`} aria-label={`Llamar a ${c.name} al ${c.phone}`}>{c.phone}</a> : <span className="contact-call-value">Sin número</span>}</p>
+          <p className="contact-call-number"><span>Correo</span><span className="contact-call-value">Sin correo</span></p>
+          <div className="contact-call-meta">
+            <span aria-hidden="true" className="contact-status-dot" style={{ backgroundColor: c.color }} />
+            <span>{c.label}</span>
+            <span aria-hidden="true">·</span>
+            <span>{catLabel}</span>
+          </div>
+          {c.occupation ? <p className="contact-occupation">{c.occupation}</p> : null}
+        </div>
+        {hasPhone
+          ? <a href={`sms:${phoneTarget}`} className="contact-call-button contact-call-button-sms" aria-label={`Enviar SMS a ${c.name} al ${c.phone}`} onClick={(e) => e.stopPropagation()}><Icon name="message" size={21} /></a>
+          : <span className="contact-call-button contact-call-button-disabled" aria-label={`${c.name} no tiene número para enviar SMS`}><Icon name="message" size={21} /></span>}
+      </div>
+      {c.rhLinked ? (
+        <div className="contact-rh-band" aria-label={`Datos de Recursos Humanos enlazados con ${c.name}`}>
+          <strong>Enlazado con RH</strong>{c.workerIdentity ? ` · CI ${c.workerIdentity}` : ''}{c.workerBank ? ` · Cuenta ${c.workerBank}` : ''}
+        </div>
+      ) : null}
+      <div className="contact-stats">
+        <div className="contact-stat"><strong>{c.accountCount}</strong>Cuentas</div>
+        <div className="contact-stat"><strong>{c.pendingCount}</strong>Pendientes</div>
+        <div className="contact-stat"><strong>{c.averageDaysToPay == null ? '—' : c.averageDaysToPay}</strong>Días al pagar</div>
+      </div>
+      {c.pendingAmount > 0 ? <p className="contact-debe">Debe ahora: <strong>{fmtInt(c.pendingAmount)} CUP</strong></p> : null}
+    </article>
+  )
+}
 
 const PERSON_COLORS = ['#0e9f6e', '#0ea5bd', '#3b82f6', '#8b5cf6', '#e9a13b', '#287c5c', '#d64541', '#0b7285']
 function personColor(key: string): string {
@@ -27,13 +174,50 @@ function initialsOf(name: string): string {
   return name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase() || '·'
 }
 
-/** Color con el que una cuenta pendiente envejece dentro de su plazo:
- *  verde claro al nacer → rojo al vencer (la marca del original). */
-function agingColor(rec: Receivable, saldo: number, ref: string, paid: boolean): string {
-  if (paid) return 'var(--paid)'
-  if (isMorosa(rec, saldo, ref)) return 'var(--danger)'
-  const r = agingRatio(rec, ref)
-  return `hsl(${Math.round(145 - 145 * r)} 62% ${Math.round(66 - 24 * r)}%)`
+/* ===== Marcas y vigencia de la tarjeta de cuenta: puerto literal
+ *  de vigenciaCuenta y de PAID_MARK / HOUSE_MARK / WORKER_MARK del
+ *  original (App.tsx:886-958). El color de vigencia sale de la
+ *  fórmula del original: hue 142→0 y lightness 54→48 según el
+ *  progreso dentro del plazo (7 días naturales cliente, 15 días
+ *  HÁBILES trabajador). ===== */
+const PAID_MARK = { color: 'var(--paid)', colorSuave: 'var(--paid-soft)', colorBorde: 'var(--paid-border)', etiqueta: 'Pagada' } as const
+const HOUSE_MARK = { color: 'var(--gold)', colorSuave: 'var(--warn-soft)', colorBorde: 'var(--gold)', etiqueta: 'Consumo de la casa', detalle: 'sin vencimiento ni aviso de demora' } as const
+const WORKER_MARK = { color: '#7c3aed', colorSuave: 'rgba(124, 58, 237, 0.14)', colorBorde: 'rgba(124, 58, 237, 0.62)' } as const
+
+interface Vigencia {
+  progreso: number; vencida: boolean; venceISO: string; diasRestantes: number
+  etiqueta: string; detalle: string; color: string; colorSuave: string; colorBorde: string
+}
+
+function vigenciaCuenta(desdeISO: string, hoyISO: string, ventanaDias: number): Vigencia {
+  const esPlazoTrabajador = ventanaDias === 15
+  const venceISO = esPlazoTrabajador ? addBusinessDaysISO(desdeISO, ventanaDias) : addDaysISO(desdeISO, ventanaDias)
+  const transcurridos = Math.max(0, esPlazoTrabajador ? businessDaysElapsed(desdeISO, hoyISO) : diffDays(desdeISO, hoyISO))
+  const vencida = hoyISO > venceISO
+  const progreso = vencida ? 1 : Math.min(1, Math.max(0, transcurridos / ventanaDias))
+  const diasRestantes = vencida ? 0 : Math.max(0, diffDays(hoyISO, venceISO))
+  const diasDesdeCierre = vencida ? Math.max(0, diffDays(venceISO, hoyISO)) : 0
+  const hue = Math.round(142 * (1 - progreso))
+  const lightness = Math.round(54 - progreso * 6)
+  const color = `hsl(${hue}, 72%, ${lightness}%)`
+  const colorSuave = `hsla(${hue}, 72%, 48%, 0.14)`
+  const colorBorde = `hsla(${hue}, 72%, 44%, 0.6)`
+  const etiqueta = vencida
+    ? 'Morosa · plazo vencido'
+    : progreso < 0.28
+      ? 'Vigente · recién creada'
+      : diasRestantes === 0
+        ? 'Vence hoy'
+        : progreso < 0.62
+          ? 'Vigente'
+          : progreso < 0.88
+            ? 'Vigente · por vencer'
+            : 'Vigente · vence pronto'
+  const tipoDias = esPlazoTrabajador ? 'días hábiles' : 'días'
+  const detalle = vencida
+    ? `venció el ${fmtDate(venceISO)} · pasó el plazo de ${ventanaDias} ${tipoDias} hace ${diasDesdeCierre} día${diasDesdeCierre === 1 ? '' : 's'}: pasa a morosa`
+    : `vence el ${fmtDate(venceISO)} · quedan ${diasRestantes} día${diasRestantes === 1 ? '' : 's'} naturales · día ${Math.min(transcurridos, ventanaDias) + 1} de ${ventanaDias + 1}${esPlazoTrabajador ? ' hábiles' : ''}`
+  return { progreso, vencida, venceISO, diasRestantes, etiqueta, detalle, color, colorSuave, colorBorde }
 }
 
 /** Comprobante de un abono, con los datos reales de la cuenta.
@@ -84,29 +268,52 @@ function ReceiptPreviewCard({ receipt }: { receipt: ReceiptPreview }) {
 }
 
 /** Cronología de la cuenta (timelineBlock / receivableTimeline del
- *  original): «Cuenta creada» y cada abono, en orden, con el saldo que
- *  quedaba tras cada paso. El clon no trae smsLogs ni ciclo de arrastre
- *  en la cuenta, así que esos dos tipos de evento no aparecen. */
-function accountTimeline(rec: Receivable, payments: ReturnType<typeof effectivePayments>) {
+ *  original): «Cuenta creada», cada abono y cada SMS de cobro
+ *  enviado, en orden, con el saldo que quedaba tras cada paso. Los
+ *  SMS salen de data.smsLogs del respaldo (oleada 2: antes esa
+ *  colección se descartaba al importar), enlazados por receivableId
+ *  como en el original. El evento de arrastre a nueva quincena sigue
+ *  sin aparecer: el ciclo de arrastre no viaja en el respaldo. */
+function accountTimeline(rec: Receivable, payments: ReturnType<typeof effectivePayments>, smsLogs: SmsLog[] = []) {
   const original = Math.max(0, rec.originalAmount || rec.amount)
-  type Ev = { key: string; date: string; kind: 'creada' | 'abono'; amount?: number; method?: string; local?: boolean; balance: number }
+  type Ev = { key: string; date: string; kind: 'creada' | 'abono' | 'sms'; amount?: number; method?: string; local?: boolean; balance: number; order: number }
   let balance = original
-  const events: Ev[] = [{ key: `created-${rec.id}`, date: rec.date, kind: 'creada', amount: original, balance }]
-  for (const pay of [...payments].sort((a, b) => a.paidDate.localeCompare(b.paidDate))) {
+  const events: Ev[] = [{ key: `created-${rec.id}`, date: rec.date, kind: 'creada', amount: original, balance, order: 0 }]
+  // Un SMS no mueve el saldo: lleva el saldo vigente en su fecha.
+  const sortedPays = [...payments].sort((a, b) => a.paidDate.localeCompare(b.paidDate))
+  balance = original
+  for (const pay of sortedPays) {
     balance = Math.max(0, balance - Math.max(0, pay.amount))
-    events.push({ key: `payment-${pay.id}`, date: pay.paidDate, kind: 'abono', amount: pay.amount, method: pay.paymentMethod, local: pay.local, balance })
+    events.push({ key: `payment-${pay.id}`, date: pay.paidDate, kind: 'abono', amount: pay.amount, method: pay.paymentMethod, local: pay.local, balance, order: 1 })
   }
-  return events
+  const balAfter = (iso: string): number => {
+    let b = original
+    for (const pay of sortedPays) if (pay.paidDate <= iso) b = Math.max(0, b - Math.max(0, pay.amount))
+    return b
+  }
+  for (const log of smsLogs) {
+    const d = String(log.sentAt ?? '').slice(0, 10)
+    if (!d) continue
+    events.push({ key: `sms-${log.receivableId}-${log.sentAt}`, date: d, kind: 'sms', balance: balAfter(d), order: 3 })
+  }
+  return events.sort((a, b) => a.date.localeCompare(b.date) || a.order - b.order)
+}
+
+/** Hora legible de un SMS (sentAt ISO del registro real). */
+function fmtSmsTime(sentAt: string): string {
+  const d = String(sentAt ?? '')
+  return d.length >= 16 ? `${fmtDate(d.slice(0, 10))} · ${d.slice(11, 16)}` : fmtDate(d.slice(0, 10))
 }
 
 /* Tarjeta de cuenta del original (account-swipe-card): acento de color
    por persona (borde interior izquierdo de 3px), «Debe X de Y», marca
    de antigüedad que envejece con el plazo propio; tocar abre su
    cronología, deslizar → prepara el pago, deslizar ← detalles. */
-function AccountCard({ rec, saldo, payments, isAdmin, onPay, onReceipt }: {
+function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onReceipt }: {
   rec: Receivable
   saldo: number
   payments: ReturnType<typeof effectivePayments>
+  smsLogs?: SmsLog[]
   isAdmin: boolean
   onPay: (rec: Receivable, saldo: number) => void
   onReceipt: (r: ReceiptPreview) => void
@@ -117,9 +324,27 @@ function AccountCard({ rec, saldo, payments, isAdmin, onPay, onReceipt }: {
   const swiped = useRef(false)
   const ref = todayISO()
   const paid = rec.status === 'pagada' || Boolean(rec.closeKind) || saldo <= 0
-  const morosa = isMorosa(rec, saldo, ref)
-  const due = dueDate(rec)
-  const accent = agingColor(rec, saldo, ref, paid)
+  const esCasa = rec.category === 'administrativo' || personaOf(rec.clientKey) !== 'general' || personaOf(rec.client) !== 'general'
+  const esTrabajador = rec.category === 'trabajador'
+  const vig = vigenciaCuenta(rec.date, ref, esTrabajador ? 15 : 7)
+  const morosa = !paid && !esCasa && vig.vencida
+  const marca = paid ? PAID_MARK : esCasa ? HOUSE_MARK : vig
+  const colorCuenta = paid ? PAID_MARK.color : morosa ? 'var(--danger)' : marca.color
+  const bordeTarjeta = paid ? PAID_MARK.colorBorde : morosa ? 'var(--danger)' : marca.colorBorde
+  const diasDebe = Math.max(0, diffDays(rec.date, ref))
+  const importeOriginal = Math.max(0, rec.originalAmount || rec.amount)
+  const abonado = payments.reduce((s, p) => s + Math.max(0, p.amount), 0)
+  const lastPay = payments.length ? payments[payments.length - 1]! : null
+  const paidDate = rec.paidDate ?? lastPay?.paidDate ?? null
+  const chipText = paid ? PAID_MARK.etiqueta : esCasa ? HOUSE_MARK.etiqueta : morosa ? 'Morosa · plazo vencido' : `${esTrabajador ? 'Trabajador · ' : ''}${vig.etiqueta}`
+  const markDetalle = paid
+    ? `pagó el ${paidDate ? fmtDate(paidDate) : '—'}${lastPay ? ` · por ${lastPay.paymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}` : ''}`
+    : esCasa ? HOUSE_MARK.detalle : vig.detalle
+  const catChip = esTrabajador
+    ? { text: 'Trabajador', style: { color: WORKER_MARK.color, background: WORKER_MARK.colorSuave } as CSSProperties }
+    : rec.category === 'administrativo'
+      ? { text: 'Administrativo', style: { color: 'var(--gold)', background: HOUSE_MARK.colorSuave } as CSSProperties }
+      : { text: 'Cliente', style: { color: 'var(--dim)', background: 'var(--surface-tonal)' } as CSSProperties }
 
   const onPointerDown = (e: ReactPointerEvent) => { startX.current = e.clientX }
   const onPointerMove = (e: ReactPointerEvent) => {
@@ -143,55 +368,72 @@ function AccountCard({ rec, saldo, payments, isAdmin, onPay, onReceipt }: {
 
   return (
     <article
-      className={`account-card${morosa ? ' is-morosa' : ''}${paid ? ' is-paid' : ''}`}
-      style={{ boxShadow: `inset 3px 0 0 ${accent}`, transform: dx ? `translateX(${dx}px)` : undefined } as CSSProperties}
+      className={`account-card account-tinted-card${morosa ? ' is-morosa' : ''}${paid ? ' is-paid' : ''}`}
+      style={{ '--card-accent': colorCuenta, borderColor: bordeTarjeta, boxShadow: `inset 3px 0 0 ${colorCuenta}`, transform: dx ? `translateX(${dx}px)` : undefined } as CSSProperties}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => { startX.current = null; setDx(0) }}
     >
-      <button type="button" className="account-main" onClick={onMainClick} aria-expanded={open} aria-label={`${rec.client}: ${paid ? 'cuenta pagada' : `debe ${fmtCUP(saldo)} de ${fmtCUP(rec.originalAmount)}`}. Toca para ver su cronología.`}>
-        <span className="account-avatar" style={{ background: personColor(rec.clientKey) }} aria-hidden>{initialsOf(rec.client)}</span>
+      <button type="button" className="account-main" onClick={onMainClick} aria-expanded={open} aria-label={`${rec.client}: ${paid ? 'cuenta pagada' : `debe ${fmtCUP(saldo)} de ${fmtCUP(importeOriginal)}`}. Toca para ver su cronología.`}>
+        {paid ? <ClientAvatar name={rec.client} clientKey={rec.clientKey} /> : null}
         <span className="account-info">
-          <span className="account-name">{rec.client}</span>
-          <span className="account-sub">{fmtDate(rec.date)} · {CATEGORY_SINGULAR[rec.category]}{rec.detail ? ` · ${rec.detail}` : ''}</span>
+          <span className="acc-name-row">
+            <span className="acc-name">{rec.client}</span>
+            {rec.origin === 'ipv' ? <span className="acc-badge ipv">Del IPV</span> : <span className="acc-badge manual">Manual</span>}
+            <span className="acc-cat-chip" style={catChip.style}>{catChip.text}</span>
+          </span>
+          <span className="account-sub">{paid
+            ? `Debía ${fmtInt(importeOriginal)} desde el ${fmtDate(rec.date)} · se cobró el ${paidDate ? fmtDate(paidDate) : '—'}${lastPay ? ` · ${lastPay.paymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}` : ''}${payments.length > 1 ? ` · en ${payments.length} abonos` : ''}`
+            : `${fmtDate(rec.date)} · hace ${diasDebe} día${diasDebe === 1 ? '' : 's'}${rec.detail ? ` · ${rec.detail}` : ''}`}</span>
         </span>
-        <span className="account-amount">
-          {paid ? <span className="chip pagada">Pagada</span> : (
-            <>
-              <small>Debe</small>
-              <strong>{fmtCUP(saldo)}</strong>
-              <small>de {fmtCUP(rec.originalAmount)}</small>
-            </>
-          )}
+        <span className="acc-amount">
+          <span className="acc-amount-big">{fmtInt(paid ? importeOriginal : saldo)} <small>CUP</small></span>
+          <span className="acc-amount-sub">{paid ? `Debía ${fmtInt(importeOriginal)}` : `Debe ${fmtInt(saldo)} de ${fmtInt(importeOriginal)}${abonado > 0 ? ` · abonado ${fmtInt(abonado)}` : ''}`}</span>
         </span>
       </button>
-      <div className="account-meta">
-        {paid
-          ? <span className="chip pagada">Pagada{rec.paidDate ? ` · ${fmtDate(rec.paidDate)}` : ''}</span>
-          : morosa
-            ? <span className="chip morosa">Morosa{due ? ` · venció el ${fmtDate(due)}` : ''}</span>
-            : <span className="chip">Pendiente{due ? ` · vence el ${fmtDate(due)}` : ''}</span>}
-        {!paid && !morosa ? (
-          <span className="age-track grow" aria-hidden><span className="age-fill" style={{ width: `${Math.max(4, agingRatio(rec, ref) * 100)}%` }} /></span>
-        ) : null}
-        {isAdmin && !paid ? <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button> : null}
+      <div className="mark-block" role="img" aria-label={paid ? `Cuenta pagada de ${rec.client}: ${markDetalle}` : esCasa ? `${HOUSE_MARK.etiqueta}: ${HOUSE_MARK.detalle}` : `${chipText}: ${markDetalle}`}>
+        <div className="mark-row">
+          <span className="mark-chip" style={{ background: paid ? PAID_MARK.colorSuave : morosa ? 'var(--danger-soft)' : marca.colorSuave, borderColor: paid ? PAID_MARK.colorBorde : morosa ? 'var(--danger)' : marca.colorBorde }}>
+            <span className="mark-dot" style={{ background: paid ? PAID_MARK.color : morosa ? 'var(--danger)' : marca.color }} />
+            {chipText}
+          </span>
+          <span className="mark-detalle">{markDetalle}</span>
+        </div>
+        <div className="mark-bar" aria-hidden="true">
+          <span className="mark-fill" style={{ width: paid || esCasa ? '100%' : `${Math.round(vig.progreso * 100)}%`, background: paid ? PAID_MARK.color : morosa ? 'var(--danger)' : marca.color }} />
+        </div>
       </div>
+      {morosa ? (
+        smsLogs.length > 0 ? (
+          <p className="acc-sms-line">
+            <Icon name="message" size={13} /> SMS enviado: {fmtSmsTime(smsLogs[smsLogs.length - 1]!.sentAt)}{smsLogs.length > 1 ? ` · ${smsLogs.length} envíos` : ''}
+          </p>
+        ) : (
+          <p className="acc-sms-none"><Icon name="message" size={13} /> Sin SMS registrado</p>
+        )
+      ) : null}
+      {isAdmin && !paid ? (
+        <div className="acc-actions">
+          <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button>
+        </div>
+      ) : null}
       {open ? (
         <div className="rec-detail" aria-label={`Cronología de la cuenta de ${rec.client}`}>
           <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--dim)' }}>Cronología de la cuenta</p>
           <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-            {accountTimeline(rec, payments).map((event, index, all) => (
+            {accountTimeline(rec, payments, smsLogs).map((event, index, all) => (
               <li key={event.key} style={{ position: 'relative', display: 'grid', gridTemplateColumns: '12px minmax(0, 1fr)', gap: 8, paddingBottom: index < all.length - 1 ? 12 : 0 }}>
                 {index < all.length - 1 ? <span aria-hidden="true" style={{ position: 'absolute', left: 5, top: 12, bottom: 0, width: 1, background: 'var(--border)' }} /> : null}
-                <span aria-hidden="true" style={{ position: 'relative', zIndex: 1, marginTop: 4, width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--surface)', background: event.kind === 'abono' ? 'var(--paid)' : 'var(--accent)' }} />
+                <span aria-hidden="true" style={{ position: 'relative', zIndex: 1, marginTop: 4, width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--surface)', background: event.kind === 'abono' ? 'var(--paid)' : event.kind === 'sms' ? 'var(--gold)' : 'var(--accent)' }} />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '2px 12px', fontSize: 12 }}>
-                    <span style={{ fontWeight: 600 }}>{event.kind === 'creada' ? 'Cuenta creada' : 'Abono'} · {fmtDate(event.date)}</span>
+                    <span style={{ fontWeight: 600 }}>{event.kind === 'creada' ? 'Cuenta creada' : event.kind === 'sms' ? 'SMS enviado' : 'Abono'} · {fmtDate(event.date)}</span>
                     <span style={{ fontWeight: 700 }}>Saldo {fmtCUP(event.balance)}</span>
                   </div>
                   <div style={{ marginTop: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 8px', fontSize: 11, color: 'var(--dim)' }}>
                     {event.kind === 'creada' ? <span>Importe inicial {fmtCUP(event.amount ?? 0)}</span> : null}
+                    {event.kind === 'sms' ? <span>SMS de cobro enviado (registro del respaldo)</span> : null}
                     {event.kind === 'abono' ? (
                       <>
                         <span>Pagó {fmtCUP(event.amount ?? 0)} · {event.method === 'transferencia' ? 'Transferencia' : 'Efectivo'}{event.local ? ' (en esta copia)' : ''}</span>
@@ -256,16 +498,16 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
     return [...map.values()].sort((a, b) => b.total - a.total)
   }, [data])
 
-  const groups = useMemo<PersonGroup[]>(() => {
-    const map = new Map<string, PersonGroup>()
-    for (const rec of data.receivables) {
-      const saldo = effectiveSaldo(rec, data.localPayments)
-      if (!map.has(rec.clientKey)) map.set(rec.clientKey, { clientKey: rec.clientKey, name: rec.client, category: rec.category, pendingTotal: 0 })
-      const g = map.get(rec.clientKey)!
-      if (rec.status !== 'pagada' && !rec.closeKind && saldo > 0) g.pendingTotal += saldo
-    }
-    return [...map.values()].sort((a, b) => b.pendingTotal - a.pendingTotal || a.name.localeCompare(b.name))
-  }, [data])
+  const contacts = useMemo<ContactInfo[]>(() => buildContacts(data, ref), [data, ref])
+  const [contactQuery, setContactQuery] = useState('')
+  const [contactCat, setContactCat] = useState<'todas' | Category>('todas')
+  const visibleContacts = useMemo(() => {
+    const q = contactQuery.trim().toLowerCase()
+    return contacts.filter((c) =>
+      (contactCat === 'todas' || c.category === contactCat) &&
+      (!q || c.name.toLowerCase().includes(q) || (c.phone && c.phone.includes(q))))
+  }, [contacts, contactQuery, contactCat])
+  const openContact = (c: ContactInfo) => { setQuery(c.name); setFilter('pendientes'); setView('cuentas') }
 
   const pendingOf = (cat?: Category) =>
     data.receivables
@@ -432,7 +674,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           ) : (
             <div className="account-list">
               {accountRows.map(({ rec, saldo }) => (
-                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
+                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
               ))}
             </div>
           )}
@@ -509,6 +751,27 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
             </>
           ) : null}
 
+          {data.receivablePhotos.length > 0 ? (
+            <Card>
+              <h3>Foto de cuentas por día (del respaldo)</h3>
+              <p className="sub">
+                Las {fmtInt(data.receivablePhotos.length)} fotos contables diarias que trae el respaldo
+                (receivablePhotos: no son imágenes, son el resumen de cuentas del IPV de cada día). Última foto:{' '}
+                {fmtDate(data.receivablePhotos[data.receivablePhotos.length - 1]!.date)} · total{' '}
+                {fmtCUP(data.receivablePhotos[data.receivablePhotos.length - 1]!.total)} en{' '}
+                {fmtInt(data.receivablePhotos[data.receivablePhotos.length - 1]!.items.length)} cuentas.
+              </p>
+              <div className="list">
+                {data.receivablePhotos[data.receivablePhotos.length - 1]!.items.map((it, i) => (
+                  <div className="row" key={`${it.client}-${i}`}>
+                    <span>{it.client}</span>
+                    <span className="mono">{fmtCUP(it.amount)}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
           {data.localPayments.length > 0 ? (
             <Card>
               <h3>{SB_MODE ? 'Abonos registrados (en el servidor)' : 'Abonos registrados en este dispositivo'}</h3>
@@ -531,23 +794,34 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
 
       {view === 'clientes' ? (
         <>
-          <p className="sub" style={{ margin: '2px 0 12px' }}>La tarjeta de cada contacto muestra solo el total que debe hoy; si saldó todo, no aparece ningún monto. Toca una tarjeta para ver sus cuentas.</p>
-          {groups.length === 0 ? (
-            <Card><EmptyState icon="people" title="Sin contactos todavía" text="Los contactos llegan con las cuentas del respaldo del SDA." /></Card>
+          <div className="contact-search">
+            <label htmlFor="buscar-clientes" className="sr-only">Buscar clientes</label>
+            <Icon name="search" size={17} className="contact-search-ico" />
+            <input id="buscar-clientes" type="search" value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} placeholder="Buscar por nombre, teléfono o correo" aria-label="Buscar clientes" />
+          </div>
+          <div className="view-chips" role="group" aria-label="Agrupar personas por categoría" style={{ marginBottom: 12 }}>
+            {([['todas', 'Todas'], ['cliente', 'Clientes'], ['trabajador', 'Trabajadores'], ['administrativo', 'Administrativo']] as Array<['todas' | Category, string]>).map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={contactCat === id} className={`view-chip${contactCat === id ? ' active' : ''}`} onClick={() => setContactCat(id)}>{label}</button>
+            ))}
+          </div>
+          {contacts.length === 0 ? (
+            <Card><EmptyState icon="people" title="Aún no hay clientes" text="Los nombres se guardan automáticamente al aparecer en Cuentas del IPV o al crear una cuenta manual." /></Card>
+          ) : visibleContacts.length === 0 ? (
+            <Card><EmptyState icon="search" title="Ningún cliente coincide" text="Ningún contacto coincide con esa búsqueda o esa categoría." /></Card>
           ) : (
-            <div className="account-list">
-              {groups.map((g) => (
-                <button key={g.clientKey} type="button" className="contact-card" onClick={() => { setQuery(g.name); setFilter('pendientes'); setView('cuentas') }}>
-                  <span className="account-avatar" style={{ background: personColor(g.clientKey) }} aria-hidden>{initialsOf(g.name)}</span>
-                  <span className="account-info">
-                    <span className="account-name">{g.name}</span>
-                    <span className="account-sub">{CATEGORY_SINGULAR[g.category]}</span>
-                  </span>
-                  {g.pendingTotal > 0 ? <span className="contact-total">{fmtCUP(g.pendingTotal)}</span> : null}
-                </button>
+            <div className="contact-grid">
+              {visibleContacts.map((c) => (
+                <ContactCard key={c.clientKey} c={c} onOpen={openContact} />
               ))}
             </div>
           )}
+          <p className="small muted" style={{ marginTop: 12 }}>
+            La tarjeta muestra solo el total que debe hoy; si saldó todo, no aparece ningún monto. En esta copia, la ficha
+            personal del sistema original (teléfono, correo, CI, dirección y notas de los clientes) no viaja en el respaldo:
+            el teléfono solo aparece cuando el contacto está enlazado con un trabajador de RH, y el correo se muestra con
+            el texto de ausencia del propio original. Editar la ficha, cambiar su foto, fusionar duplicadas y eliminar el
+            contacto son acciones del servidor del original y no están en esta copia.
+          </p>
         </>
       ) : null}
 

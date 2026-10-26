@@ -9,6 +9,7 @@ import { ensureBulletinsForDays } from './lib/documentosCore.mjs'
 import { downloadText } from './lib/download'
 import { Icon, AlertDot, type IconName } from './components/icons'
 import { QueenOrb, QueenReactorMark } from './components/QueenReactor'
+import { MediaImage } from './components/MediaImage'
 import { effectiveSaldo, fmtCUP, fmtInt, isMorosa, todayISO } from './lib/utils'
 import Inicio from './screens/Inicio'
 import { MasScreen } from './screens/Secciones'
@@ -29,10 +30,17 @@ const Transferencias = lazy(() => import('./screens/Transferencias'))
 const Productos = lazy(() => import('./screens/Productos'))
 const Elaboracion = lazy(() => import('./screens/Elaboracion'))
 const Almacen = lazy(() => import('./screens/Almacen'))
+const Inventario = lazy(() => import('./screens/Inventario'))
 const Laboratorio = lazy(() => import('./screens/Laboratorio'))
 const Documentos = lazy(() => import('./screens/Documentos'))
 const Historial = lazy(() => import('./screens/Historial'))
 const QueenScreen = lazy(() => import('./screens/Queen'))
+const Archivo = lazy(() => import('./screens/Archivo'))
+const Entradas = lazy(() => import('./screens/Entradas'))
+const Extras = lazy(() => import('./screens/Extras'))
+const Existencias = lazy(() => import('./screens/Existencias'))
+const Cronologia = lazy(() => import('./screens/Cronologia'))
+const Ajustes = lazy(() => import('./screens/Ajustes'))
 
 const SYSTEM_NAME = 'Queen SDA'
 const SYSTEM_FULL = 'Queen SDA — Sistema de Automatización de Datos V2.0'
@@ -76,6 +84,7 @@ const SIDE_MAS: NavItem[] = [
   { id: 'economia', label: 'Economía', icon: 'chart' },
   { id: 'elaboracion', label: 'Elaboración', icon: 'receipt' },
   { id: 'historial', label: 'Historial', icon: 'receipt' },
+  { id: 'inventario', label: 'Inventario', icon: 'archive' },
   { id: 'laboratorio', label: 'Laboratorio', icon: 'flask' },
   { id: 'productos', label: 'Productos', icon: 'package' },
   { id: 'rh', label: 'RH · Pagos', icon: 'people' },
@@ -497,7 +506,11 @@ export default function App() {
             </div>
           </div>
           <button className="side-profile" onClick={() => setSection('sistema')} aria-label="Tu perfil y acceso">
-            <span className="avatar" aria-hidden>{initials || 'Q'}</span>
+            <MediaImage
+            kind="foto-perfil" entityKey="perfil-admin" alt=""
+            className="avatar" style={{ objectFit: 'cover', padding: 0 }}
+            fallback={<span className="avatar" aria-hidden>{initials || 'Q'}</span>}
+          />
             <span>
               <span className="p-name">{session.name}</span><br />
               <span className="p-role">{isAdmin ? 'Administrador' : 'Solo lectura'}</span>
@@ -540,11 +553,20 @@ export default function App() {
           {section === 'transferencias' ? <Transferencias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
           {section === 'productos' ? <Productos data={data} /> : null}
           {section === 'elaboracion' ? <Elaboracion data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'almacen' ? <Almacen data={data} /> : null}
+          {section === 'almacen' ? <Almacen data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'inventario' ? <Inventario data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
           {section === 'laboratorio' ? <Laboratorio data={data} /> : null}
           {section === 'documentos' ? <Documentos data={data} today={ref} /> : null}
           {section === 'historial' ? (
             <Historial data={data} bulletins={bulletins} today={ref} isAdmin={isAdmin} onBulletinsChange={handleBulletinsChange} />
+          ) : null}
+          {section === 'archivo' ? <Archivo data={data} bulletins={bulletins} onNavigate={setSection} /> : null}
+          {section === 'entradas' ? <Entradas data={data} /> : null}
+          {section === 'extras' ? <Extras data={data} /> : null}
+          {section === 'existencias' ? <Existencias data={data} onNavigate={setSection} /> : null}
+          {section === 'cronologia' ? <Cronologia data={data} bulletins={bulletins} onNavigate={setSection} /> : null}
+          {section === 'ajustes' && session ? (
+            <Ajustes data={data} session={session} isAdmin={isAdmin} onChanged={refresh} onNavigate={setSection} />
           ) : null}
           {section === 'mas' ? <MasScreen onNavigate={setSection} data={data} /> : null}
           </Suspense>

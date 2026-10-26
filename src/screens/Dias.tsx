@@ -6,6 +6,7 @@ import ImportBackup from '../components/ImportBackup'
 import ImportIpv from '../components/ImportIpv'
 import { fmtCUP, fmtDate, fmtDateShort, fmtInt, todayISO } from '../lib/utils'
 import { downloadText } from '../lib/download'
+import IpvDownloads from '../components/IpvDownloads'
 
 /** Días con decimales como en RH (0,5 sin redondear a 1). */
 function fmtDias(n: number): string {
@@ -136,8 +137,9 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
 
   // Descargar el día: resumen generado en el dispositivo con los datos
   // reales de ese IPV (la utilidad de descarga existente). No es el
-  // Excel del IPV: el clon no guarda el archivo original ni genera su
-  // versión actualizada — ver el informe del área.
+  // Excel del IPV: el archivo original y su versión actualizada se
+  // descargan aparte, desde la media autenticada (IpvDownloads),
+  // cuando existen para esa fecha.
   const downloadDay = (d: DayData) => {
     const lines = [
       `Resumen del día — ${fmtDate(d.date)}`,
@@ -302,6 +304,10 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
           <p className="small muted">Estas cifras son las del IPV, sin tocar: el IPV es la fuente de verdad.{isAdmin ? ' Si el IPV de este día se corrigió, súbelo de nuevo con «Editar este IPV»: el archivo nuevo reemplaza al guardado, misma fecha, sin duplicar.' : ''}</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
             <button className="btn" onClick={() => downloadDay(day)}>Descargar el día</button>
+            {/* IPV original/actualizado de este día desde la media
+                autenticada, cuando el archivo existe (como el
+                historial de versiones del original). */}
+            <IpvDownloads date={day.date} />
             {/* Eliminar el día: FUERA a propósito. El backend del clon
                 (local y Supabase) no expone ninguna acción de borrado de
                 días equivalente a deleteDay del original (que además
