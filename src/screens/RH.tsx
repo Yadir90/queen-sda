@@ -8,6 +8,7 @@ import {
   addDaysISO, buildMarksByWorker, canonicalPersonKey, cycleIndexFor, cycleWindow,
   deriveCyclePayroll, diffDays, isDirectionPerson, recordedPayroll,
 } from '../lib/syncCore.mjs'
+import '../components/sectionsMirror.css'
 
 /* RH · Pagos — puerto del módulo de RH del sistema original:
    - Ciclos exactos de 15 días desde el ancla configurable (def.
@@ -24,7 +25,17 @@ import {
    - Dirección (Jesús, Dayami): ficha informativa, fuera de nómina.
    - Cuadrados del mes y de la quincena con la clave exacta de la
      especificación: lleno trabajó · medio tono medio día · gris
-     descanso · punteado aún sin foto · borde dorado hoy. */
+     descanso · punteado aún sin foto · borde dorado hoy.
+   PORT LITERAL (rasero del dueño, 25-oct): la cabecera del ciclo es
+   la tarjeta verde profundo de RHTab del original (Inicio / Fin
+   día 15 / Pago día 16 en dorado, estado y «faltan N días»), la
+   tabla lleva su columna «Salario diario», el banner «Ciclo
+   cerrado / Ciclo abierto», el aviso de pago con 0 días y la banda
+   verde de total con su desglose efectivo/transferencia — clases
+   .rh-hero/.rh-total de sectionsMirror.css con los valores del
+   original. Diferencia honesta: la «A» en ámbar de ausencia
+   justificada sale del registro de trabajadores del original, que
+   no viaja en el respaldo; aquí no se pinta ninguna «A». */
 
 const SB_MODE = supabaseConfigured()
 
@@ -65,7 +76,7 @@ function RhSquares({
   )
 }
 
-const SQUARES_LEGEND = 'Cuadrados del mes: lleno trabajó · medio tono, medio día · gris descanso · punteado aún sin foto · A en ámbar = ausencia justificada · borde dorado, hoy.'
+const SQUARES_LEGEND = 'Cuadrados del mes: lleno trabajó · medio tono, medio día · gris descanso · punteado aún sin foto · borde dorado, hoy. (En el original la «A» en ámbar marca ausencias justificadas del registro de trabajadores; ese registro no viaja en el respaldo, así que aquí no se pinta ninguna «A».)'
 
 function monthDates(yearMonth: string): { dates: string[]; lead: number } {
   const [y, m] = yearMonth.split('-').map(Number)
@@ -182,30 +193,44 @@ export default function RHScreen({
   }
 
   const draftTotal = draft.reduce((s, e) => s + (data.unpaidWorkers.includes(canonicalPersonKey(null, e.nombre)) ? 0 : e.totalCobrar), 0)
+  const sinDias = !recorded
+    ? (derived.employees as DerivedEmployee[]).filter((e) => !e.direccion && e.totalCobrar > 0 && e.dias === 0)
+    : []
 
   return (
     <div>
       <TabHeader icon="people" title="RH · Pagos" desc="Trabajadores, ciclos de 15 días y nómina" badge={TAB_BADGES.rh} />
 
-      {/* Navegador de ciclo */}
-      <section className="card">
-        <div className="rh-cycle-nav">
-          <button type="button" className="btn" onClick={() => setCycleIdx(idx - 1)}>← Anterior</button>
-          <div className="rh-cycle-title">
-            <strong className="font-display">Ciclo del {fmtDate(win.start)} al {fmtDate(win.end)}</strong>
-            <span className="small muted">Pago (día 16): {fmtDate(win.payDate)}</span>
-          </div>
-          <button type="button" className="btn" onClick={() => setCycleIdx(idx + 1)}>Siguiente →</button>
+      {/* Cabecera de ciclo del original (RHTab): tarjeta verde profundo
+          con Inicio / Fin (día 15) / Pago (día 16, en dorado) y el estado. */}
+      <div className="rh-hero">
+        <div className="rh-hero-nav">
+          <button type="button" className="btn" onClick={() => setCycleIdx(idx - 1)} aria-label="Ciclo anterior">← Anterior</button>
+          <p className="rh-hero-title">Ciclo {fmtDate(win.start)} — {fmtDate(win.end)}</p>
+          <button type="button" className="btn" onClick={() => setCycleIdx(idx + 1)} aria-label="Ciclo siguiente">Siguiente →</button>
         </div>
+        <div className="rh-hero-grid">
+          <div><p>Inicio</p><strong>{fmtDate(win.start)}</strong></div>
+          <div><p>Fin (día 15)</p><strong>{fmtDate(win.end)}</strong></div>
+          <div className="is-pay"><p>Pago (día 16)</p><strong>{fmtDate(win.payDate)}</strong></div>
+        </div>
+        <p className="rh-hero-status">
+          {today >= win.start && today <= win.payDate
+            ? daysToPay > 0
+              ? <>Faltan <strong>{daysToPay} día{daysToPay === 1 ? '' : 's'}</strong> para el pago · {cycleStatus}</>
+              : <strong>{cycleStatus}</strong>
+            : cycleStatus === 'Pago vencido' && idx === currentIdx
+              ? 'Este ciclo ya cerró; revisa el siguiente.'
+              : `Estado: ${cycleStatus}`}
+        </p>
         {idx !== currentIdx ? (
-          <button type="button" className="btn" style={{ marginTop: 10 }} onClick={() => setCycleIdx(null)}>Volver al ciclo actual</button>
+          <p className="rh-hero-back"><button type="button" className="btn" onClick={() => setCycleIdx(null)}>Volver al ciclo actual</button></p>
         ) : null}
-        <table className="kv" style={{ marginTop: 8 }}>
+      </div>
+
+      <section className="card">
+        <table className="kv" style={{ marginTop: 0 }}>
           <tbody>
-            <tr><td>Inicio del ciclo</td><td>{fmtDate(win.start)}</td></tr>
-            <tr><td>Fin (día 15)</td><td>{fmtDate(win.end)}</td></tr>
-            <tr><td>Pago (día 16)</td><td>{fmtDate(win.payDate)}</td></tr>
-            <tr><td>Estado</td><td>{cycleStatus}{daysToPay > 0 ? ` · faltan ${daysToPay} días` : ''}</td></tr>
             <tr>
               <td>{recorded ? 'Total pagado (registrado)' : 'Total a pagar del ciclo'}</td>
               <td>{fmtCUP(recorded ? recorded.total : derived.total)}</td>
@@ -260,12 +285,29 @@ export default function RHScreen({
         ) : (
           <p className="small muted">Todavía no hay foto de RH importada dentro de este ciclo: la nómina aparecerá sola al importar el IPV de un día del ciclo.</p>
         )}
+        {/* Banner del original: ciclo cerrado o abierto */}
+        {recorded || derived.photoDate ? (
+          win.end < today ? (
+            <p className="small" style={{ background: 'var(--surface-tonal)', borderRadius: 16, padding: '8px 12px' }}>
+              <strong>Ciclo cerrado.</strong> Las cifras de abajo son el cierre: cuánto se pagó a cada trabajador, por cuántos días y a cuánto por día. El pago correspondía al {fmtDate(win.payDate)}.
+            </p>
+          ) : (
+            <p className="small muted" style={{ background: 'var(--surface-tonal)', borderRadius: 16, padding: '8px 12px' }}>
+              <strong style={{ color: 'var(--text)' }}>Ciclo abierto.</strong> Esto es lo acumulado hasta la foto{derived.photoDate ? ` del ${fmtDate(derived.photoDate)}` : ''}: sigue sumando día a día hasta el cierre del {fmtDate(win.end)} y se paga el {fmtDate(win.payDate)}.
+            </p>
+          )
+        ) : null}
+        {sinDias.length > 0 ? (
+          <div className="error-box" role="alert" style={{ marginBottom: 10 }}>
+            Con pago asignado y 0 días trabajados: {sinDias.map((e) => e.nombre).join(', ')}. Revísalo en tu Excel.
+          </div>
+        ) : null}
         {tableEmployees.length > 0 ? (
           <div className="rh-table-wrap">
             <table className="rh-table">
               <thead>
                 <tr>
-                  <th>Trabajador</th><th>Días</th><th>Total</th><th>Efectivo</th><th>Transferencia</th>
+                  <th>Trabajador</th><th>Días</th><th>Salario diario</th><th>Total</th><th>Efectivo</th><th>Transferencia</th>
                   {isAdmin && !recorded ? <th>No pagado</th> : null}
                 </tr>
               </thead>
@@ -279,6 +321,7 @@ export default function RHScreen({
                       {e.noPagado ? <span className="chip">No pagado</span> : null}
                     </td>
                     <td>{fmtDias(e.dias)}</td>
+                    <td>{fmtCUP(e.salarioDiario)}</td>
                     <td>{fmtCUP(e.totalCobrar)}</td>
                     <td>{fmtCUP(e.pagoEfectivo)}</td>
                     <td>{fmtCUP(e.pagoTransferencia)}</td>
@@ -302,6 +345,21 @@ export default function RHScreen({
             </table>
           </div>
         ) : null}
+        {tableEmployees.length > 0 ? (() => {
+          const incluidos = tableEmployees.filter((e) => !e.direccion && !e.noPagado)
+          const totalBanda = recorded ? recorded.total : incluidos.reduce((s2, e) => s2 + e.totalCobrar, 0)
+          const efBanda = incluidos.reduce((s2, e) => s2 + e.pagoEfectivo, 0)
+          const trBanda = incluidos.reduce((s2, e) => s2 + e.pagoTransferencia, 0)
+          return (
+            <div className="rh-total">
+              <span className="t-label">{win.end < today ? <>Total pagado en el cierre · pago del {fmtDate(win.payDate)}</> : <>Acumulado hasta la foto · total a pagar el {fmtDate(win.payDate)}</>}</span>
+              <span>
+                <span className="t-value">{fmtCUP(totalBanda)}</span>
+                {trBanda > 0 ? <span className="t-split">Efectivo {fmtCUP(efBanda)} · Transferencia {fmtCUP(trBanda)}</span> : null}
+              </span>
+            </div>
+          )
+        })() : null}
         {isAdmin && !recorded && (derived.photoDate || adjustment) ? (
           <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" className="btn primary" onClick={startEdit}>Editar nómina del ciclo</button>
@@ -445,7 +503,8 @@ export default function RHScreen({
                   else cls += ' is-rest'
                   if (f === today) cls += ' is-today'
                   if (f > today) cls += ' is-future'
-                  return <span key={f} className={cls} title={fmtDate(f)}>{Number(f.slice(8, 10))}</span>
+                  const label = v == null ? 'aún sin foto' : v >= 1 ? 'trabajó' : v > 0 ? 'medio día' : 'descanso'
+                  return <span key={f} className={cls} title={`${fmtDate(f)} — ${label}`}>{Number(f.slice(8, 10))}</span>
                 })}
               </div>
               <p className="small" style={{ marginTop: 8 }}>

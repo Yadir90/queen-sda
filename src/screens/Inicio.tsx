@@ -1,16 +1,21 @@
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useMemo, useState } from 'react'
 import type { Section, StoredData } from '../types'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
-import { ColumnChart, RowChart, ChartCard, DayPulse, MonthHeatMap, ProgressRing, type ChartDatum, type HeatDay } from '../components/charts'
-import { effectiveSaldo, fmtCUP, fmtDate, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
+import { ColumnChart, RowChart, ChartCard, DayPulse, MonthHeatMap, ProgressRing, CashBars, LuminousBars, FutureCard, DeptCompareChart, BucketCompareChart, buildRiver, buildCategoryBars, type ChartDatum, type HeatDay } from '../components/charts'
+import { DayTimeline, NightCloseConsole, type CloseStep, type TimelineEvent } from '../components/homeMirror'
+import '../components/homeMirror.css'
+import { dueDate, effectiveSaldo, fmtCUP, fmtDate, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
 
 /* Inicio (panorama) — orden de bloques del sistema original:
    selector de período · línea de cobertura · (mes) este mes vs el
    anterior · acciones rápidas · resumen de hoy · «El negocio en
    gráficos» (DayPulse, tres anillos, mapa térmico) · «DE UN VISTAZO»
-   con anillo de salud · alerta en rojo · tarjetas de gráficos del
-   período · desglose por categoría · medidores de fondos · botón «+».
+   «El día y su cierre» (DayTimeline + NightCloseConsole) · alerta en
+   rojo (fx-vital-alert) · tarjetas de gráficos del período · CashBars
+   y LuminousBars · «De dónde salen los totales de cuentas» ·
+   comparador de períodos · medidores de fondos · botón «+».
+   SIN «De un vistazo» en Inicio: en el original vive solo en Sistema.
    Todo sale de los datos reales importados: un día ausente no cuenta
    como venta 0 y ninguna cifra se inventa. */
 
@@ -66,12 +71,36 @@ function lastClosedQuincenaAnchor(today: string): string {
   return toISO(new Date(prev.getFullYear(), prev.getMonth(), daysInMonth(prev.getFullYear(), prev.getMonth() + 1)))
 }
 
+/** Inicio del período siguiente/anterior a un tramo (para el comparador):
+ *  +1 = el día después del fin del tramo; −1 = el tramo que contiene el
+ *  día anterior a su inicio. Vale para los cinco tipos del clon. */
+function shiftPeriodStart(type: PeriodType, fromISO: string, dir: number): string {
+  if (dir > 0) return addDays(rangeFor(type, fromISO).to, 1)
+  return rangeFor(type, addDays(fromISO, -1)).from
+}
+
+/** delta / fmtDelta de periods.ts del original, literales. */
+function delta(cur: number, prev: number): { abs: number; pct: number | null } {
+  const abs = cur - prev
+  return { abs, pct: prev !== 0 ? (abs / Math.abs(prev)) * 100 : null }
+}
+function fmtDelta(cur: number, prev: number): { texto: string; mejora: boolean | null } {
+  const d = delta(cur, prev)
+  if (prev === 0 && cur === 0) return { texto: 'sin cambio', mejora: null }
+  if (d.pct == null) return { texto: `${d.abs >= 0 ? '+' : ''}${fmtCUP(d.abs)} (sin base)`, mejora: d.abs > 0 ? true : d.abs < 0 ? false : null }
+  return {
+    texto: `${d.abs >= 0 ? '+' : ''}${fmtCUP(d.abs)} (${d.pct >= 0 ? '+' : ''}${d.pct.toFixed(1)}%)`,
+    mejora: d.abs > 0 ? true : d.abs < 0 ? false : null,
+  }
+}
+
 export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { data: StoredData; isAdmin: boolean; onImportClick: () => void; onNavigate: (s: Section) => void }) {
   const today = todayISO()
   const lastDay = data.days.length ? data.days[data.days.length - 1] : null
   const [ptype, setPtype] = useState<PeriodType>('mes')
   const [anchor, setAnchor] = useState<string>(() => lastDay?.date ?? today)
-  const [whyOpen, setWhyOpen] = useState(false)
+  const [compareOn, setCompareOn] = useState(false)
+  const [compareFrom, setCompareFrom] = useState<string>(() => shiftPeriodStart('mes', rangeFor('mes', lastDay?.date ?? today).from, -1))
 
   const pending = useMemo(() => data.receivables
     .map((r) => ({ rec: r, saldo: effectiveSaldo(r, data.localPayments) }))
@@ -85,7 +114,7 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
       <div>
         <TabHeader icon="dashboard" title="Inicio" desc="Tablero y resumen del período" badge={TAB_BADGES.panorama} />
         <Card>
-          <p className="eyebrow">De un vistazo</p>
+          <p className="eyebrow">Inicio</p>
           <EmptyState icon="archive" title="Sin datos todavía" text="Este sistema externo aún no tiene días importados. Los datos reales entran importando el respaldo diario del SDA; aquí nunca verás cifras de ejemplo.">
             {isAdmin ? (
               <div style={{ marginTop: 14 }}>
@@ -141,16 +170,6 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
   for (const d of periodDays) for (const dep of d.departments) deptMap.set(dep.name, (deptMap.get(dep.name) ?? 0) + dep.ventas)
   const depts = [...deptMap.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }))
 
-  // Fondos del período.
-  const fondos = {
-    efectivo: sum((d) => d.fondos.efectivo),
-    transferencias: sum((d) => d.fondos.transferencias),
-    cuentas: sum((d) => d.fondos.totalCuentasPorCobrar),
-    divisas: sum((d) => d.fondos.divisasCUP),
-    zelle: sum((d) => d.fondos.zelle),
-    total: sum((d) => d.fondos.totalFondos),
-  }
-
   // Este mes vs el anterior (solo período Mes, con el mes del ancla).
   const anchorMonth = monthKey(anchor)
   const [ay, am] = anchorMonth.split('-').map(Number)
@@ -192,19 +211,24 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
       monthHeat.push({ date: iso, ventas: d ? d.ventasDia : null, neta: d ? d.gananciaNeta : null })
     }
   }
-  const squaredMonth = curMonthDays.filter((d) => d.cuadre === 0).length
   const covPct = elapsedMonthDays > 0 ? (curMonthDays.length / elapsedMonthDays) * 100 : 0
-  const cuadrePct = curMonthDays.length > 0 ? (squaredMonth / curMonthDays.length) * 100 : 0
   const alDiaPct = pending.length > 0 ? ((pending.length - vencidas.length) / pending.length) * 100 : 100
-  const curMonthMissing = elapsedMonthDays - curMonthDays.length
-  const health = Math.round((covPct + cuadrePct + alDiaPct) / 3)
-  const healthColor = health >= 85 ? 'var(--accent)' : health >= 70 ? 'var(--gold)' : health >= 50 ? '#e07b24' : 'var(--danger)'
-  const attentionCount = vencidas.length + Math.max(0, curMonthMissing)
-  const nowTime = new Date().toLocaleTimeString('es-CU', { hour: '2-digit', minute: '2-digit' })
+  // NOTA «De un vistazo» (decisión documentada): en el original ese
+  // panel vive SOLO en Sistema, con la salud del organismo (sistema),
+  // no en Inicio. La versión anterior de Inicio promediaba tres
+  // comprobaciones propias (IPV/cuadre/cuentas) y lo presentaba como
+  // «salud»: eso NO es el original y se retiró. Inicio no muestra
+  // ningún «De un vistazo»; la salud queda en Sistema.
 
   const monthVentas = sum((d) => d.ventasDia, curMonthDays)
   const monthNetaAll = sum((d) => d.gananciaNeta, curMonthDays)
   const marginPct = monthVentas > 0 ? (monthNetaAll / monthVentas) * 100 : 0
+  const curMonthExpenses = data.expenses.filter((e) => monthKey(e.date) === curMonth)
+  const curMonthGastos = curMonthExpenses.reduce((t, e) => t + e.total, 0)
+  const curMonthExtrasList = curMonthDays.flatMap((d) => d.extras)
+  const curMonthExtras = curMonthDays.reduce((t, d) => t + d.extras.reduce((u, x) => u + x.importe, 0), 0)
+  const monthResultado = monthNetaAll - curMonthGastos + curMonthExtras
+  const mesEnRojo = monthResultado < 0 && (curMonthDays.length > 0 || curMonthExpenses.length > 0 || curMonthExtrasList.length > 0)
 
   // Medidores de fondos (mes del ancla y su trimestre).
   const meterMonthDays = monthDays
@@ -220,16 +244,110 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
     : quarterTotalDays
 
   const prevDay = data.days.length > 1 ? data.days[data.days.length - 2] : null
-  const bestDept = depts.length ? depts[0] : null
-  const summaryBullets: string[] = [
-    prevDay
-      ? `El último día con IPV (${fmtDateShort(lastDay.date)}) vendió ${fmtCUP(lastDay.ventasDia)} — ${lastDay.ventasDia === prevDay.ventasDia ? 'lo mismo que' : lastDay.ventasDia > prevDay.ventasDia ? `${fmtCUP(lastDay.ventasDia - prevDay.ventasDia)} más que` : `${fmtCUP(prevDay.ventasDia - lastDay.ventasDia)} menos que`} el día anterior.`
-      : `El último día con IPV (${fmtDateShort(lastDay.date)}) vendió ${fmtCUP(lastDay.ventasDia)}.`,
-    lastDay.cuadre === 0 ? 'El cuadre del último día es exacto (0).' : `El último día trae un descuadre de ${fmtCUP(lastDay.cuadre)}: revísalo en Días.`,
-    pending.length > 0 ? `Hay ${fmtInt(pending.length)} cuentas pendientes por ${fmtCUP(pending.reduce((s, x) => s + x.saldo, 0))}; el dinero en la calle (solo clientes) es ${fmtCUP(dineroCalle)}.` : 'No hay cuentas pendientes de cobro.',
-    vencidas.length > 0 ? `${fmtInt(vencidas.length)} cuentas están vencidas por ${fmtCUP(vencidasTotal)}.` : 'Ninguna cuenta está vencida hoy.',
-    ...(bestDept ? [`El departamento que más vendió en el período: ${bestDept.label} (${fmtCUP(bestDept.value)}).`] : []),
+  // smartSummaries del original, literales: (1) la venta del último día
+  // frente al anterior y (2) las cuentas por vencer en los próximos
+  // 3 días (pendientes, no morosas, con vencimiento a 0–3 días vista).
+  const smartSummaries: string[] = [
+    lastDay && prevDay
+      ? lastDay.ventasDia === prevDay.ventasDia
+        ? `La venta del ${fmtDateShort(lastDay.date)} quedó igual que el día anterior: ${fmtCUP(lastDay.ventasDia)}.`
+        : `El ${fmtDateShort(lastDay.date)} vendiste ${fmtCUP(Math.abs(lastDay.ventasDia - prevDay.ventasDia))} ${lastDay.ventasDia > prevDay.ventasDia ? 'más' : 'menos'} que el día anterior.`
+      : 'Importa dos días para comparar las ventas recientes.',
+    (() => {
+      const dueSoon = pending.filter(({ rec }) => {
+        const due = dueDate(rec)
+        if (!due) return false
+        const days = Math.round((parseISO(due).getTime() - parseISO(today).getTime()) / 86400000)
+        return days >= 0 && days <= 3
+      }).length
+      return dueSoon > 0 ? `${fmtInt(dueSoon)} cuenta${dueSoon === 1 ? '' : 's'} por vencer en los próximos 3 días.` : 'No hay cuentas por vencer en los próximos 3 días.'
+    })(),
   ]
+
+  // ---- El día y su cierre (bloque literal del original) ----
+  // Timed: en el original salen del outbox de correos; en el clon la
+  // única hora real registrada de un envío es Bulletin.sentAt, así que
+  // los boletines ENVIADOS de hoy ocupan ese carril, con su asunto y
+  // sus destinatarios reales. Sin boletín enviado hoy, no hay eventos
+  // con hora: no se inventa ninguna.
+  const diaHoyTl = data.days.find((d) => d.date === today) ?? null
+  const timedTl: TimelineEvent[] = []
+  for (const b of data.bulletins) {
+    if (b.status !== 'enviado' || !b.sentAt) continue
+    const sent = new Date(b.sentAt)
+    if (Number.isNaN(sent.getTime())) continue
+    const fechaHavana = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Havana', year: 'numeric', month: '2-digit', day: '2-digit' }).format(sent)
+    if (fechaHavana !== today) continue
+    const hm = new Intl.DateTimeFormat('es-CU', { timeZone: 'America/Havana', hour: '2-digit', minute: '2-digit', hour12: false }).format(sent)
+    const [hh = 0, mm = 0] = hm.split(':').map(Number)
+    timedTl.push({ id: `mail-${b.id}`, label: `Correo enviado: ${b.subject || 'informe'}`, detail: `Salió hacia ${b.recipients.join(', ') || 'su destinatario'} y el servicio lo confirmó.`, minutes: hh * 60 + mm, tone: 'ok' })
+  }
+  const untimedTl: TimelineEvent[] = []
+  if (diaHoyTl) {
+    untimedTl.push({ id: 'ipv-hoy', label: `IPV de hoy: venta ${fmtCUP(diaHoyTl.ventasDia)}`, detail: `Ganancia neta ${fmtCUP(diaHoyTl.gananciaNeta)} · cuadre ${Math.abs(diaHoyTl.cuadre) < 0.005 ? 'en cero' : `con diferencia de ${fmtCUP(diaHoyTl.cuadre)}`}.`, minutes: null, tone: Math.abs(diaHoyTl.cuadre) < 0.005 ? 'ok' : 'bad' })
+    const topDep = [...diaHoyTl.departments].sort((a, b) => b.ventas - a.ventas)[0]
+    if (topDep) untimedTl.push({ id: 'pico-hoy', label: `Pico del día: ${topDep.name}`, detail: `Es el departamento que más vendió hoy: ${fmtCUP(topDep.ventas)} de los ${fmtCUP(diaHoyTl.ventasDia)} del día.`, minutes: null, tone: 'info' })
+  }
+  const gastosHoyTl = data.expenses.filter((e) => e.date === today)
+  if (gastosHoyTl.length) untimedTl.push({ id: 'gastos-hoy', label: `Gastos de hoy: ${gastosHoyTl.length} (${fmtCUP(gastosHoyTl.reduce((t, e) => t + e.total, 0))})`, detail: 'Son los gastos con fecha de hoy en la pestaña Gastos.', minutes: null, tone: 'info' })
+  const cuentasHoyTl = pending.filter((x) => x.rec.date === today)
+  if (cuentasHoyTl.length) untimedTl.push({ id: 'cuentas-hoy', label: `Cuentas nuevas hoy: ${cuentasHoyTl.length}`, detail: `Nacieron hoy y quedan por cobrar ${fmtCUP(cuentasHoyTl.reduce((t, x) => t + x.saldo, 0))}.`, minutes: null, tone: 'warn' })
+  const boletinHoyTl = data.bulletins.some((b) => b.date === today && b.status === 'enviado')
+  const stepsTl: CloseStep[] = [
+    { key: 'ipv', label: 'IPV del día subido', done: !!diaHoyTl, detail: diaHoyTl ? `Ya está el IPV de hoy, con venta de ${fmtCUP(diaHoyTl.ventasDia)}.` : 'Todavía no se subió el IPV de hoy: sin él, el día no cuenta en ningún total.', actionLabel: 'Subir el IPV' },
+    { key: 'cuadre', label: 'Cuadre del día en cero', done: !!diaHoyTl && Math.abs(diaHoyTl.cuadre) < 0.005, detail: diaHoyTl ? (Math.abs(diaHoyTl.cuadre) < 0.005 ? 'La caja y las ventas coinciden: diferencia de 0 CUP.' : `El cuadre tiene una diferencia de ${fmtCUP(diaHoyTl.cuadre)}: hay que revisarla antes de cerrar.`) : 'Sin IPV no hay cuadre que confirmar.', actionLabel: 'Ver en Días' },
+    { key: 'gastos', label: 'Gastos del día registrados', done: gastosHoyTl.length > 0, detail: gastosHoyTl.length ? `${gastosHoyTl.length} gasto${gastosHoyTl.length === 1 ? '' : 's'} de hoy por ${fmtCUP(gastosHoyTl.reduce((t, e) => t + e.total, 0))}.` : 'Hoy no hay gastos registrados: si no hubo ninguno, déjalo así; si falta alguno, regístralo ahora.', actionLabel: 'Ir a Gastos' },
+    { key: 'boletin', label: 'Boletín del día enviado', done: boletinHoyTl, detail: boletinHoyTl ? 'El boletín de hoy ya salió por correo a sus destinatarios.' : 'El boletín de hoy aún no consta enviado: se despacha desde Sistema o solo, a su hora.', actionLabel: 'Ir a Sistema' },
+  ]
+
+  // ---- Comparador de períodos (bloque literal del original) ----
+  const cmpRange = rangeFor(ptype, compareFrom)
+  const aggPeriod = (from: string, to: string) => {
+    const days = data.days.filter((d) => d.date >= from && d.date <= to)
+    const gastos = data.expenses.filter((e) => e.date >= from && e.date <= to).reduce((t, e) => t + e.total, 0)
+    const extras = days.reduce((t, d) => t + d.extras.reduce((u, x) => u + x.importe, 0), 0)
+    const v = days.reduce((t, d) => t + d.ventasDia, 0)
+    const n = days.reduce((t, d) => t + d.gananciaNeta, 0)
+    return {
+      days, count: days.length, ventas: v,
+      bruta: days.reduce((t, d) => t + d.gananciaBruta, 0), neta: n,
+      gastos, extras, resultado: n - gastos + extras,
+      promedio: days.length ? v / days.length : 0,
+    }
+  }
+  const actualAgg = aggPeriod(range.from, range.to)
+  const compareAgg = aggPeriod(cmpRange.from, cmpRange.to)
+  const deptComparison = (() => {
+    const names = [...new Set([...actualAgg.days, ...compareAgg.days].flatMap((d) => d.departments.map((dep) => dep.name)))]
+    const deptSum = (days: typeof actualAgg.days, name: string) => days.reduce((t, d) => t + (d.departments.find((dep) => dep.name === name)?.ventas ?? 0), 0)
+    return names.map((name) => ({ name, actual: deptSum(actualAgg.days, name), comparado: deptSum(compareAgg.days, name) }))
+      .sort((a, b) => b.actual - a.actual)
+  })()
+  const comparisonMerged = (() => {
+    if (ptype === 'trimestre') {
+      const totalDays = Math.round((parseISO(range.to).getTime() - parseISO(range.from).getTime()) / 86400000) + 1
+      const weeks = Math.ceil(totalDays / 7)
+      const sumWeek = (days: typeof actualAgg.days, fromISO: string, i: number) => days.filter((d) => {
+        const off = Math.round((parseISO(d.date).getTime() - parseISO(fromISO).getTime()) / 86400000)
+        return off >= i * 7 && off < i * 7 + 7
+      }).reduce((t, d) => t + d.ventasDia, 0)
+      return Array.from({ length: weeks }, (_, i) => {
+        const wStart = addDays(range.from, i * 7)
+        return { label: `Sem ${i + 1} (${wStart.slice(8)}/${wStart.slice(5, 7)})`, actual: sumWeek(actualAgg.days, range.from, i), comparado: sumWeek(compareAgg.days, cmpRange.from, i) }
+      })
+    }
+    const totalDays = Math.round((parseISO(range.to).getTime() - parseISO(range.from).getTime()) / 86400000) + 1
+    return Array.from({ length: totalDays }, (_, i) => {
+      const aDate = addDays(range.from, i)
+      const cDate = addDays(cmpRange.from, i)
+      return {
+        label: aDate.slice(8),
+        actual: actualAgg.days.find((d) => d.date === aDate)?.ventasDia ?? 0,
+        comparado: compareAgg.days.find((d) => d.date === cDate)?.ventasDia ?? 0,
+      }
+    })
+  })()
+  const bucketLabel = ptype === 'quincena' || ptype === 'mes' ? 'por día' : ptype === 'trimestre' ? 'por semana' : 'por mes'
 
   const shift = (dir: number) => {
     if (ptype === 'dia') setAnchor(addDays(anchor, dir))
@@ -244,7 +362,9 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
   }
   const pickType = (t: PeriodType) => {
     setPtype(t)
-    if (t === 'quincena') setAnchor(lastClosedQuincenaAnchor(today))
+    const nextAnchor = t === 'quincena' ? lastClosedQuincenaAnchor(today) : anchor
+    if (t === 'quincena') setAnchor(nextAnchor)
+    setCompareFrom(shiftPeriodStart(t, rangeFor(t, nextAnchor).from, -1))
   }
 
   return (
@@ -303,18 +423,12 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
         </button>
       </div>
 
-      {/* 5 · Resumen de hoy */}
-      <Card>
-        <div className="smart-summary">
-          <span className="ss-ico"><Icon name="sparkle" size={22} /></span>
-          <div>
-            <h3 style={{ marginTop: 4 }}>Resumen de hoy</h3>
-            <ul>
-              {summaryBullets.map((b, i) => <li key={i}>{b}</li>)}
-            </ul>
-          </div>
-        </div>
-      </Card>
+      {/* 5 · Resumen de hoy (smart-summary del original, con su
+          animación vital «respira»: fx-vital-serene de homeMirror.css) */}
+      <div className="smart-summary fx-vital-serene" aria-label="Resumen inteligente de hoy">
+        <div><Icon name="sparkle" size={18} /><strong>Resumen de hoy</strong></div>
+        <ul>{smartSummaries.map((summary) => <li key={summary}>{summary}</li>)}</ul>
+      </div>
 
       {/* 6 · El negocio en gráficos */}
       <Card>
@@ -344,44 +458,28 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
         <MonthHeatMap days={monthHeat} monthKey={curMonth} todayISO={today} compact />
       </Card>
 
-      {/* 7 · DE UN VISTAZO con anillo de salud */}
-      <section className="premium-panel" aria-label="De un vistazo">
-        <div className="premium-head">
-          <div
-            className="premium-ring"
-            style={{ '--ring-color': healthColor, '--ring-deg': `${health * 3.6}deg` } as CSSProperties}
-            role="img" aria-label={`Salud del sistema: ${health} de 100`}
-          >
-            <span><strong>{health}</strong><small>salud</small></span>
-          </div>
-          <div className="premium-text">
-            <span className="premium-kicker"><i /> De un vistazo</span>
-            <p className="premium-title">{attentionCount === 0 ? 'Todo bien' : `Hay ${fmtInt(attentionCount)} cosas que necesitan tu atención hoy`}</p>
-            <p className="premium-sub">Comprobado a las {nowTime} · con los datos reales importados.</p>
-            <div className="premium-actions">
-              <button type="button" className="btn" onClick={() => setWhyOpen((v) => !v)} aria-expanded={whyOpen}>¿Por qué este número?</button>
-              <button type="button" className="btn" onClick={() => onNavigate('queen')}>Preguntar a Queen</button>
-            </div>
-          </div>
-        </div>
-        {whyOpen ? (
-          <div className="chart-selected-detail" role="status" aria-live="polite" style={{ marginTop: 14 }}>
-            <p className="chart-selected-title">La salud promedia tres comprobaciones reales de este mes</p>
-            <div className="chart-selected-lines">
-              <div className="chart-selected-line"><span className="chart-tooltip-dot" style={{ background: 'var(--chart-green)' }} /><span>Días con IPV ({curMonthDays.length} de {elapsedMonthDays})</span><strong>{Math.round(covPct)} %</strong></div>
-              <div className="chart-selected-line"><span className="chart-tooltip-dot" style={{ background: 'var(--chart-deep)' }} /><span>Días con cuadre exacto ({squaredMonth} de {curMonthDays.length})</span><strong>{Math.round(cuadrePct)} %</strong></div>
-              <div className="chart-selected-line"><span className="chart-tooltip-dot" style={{ background: 'var(--chart-turquoise)' }} /><span>Cuentas al día ({pending.length - vencidas.length} de {pending.length} pendientes)</span><strong>{Math.round(alDiaPct)} %</strong></div>
-            </div>
-          </div>
-        ) : null}
+      {/* 7 · «El día y su cierre» (DayTimeline + NightCloseConsole del
+          original, tras «El negocio en gráficos» como en el original).
+          SIN «De un vistazo» aquí: ese panel es de Sistema. */}
+      <section aria-label="El día y su cierre" style={{ display: 'grid', gap: 16, marginBottom: 16 }}>
+        <DayTimeline events={[...timedTl, ...untimedTl]} dayLabel="hoy" />
+        <NightCloseConsole steps={stepsTl} dayLabel="hoy" onAction={(key) => (key === 'ipv' ? onImportClick() : key === 'cuadre' ? onNavigate('dias') : key === 'gastos' ? onNavigate('economia') : onNavigate('sistema'))} />
       </section>
 
-      {/* 8 · Alerta en rojo si el mes va negativo */}
-      {monthNetaAll < 0 ? (
-        <Card className="alert-red">
-          <h3>Este mes va en rojo</h3>
-          <p className="sub">La ganancia neta acumulada del mes en curso es {fmtCUP(monthNetaAll)}. Revisa los gastos o pregúntale a Queen por el detalle.</p>
-          <button type="button" className="btn" onClick={() => onNavigate('queen')}>Preguntar a Queen</button>
+      {/* 8 · El mes va en rojo (fx-vital-alert del original) */}
+      {mesEnRojo ? (
+        <Card className="alert-red fx-vital-alert">
+          <div role="alert" aria-label="El mes va en rojo">
+            <h3 style={{ color: 'var(--danger)' }}>Este mes va en rojo: {fmtCUP(monthResultado)}</h3>
+            <p className="sub">
+              Acumulado de {MONTHS[Number(curMonth.slice(5)) - 1]} de {curMonth.slice(0, 4)} hasta hoy: ganancia neta {fmtCUP(monthNetaAll)} − gastos {fmtCUP(curMonthGastos)} + otros ingresos {fmtCUP(curMonthExtras)}.
+              El aviso aparece en cuanto el acumulado se pone negativo — sin esperar al cierre del mes ni de la quincena — y se mantiene mientras el mes siga en rojo. Queen también lo deja en su bandeja.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn" onClick={() => onNavigate('economia')}>Ver los gastos</button>
+              <button type="button" className="btn" onClick={() => onNavigate('queen')}>Ver el aviso en Queen</button>
+            </div>
+          </div>
         </Card>
       ) : null}
 
@@ -395,43 +493,123 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
       <ChartCard title="Venta por departamento" sub="Toca una fila para ver su detalle.">
         <RowChart data={depts} ariaLabel="Venta por departamento" />
       </ChartCard>
-      <ChartCard title="Fondos del período" sub="Cómo se cobró lo vendido en el período, según los IPV.">
-        <div>
-          <div className="rec-detail" style={{ borderTop: 0, marginTop: 0, paddingTop: 0 }}>
-            <div className="row"><span>Efectivo</span><strong>{fmtCUP(fondos.efectivo)}</strong></div>
-            <div className="row"><span>Transferencias</span><strong>{fmtCUP(fondos.transferencias)}</strong></div>
-            <div className="row"><span>Cuentas por cobrar</span><strong>{fmtCUP(fondos.cuentas)}</strong></div>
-            <div className="row"><span>Divisas (en CUP)</span><strong>{fmtCUP(fondos.divisas)}</strong></div>
-            <div className="row"><span>Zelle</span><strong>{fmtCUP(fondos.zelle)}</strong></div>
-          </div>
-          <div className="fondos-total"><span>Total de fondos</span><span className="figure">{fmtCUP(fondos.total)}</span></div>
-          <p className="small muted" style={{ marginBottom: 0 }}>Ventas del período: {fmtCUP(ventas)} · Ganancia bruta {fmtCUP(bruta)} · Ganancia neta {fmtCUP(neta)}.</p>
-        </div>
-      </ChartCard>
-      {buckets.some((b) => Number(b.total) > 0) ? (
-        <ChartCard title="Gastos registrados del período" sub="Los gastos que trae cada IPV del período.">
-          <ColumnChart data={buckets} series={[{ key: 'total', label: 'Gastos', color: 'var(--chart-turquoise)' }]} ariaLabel="Gastos registrados por tramo" />
-        </ChartCard>
-      ) : null}
+      {/* CashBars del original: sustituye a la tabla de «Fondos del
+          período» (el río de caja en barras, con los datos del período). */}
+      <CashBars data={buildRiver(data.days.map((d) => ({ date: d.date, ventasDia: d.ventasDia, gananciaBruta: d.gananciaBruta, gananciaNeta: d.gananciaNeta, extrasImporte: d.extras.reduce((t, x) => t + x.importe, 0) })), data.expenses, range.from, range.to)} periodLabel={range.label.toLowerCase()} />
+      {/* LuminousBars del original (en Gastos vive igual, tras su
+          FutureCard «Los gastos en barras»): sustituye al ColumnChart
+          de gastos del IPV que había aquí. */}
+      <FutureCard title="Los gastos en barras" subtitle="Cada categoría del período, en proporción a la mayor." nota="la barra más larga es la categoría donde más dinero salió en el período seleccionado arriba. Toca una barra para ver su parte del total.">
+        <LuminousBars items={buildCategoryBars(data.expenses, range.from, range.to)} emptyText="Sin gastos registrados en este período: las barras se encienden cuando entre el primer gasto." />
+      </FutureCard>
 
-      {/* 10 · Desglose de cuentas por categoría */}
+      {/* 10 · De dónde salen los totales de cuentas (bloque literal
+          del original: solo totales; la lista cuenta por cuenta vive
+          solo en «Cobrar»). */}
       <Card>
-        <h3>Cuentas por categoría</h3>
-        <p className="sub">Lo pendiente hoy, por tipo de cuenta. El dinero en la calle cuenta solo a los clientes.</p>
+        <h3>De dónde salen los totales de cuentas</h3>
+        <p className="sub">Dinero en la calle usa solo Clientes. Trabajadores y Administrativo se muestran aparte y no se suman a ese indicador.</p>
         <div className="grid-3">
           {(['cliente', 'trabajador', 'administrativo'] as const).map((cat) => {
             const rows = pending.filter((x) => x.rec.category === cat)
-            const label = cat === 'cliente' ? 'Clientes' : cat === 'trabajador' ? 'Trabajadores' : 'Administrativos'
+            const label = cat === 'cliente' ? 'Clientes' : cat === 'trabajador' ? 'Trabajadores' : 'Administrativo'
             return (
               <div className="stat" key={cat}>
                 <div className="label">{label}</div>
-                <div className="value">{fmtCUP(rows.reduce((s, x) => s + x.saldo, 0))}</div>
-                <div className="hint">{fmtInt(rows.length)} cuentas pendientes</div>
+                <div className="value">{fmtCUP(rows.reduce((t, x) => t + x.saldo, 0))}</div>
+                <div className="hint">{rows.length ? `${fmtInt(rows.length)} cuenta${rows.length === 1 ? '' : 's'} pendiente${rows.length === 1 ? '' : 's'} · el detalle está en «Cobrar»` : 'Sin cuentas pendientes.'}</div>
               </div>
             )
           })}
         </div>
       </Card>
+
+      {/* 10b · Comparar con otro período (bloque literal del original:
+          tabla de indicadores con variación + DeptCompareChart y
+          BucketCompareChart alimentados de los períodos reales). */}
+      <section className="card" aria-label="Comparación de períodos">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Comparar con otro {PERIOD_TYPES.find((t) => t.id === ptype)?.label.toLowerCase()}</h3>
+          <button type="button" className={`btn${compareOn ? ' primary' : ''}`} onClick={() => setCompareOn((v) => !v)} aria-pressed={compareOn}>
+            {compareOn ? 'Comparación activa' : 'Activar comparación'}
+          </button>
+        </div>
+        {!compareOn ? (
+          <p className="sub" style={{ margin: 0 }}>Actívala para ver este período lado a lado con otro del mismo tipo (otro mes, trimestre, semestre o año), con variación absoluta y en %.</p>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+              <button type="button" className="period-arrow" onClick={() => setCompareFrom((f) => shiftPeriodStart(ptype, f, -1))} aria-label="Período comparado anterior"><Icon name="chevronL" size={18} /></button>
+              <p style={{ fontWeight: 600, fontSize: '0.9rem', flex: 1, textAlign: 'center', margin: 0 }}>
+                Comparado: {cmpRange.label}
+                <span style={{ display: 'block', fontSize: '0.78rem', fontWeight: 400, color: 'var(--dim)' }}>{cmpRange.from} — {cmpRange.to}</span>
+              </p>
+              <button type="button" className="period-arrow" onClick={() => setCompareFrom((f) => shiftPeriodStart(ptype, f, 1))} aria-label="Período comparado siguiente"><Icon name="chevronR" size={18} /></button>
+            </div>
+            {actualAgg.count === 0 || compareAgg.count === 0 ? (
+              <p className="sub" style={{ color: 'var(--danger)', margin: 0 }} role="alert">
+                Falta data en {actualAgg.count === 0 ? `«${range.label}»` : `«${cmpRange.label}»`}: no hay días importados en ese período, así que no se calcula ninguna variación.
+              </p>
+            ) : (
+              <>
+                <p className="coverage-line" role="status">
+                  <strong>Cobertura:</strong> {range.label}: {fmtInt(actualAgg.count)} día{actualAgg.count === 1 ? '' : 's'} importado{actualAgg.count === 1 ? '' : 's'} vs {cmpRange.label}: {fmtInt(compareAgg.count)} día{compareAgg.count === 1 ? '' : 's'}.
+                  {actualAgg.count !== compareAgg.count ? ' La variación es solo indicativa de los días cargados: un período incompleto no se compara como si estuviera completo.' : ''}
+                </p>
+                <div style={{ overflowX: 'auto', marginBottom: 16 }}>
+                  <table className="rh-table">
+                    <thead>
+                      <tr><th>Indicador</th><th style={{ textAlign: 'right' }}>Actual</th><th style={{ textAlign: 'right' }}>Comparado</th><th style={{ textAlign: 'right' }}>Variación</th></tr>
+                    </thead>
+                    <tbody>
+                      {([
+                        ['Ventas', actualAgg.ventas, compareAgg.ventas],
+                        ['Ganancia bruta', actualAgg.bruta, compareAgg.bruta],
+                        ['Ganancia neta', actualAgg.neta, compareAgg.neta],
+                        ['Gastos registrados', actualAgg.gastos, compareAgg.gastos],
+                        ['Resultado (neta − gastos + extras)', actualAgg.resultado, compareAgg.resultado],
+                        ['Promedio diario', actualAgg.promedio, compareAgg.promedio],
+                      ] as Array<[string, number, number]>).map(([label, a, b]) => {
+                        const d = fmtDelta(a, b)
+                        const dd = delta(a, b)
+                        return (
+                          <tr key={label}>
+                            <td style={{ fontWeight: 500 }}>{label}</td>
+                            <td style={{ textAlign: 'right' }}>{fmtInt(a)}</td>
+                            <td style={{ textAlign: 'right' }}>{fmtInt(b)}</td>
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: d.mejora == null ? undefined : d.mejora ? 'var(--accent)' : 'var(--danger)' }}>
+                              {d.texto}<span style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' }}>{dd.abs >= 0 ? ' (sube)' : ' (baja)'}</span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                      <tr>
+                        <td style={{ fontWeight: 500 }}>Días con datos</td>
+                        <td style={{ textAlign: 'right' }}>{actualAgg.count}</td>
+                        <td style={{ textAlign: 'right' }}>{compareAgg.count}</td>
+                        <td style={{ textAlign: 'right' }}>{actualAgg.count - compareAgg.count >= 0 ? '+' : ''}{actualAgg.count - compareAgg.count}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                {actualAgg.count !== compareAgg.count ? (
+                  <p className="small muted" style={{ marginBottom: 12 }}>
+                    Ojo: {range.label} tiene {fmtInt(actualAgg.count)} día{actualAgg.count === 1 ? '' : 's'} importado{actualAgg.count === 1 ? '' : 's'} y {cmpRange.label} tiene {fmtInt(compareAgg.count)}; la variación es solo indicativa de los días cargados hasta completar ambos.
+                  </p>
+                ) : null}
+                <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))' }}>
+                  <ChartCard title="Ventas por departamento: actual vs comparado">
+                    <DeptCompareChart data={deptComparison} />
+                  </ChartCard>
+                  <ChartCard title={`Ventas ${bucketLabel}: actual vs comparado`}>
+                    <BucketCompareChart data={comparisonMerged} />
+                  </ChartCard>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </section>
 
       {/* 11 · Fondos económicos (medidores del original) */}
       <Card>

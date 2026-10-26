@@ -504,6 +504,29 @@ export function answerQueen(data, question, opts = {}) {
       evo.metrics.filter((m) => !m.measured).map((m) => m.label))
   }
 
+  /* Preguntas rápidas del popover del original, tal cual se ofrecen:
+     se resuelven a su forma canónica o a las observaciones. */
+  if (/(que avisos hay|avisos hay)/.test(q)) {
+    const obs = buildQueenObservations(data, refDate)
+    if (!obs.length) return noData('avisos', 'sin días importados no hay observaciones que mostrar')
+    return answer('avisos',
+      `Esto es lo que estoy viendo: ${obs.map((o) => o.text).join(' ')}`,
+      figuresOf([['Observaciones', obs.length], ['Alertas', obs.filter((o) => o.level === 'alert').length]]),
+      ['Observaciones calculadas de los datos cargados (cuadres, cuentas, precios, riesgo y boletines)'], [])
+  }
+  if (/quien me debe/.test(q)) return answerQueen(data, '¿Quién debe más?', opts)
+  if (/(como vamos hoy|antes del cierre)/.test(q)) {
+    const last = days[days.length - 1]
+    if (!last) return noData('pre-cierre', 'todavía no hay días importados para revisar el cierre')
+    const t = pendingTotals(data, refDate)
+    return answer('pre-cierre',
+      `Antes del cierre: el último IPV cargado es el del ${fmtFechaQueen(last.date)} con ventas de ${fmtQueenCUP(last.ventasDia)} y cuadre ${num(last.cuadre) === 0 ? 'exacto (0)' : fmtQueenCUP(last.cuadre)}. Quedan ${fmtQueen(t.count)} cuentas pendientes (${fmtQueenCUP(t.total)})${t.morosasCount ? `, de ellas ${fmtQueen(t.morosasCount)} morosas` : ', ninguna morosa'}.`,
+      figuresOf([['Ventas del último día', last.ventasDia], ['Cuadre', last.cuadre], ['Pendientes', t.count], ['Morosas', t.morosasCount]]),
+      [`IPV del ${fmtFechaQueen(last.date)} y cuentas por cobrar importadas`], [])
+  }
+
+  if (/^como vamos\b/.test(q)) return answerQueen(data, '¿Cómo va el mes?', opts)
+
   if (!hasData) {
     return noData('sin-datos', 'todavía no hay datos importados en esta copia (ni días de IPV ni cuentas)')
   }
@@ -703,4 +726,203 @@ export function answerQueen(data, question, opts = {}) {
   return answer('fuera-de-dominio',
     'Eso no está en los datos del sistema que puedo consultar en esta copia, así que no tengo ese dato. Puedo responderte por ventas, ganancia, cuentas y morosas, dinero en la calle, cuadres, días sin IPV, nómina, gastos, tarjeta y conciliación, cambios y sugerencias de precio, y mi etapa y permisos.',
     [], [], ['La pregunta no corresponde a ningún registro del sistema'])
+}
+
+/* ============ Consola: salud, patrones, anticipación (puerto literal) ============
+   Puerto de QUEEN_HEALTH_COPY, queenQuestionPattern, havanaNow y
+   buildQueenAnticipations del App.tsx original, adaptados solo en
+   las FUENTES: en el original llegan por props/API (último IPV,
+   conteo de pendientes, correcciones abiertas, frecuencia); aquí se
+   calculan de los datos del clon (days, pendingTotals, banco de
+   errores y la frecuencia persistida del hilo). Cada anticipación
+   trae además `question`, la pregunta equivalente que el clon sí
+   puede responder en determinista al tocar su acción (el original
+   navegaba a pestañas; esta pantalla no recibe onNavigate). */
+
+export const QUEEN_HEALTH_COPY = {
+  healthy: { label: 'Feliz', detail: 'El sistema está sano y al corriente.' },
+  warning: { label: 'Atenta', detail: 'Queen está observando advertencias que necesitan revisión.' },
+  error: { label: 'Seria', detail: 'Existe un error confirmado que necesita atención.' },
+  working: { label: 'Concentrada', detail: 'Hay una tarea o mantenimiento en curso.' },
+  expectant: { label: 'Expectante', detail: 'El respaldo está pendiente de confirmación.' },
+}
+
+/** Salud calculada de ESTA copia: error si hay un día con descuadre
+ *  verificado (banco de errores), warning si alguna observación es
+ *  de alerta, sana en otro caso. Sin actividades en vivo del
+ *  original (no viajan), no se declaran working/expectant. */
+export function buildQueenHealth(data, refDate) {
+  const bank = buildQueenErrorBank(data)
+  if (bank.cells.length) return { state: 'error', ...QUEEN_HEALTH_COPY.error }
+  const obs = buildQueenObservations(data, refDate)
+  if (obs.some((o) => o.level === 'alert')) return { state: 'warning', ...QUEEN_HEALTH_COPY.warning }
+  return { state: 'healthy', ...QUEEN_HEALTH_COPY.healthy }
+}
+
+export function queenQuestionPattern(question) {
+  const q = normalizeQueenText(question)
+  if (/debe|calle|cuenta|cobrar/.test(q)) return '¿Quién me debe?'
+  if (/aviso|error|correg|cuadr/.test(q)) return '¿Qué avisos hay?'
+  if (/ipv|import|dia de hoy/.test(q)) return '¿Falta el IPV de hoy?'
+  if (/venta|resultado|ganancia|como vamos/.test(q)) return '¿Cómo vamos?'
+  return 'Otra consulta'
+}
+
+function havanaNowQueen(refDate) {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Havana', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', hourCycle: 'h23',
+    }).formatToParts(new Date())
+    const value = (type) => parts.find((part) => part.type === type)?.value ?? ''
+    return { date: `${value('year')}-${value('month')}-${value('day')}`, hour: Number(value('hour')) || 0 }
+  } catch {
+    return { date: refDate, hour: new Date().getHours() }
+  }
+}
+
+function oldestPendingDays(data, refDate) {
+  let oldest = null
+  for (const rec of data?.receivables ?? []) {
+    const saldo = saldoDe(rec, data?.localPayments ?? [])
+    if (!esPendienteQueen(rec, saldo) || !rec.date) continue
+    if (!oldest || rec.date < oldest) oldest = rec.date
+  }
+  return oldest ? Math.max(0, diffDaysISO(oldest, refDate)) : 0
+}
+
+export function buildQueenAnticipations(data, refDate, opts = {}) {
+  const now = opts.now ?? havanaNowQueen(refDate)
+  const freq = opts.freq ?? {}
+  const days = [...(data?.days ?? [])].sort((a, b) => a.date.localeCompare(b.date))
+  const hasData = days.length > 0
+  const latestImportedDate = hasData ? days[days.length - 1].date : ''
+  const totals = pendingTotals(data, refDate)
+  const openCorrections = opts.openCorrections ?? buildQueenErrorBank(data).cells.length
+  const items = []
+  if (!hasData) {
+    items.push({ id: 'first-ipv', level: 'prioridad', title: 'Empecemos por el IPV', detail: 'Todavía no hay un IPV guardado. Al importarlo podré aprender el ritmo real del restaurante y anticipar el cierre, las cuentas y la nómina.', actionLabel: 'Importar el primer IPV', tab: 'importar', question: '¿Qué días faltan por importar?' })
+    return items
+  }
+  if (latestImportedDate < now.date) {
+    const afterClose = now.hour >= 22 || now.hour < 5
+    items.push({
+      id: `ipv-${now.date}`,
+      level: afterClose ? 'prioridad' : 'rutina',
+      title: afterClose ? 'El IPV de hoy aún no está' : 'IPV de hoy pendiente para el cierre',
+      detail: afterClose
+        ? `Ya pasó el horario del restaurante y el último IPV guardado es del ${fmtFechaQueen(latestImportedDate)}. Importa el de hoy para que el cierre y los avisos queden completos.`
+        : `El último IPV guardado es del ${fmtFechaQueen(latestImportedDate)}. Te lo recuerdo antes del cierre de las 10:00 pm para que no se quede atrás.`,
+      actionLabel: 'Ir a Importar',
+      tab: 'importar',
+      question: '¿Qué días faltan por importar?',
+    })
+  } else {
+    items.push({ id: `ipv-ok-${now.date}`, level: 'rutina', title: 'IPV del día al corriente', detail: 'El IPV de hoy ya está guardado. Queen seguirá contrastando cuadre, existencias, cuentas y RH con lo aprendido.', actionLabel: 'Ver el día', tab: 'dias', question: '¿Cuánto se vendió ayer?' })
+  }
+  const pendingReceivablesCount = totals.count
+  const oldestDays = oldestPendingDays(data, refDate)
+  if (pendingReceivablesCount > 0 && oldestDays >= 15) {
+    items.push({
+      id: 'receivables-aging',
+      level: oldestDays >= 25 ? 'prioridad' : 'atencion',
+      title: oldestDays >= 25 ? 'Hay cuentas cerca del cierre mensual' : 'Conviene revisar cuentas pendientes',
+      detail: `${pendingReceivablesCount} cuenta${pendingReceivablesCount === 1 ? '' : 's'} pendiente${pendingReceivablesCount === 1 ? '' : 's'}; la más antigua lleva ${oldestDays} días.`,
+      actionLabel: 'Revisar Cobrar',
+      tab: 'cobrar',
+      question: '¿Qué cuentas están morosas?',
+    })
+  }
+  if (openCorrections > 0) {
+    items.push({ id: 'open-corrections', level: 'atencion', title: 'Tienes sugerencias por resolver', detail: `${openCorrections} revisión${openCorrections === 1 ? '' : 'es'} sigue${openCorrections === 1 ? '' : 'n'} abierta${openCorrections === 1 ? '' : 's'}. Queen las conserva hasta que las confirmes o las corrijas.`, actionLabel: 'Abrir Sugerencias', panel: 'sugerencias' })
+  }
+  const favorite = Object.entries(freq)
+    .filter(([label]) => label !== 'Otra consulta')
+    .sort((a, b) => b[1] - a[1])[0]
+  if (favorite && favorite[1] >= 2) {
+    items.push({ id: `pattern-${favorite[0]}`, level: 'rutina', title: 'Aprendí una consulta frecuente', detail: `Sueles preguntar «${favorite[0]}». La dejé priorizada para que llegues a esa respuesta con un toque.`, actionLabel: favorite[0], question: favorite[0] })
+  } else if (now.hour >= 18 && now.hour < 22) {
+    items.push({ id: 'pre-close', level: 'rutina', title: 'Se acerca el cierre', detail: 'Por la hora, conviene revisar cuadre, cuentas nuevas y movimientos que falten antes de cerrar a las 10:00 pm.', actionLabel: 'Preguntar cómo vamos', question: '¿Cómo vamos hoy y qué falta revisar antes del cierre?' })
+  }
+  return items.slice(0, 4)
+}
+
+/** Sugerencias de Queen en esta copia: sus observaciones calculadas
+ *  («Lo que estoy viendo» del panel de Sugerencias del original). */
+export function buildQueenSuggestions(data, refDate) {
+  return buildQueenObservations(data, refDate)
+}
+
+/** Bandeja SMS del original, en versión honesta del clon: las
+ *  TARJETAS con cuentas morosas que el original usaría para el SMS
+ *  de cobro (solo morosas, nunca una cuenta pagada — directiva
+ *  «no-sms-paid-accounts»). El clon no tiene buzón ni transporte:
+ *  cada fila sale con su estado real, sin simular envíos. */
+export function buildQueenSmsDue(data, refDate) {
+  return pendingByCard(data, refDate)
+    .filter((c) => c.morosas > 0)
+    .map((c) => ({
+      clientKey: c.clientKey, client: c.client, category: c.category, persona: c.persona,
+      morosas: c.morosas, morosasTotal: c.morosasTotal, total: c.total,
+      transport: 'sin-transporte',
+      transportLabel: 'Sin transporte en esta copia',
+    }))
+}
+
+/** Metadatos de transparencia de una respuesta (el «Cómo lo
+ *  comprobé» del original): confianza derivada SOLO de la línea de
+ *  verificación que la propia respuesta ya trae — alta si verificó
+ *  contra registros y trae cifras, media si verificó sin cifras,
+ *  baja si declaró algo sin verificar —, pasos y datos usados. */
+export function deriveQueenAnswerMeta(ans) {
+  const verified = ans?.verifiedAgainst ?? []
+  const unverified = ans?.unverified ?? []
+  const figures = ans?.figures ?? []
+  const confidence = !verified.length || unverified.length && !figures.length ? 'baja' : figures.length ? 'alta' : 'media'
+  const confidenceReason = confidence === 'alta'
+    ? 'La respuesta está respaldada por registros concretos del sistema.'
+    : confidence === 'media'
+      ? 'La respuesta tiene contexto suficiente, pero conviene confirmar el detalle señalado.'
+      : 'Faltan datos para sostener una conclusión completa.'
+  const reasoningSteps = [
+    'Interpreté tu pregunta y el período visible',
+    verified.length ? `Consulté los registros disponibles del SDA: ${verified.join(' · ')}` : 'Comprobé la información disponible',
+    'Preparé la respuesta sin modificar ningún registro',
+  ]
+  const dataUsed = [...verified, ...figures.map((f) => `${f.label}: ${f.value}`)]
+  const cardsByIntent = {
+    'ventas-mes': { connectedInsight: '¿Cuánto hay en la calle?', proactiveSuggestion: '¿Qué cuentas están morosas?', followUp: '¿Cómo está el cuadre?' },
+    'ventas-dia': { connectedInsight: '¿Cómo va el mes?', followUp: '¿Cómo está el cuadre?' },
+    'mayor-deudor': { connectedInsight: '¿Cuánto hay en la calle?', followUp: '¿Qué cuentas están morosas?' },
+    'dinero-calle': { connectedInsight: '¿Quién debe más?', followUp: '¿Qué cuentas están morosas?' },
+    morosas: { connectedInsight: '¿Cuánto hay en la calle?', proactiveSuggestion: '¿Quién debe más?' },
+    cuadre: { followUp: '¿Qué días faltan por importar?' },
+    'cuadre-dia': { followUp: '¿Cómo está el cuadre?' },
+    nomina: { followUp: '¿Cuánto se gastó en octubre?' },
+    gastos: { followUp: '¿Cómo va el mes?' },
+    tarjeta: { followUp: '¿Cuadró la conciliación del 22 de octubre?' },
+    sugerencia: { followUp: '¿Qué productos están en riesgo?' },
+    riesgo: { connectedInsight: '¿Cuál fue el último cambio de precio?' },
+    'cambios-precio': { followUp: '¿Qué productos están en riesgo?' },
+    evolucion: { followUp: '¿Qué permisos tienes?' },
+  }
+  return { confidence, confidenceReason, reasoningSteps, dataUsed, ...(cardsByIntent[ans?.intent] ?? {}) }
+}
+
+/** Aplica una corrección aprendida del feedback: si su pregunta (o
+ *  su patrón) coincide con la consulta, la respuesta lo declara y
+ *  cita la corrección — es la única «escritura» de Queen en el
+ *  clon: su memoria local confirmada, nunca datos del negocio. */
+export function applyQueenLearnedCorrections(ans, question, corrections) {
+  const list = Array.isArray(corrections) ? corrections : []
+  if (!list.length || !ans) return ans
+  const q = normalizeQueenText(question)
+  const pattern = queenQuestionPattern(question)
+  const hit = list.find((c) => c && c.correction && (normalizeQueenText(c.question) === q || (c.pattern && c.pattern === pattern)))
+  if (!hit) return ans
+  return {
+    ...ans,
+    text: `${ans.text}\n\nCorrección aprendida que aplico: ${hit.correction}`,
+    verifiedAgainst: [...(ans.verifiedAgainst ?? []), 'Corrección confirmada por ti (memoria local de Queen)'],
+  }
 }

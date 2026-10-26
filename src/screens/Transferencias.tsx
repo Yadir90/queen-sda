@@ -6,6 +6,7 @@ import { BANK_COMMISSION, conciliationDates, conciliationForDay, isEffectiveMove
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
 import { addTransferMovement, setTransferMovementExcluded, supabaseConfigured } from '../lib/backend'
 import { sbAddTransferMovement, sbSetTransferMovementExcluded } from '../lib/supabaseBackend'
+import '../components/sectionsMirror.css'
 
 /* Transferencias del externo: la tarjeta del negocio como en el
    original. El saldo se DERIVA del historial de movimientos (el del
@@ -242,6 +243,13 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
                     />
                   </div>
                 </div>
+                {formKind === 'pase' && summary.balance > 0 ? (
+                  <p className="small muted">
+                    Como en el original, el pase viene precargado con todo el saldo acumulado: {' '}
+                    <button type="button" className="btn" onClick={() => setFAmount(String(summary.balance))}>Usar todo el saldo ({fmtCUP(summary.balance)})</button>
+                    {' '}puedes bajarlo si pasas solo una parte.
+                  </p>
+                ) : null}
                 {formKind === 'pase' && fKind === 'banco' && importePase > 0 ? (
                   <p className="small muted">
                     Comisión fija del banco: {fmtCUP(BANK_COMMISSION)} · Neto que acredita el banco con este importe: {fmtCUP(Math.max(0, importePase - BANK_COMMISSION))}.

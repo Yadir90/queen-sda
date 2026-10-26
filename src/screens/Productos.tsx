@@ -8,6 +8,7 @@ import {
   type CatalogProduct,
 } from '../lib/productosCore.mjs'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
+import '../components/sectionsMirror.css'
 
 /* Productos del externo: el catálogo maestro calculado desde los días
    del IPV, como en el original — existencia real del libro encadenado,
@@ -19,7 +20,7 @@ import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
    en la base del original y no viajan en el respaldo; aquí la historia
    sale solo de los IPV y los gastos. */
 
-type Vista = 'activos' | 'todos' | 'cambios'
+type Vista = 'activos' | 'historial' | 'cambios'
 
 const DEPTS = ['Elaboración', 'Bebidas alcohólicas', 'Bebidas no alcohólicas', 'Cantina', 'Pizzas']
 
@@ -41,6 +42,27 @@ export default function Productos({ data }: { data: StoredData }) {
   const suggestions = useMemo(() => buildPriceSuggestions(catalog), [catalog])
   const changes = useMemo(() => detectPriceChanges(data.days), [data.days])
   const sugByKey = useMemo(() => new Map(suggestions.items.map((i) => [i.productKey, i])), [suggestions])
+  const lowStock = useMemo(
+    () => catalog.products.filter((x) => x.currentStock > 0.001 && (x.stockStatus === 'critico' || x.stockStatus === 'bajo')),
+    [catalog],
+  )
+  const explicadas = useMemo(
+    () => catalog.products.flatMap((x) => x.priceChecks.filter((c) => c.estado === 'explicada').map((c) => ({ p: x, c }))),
+    [catalog],
+  )
+  const entradasDistintas = useMemo(
+    () => catalog.products.flatMap((x) => x.entradasHistorial.filter((en) => en.distinto).map((en) => ({ p: x, e: en }))),
+    [catalog],
+  )
+  const openProduct = (prod: CatalogProduct) => {
+    setDept('todos')
+    setQuery('')
+    setVista(prod.currentStock > 0.001 ? 'activos' : 'historial')
+    setOpenKey(prod.productKey)
+    requestAnimationFrame(() => {
+      document.getElementById(`prod-${prod.productKey}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   const enRiesgo = useMemo(
     () => suggestions.items.filter((i) => i.dept === 'Elaboración' && i.marginPct != null && i.marginPct < 40),
@@ -56,6 +78,7 @@ export default function Productos({ data }: { data: StoredData }) {
     const q = query.trim().toLowerCase()
     return catalog.products.filter((p) => {
       if (vista === 'activos' && !(p.currentStock > 0.001)) return false
+      if (vista === 'historial' && p.currentStock > 0.001) return false
       if (dept !== 'todos' && p.dept !== dept) return false
       if (q && !p.name.toLowerCase().includes(q)) return false
       return true
@@ -63,7 +86,11 @@ export default function Productos({ data }: { data: StoredData }) {
   }, [catalog, vista, dept, query])
 
   const topVendidos = useMemo(
-    () => [...catalog.products].filter((p) => p.ventaHistorica > 0).sort((a, b) => b.ventaHistorica - a.ventaHistorica).slice(0, 8),
+    () => [...catalog.products].filter((p) => p.gananciaHistorica > 0).sort((a, b) => b.gananciaHistorica - a.gananciaHistorica).slice(0, 7),
+    [catalog],
+  )
+  const rankingCompleto = useMemo(
+    () => [...catalog.products].filter((p) => p.gananciaHistorica !== 0).sort((a, b) => b.gananciaHistorica - a.gananciaHistorica),
     [catalog],
   )
   const porDept = useMemo(
@@ -98,9 +125,26 @@ export default function Productos({ data }: { data: StoredData }) {
         y costo que no viajan en el respaldo—, por eso pueden diferir un poco de los de aquí.
       </p>
 
+      {/* Stock bajo — primer bloque del original (ProductosTab): crítico
+          hasta 1 día de cobertura, bajo hasta 3, con el ritmo real. */}
+      <Card>
+        <h3><Icon name="alert" size={18} /> Stock bajo · {fmtInt(lowStock.length)}</h3>
+        <p className="small muted">Se calcula con las unidades realmente vendidas en los IPV. Crítico significa hasta 1 día de cobertura y bajo, hasta 3 días. Los días sin venta no se inventan como cero.</p>
+        {lowStock.length ? (
+          <div className="list">
+            {lowStock.slice(0, 8).map((prod) => (
+              <button key={prod.productKey} type="button" className="row" style={{ width: '100%', background: 'none', border: 0, borderTop: '1px solid var(--border)', textAlign: 'left', cursor: 'pointer', color: 'inherit', font: 'inherit' }} onClick={() => openProduct(prod)}>
+                <span><strong>{prod.name}</strong><br /><span className="small muted">Quedan {fmtInt(prod.currentStock)}{prod.um ? ` ${prod.um}` : ''} · promedio vendido {prod.promedioVentaDiaria} por día con venta · cobertura estimada {prod.coberturaDias != null ? `${prod.coberturaDias} día${Math.abs(prod.coberturaDias - 1) < 0.01 ? '' : 's'}` : 'sin calcular'}</span></span>
+                <span className={`chip ${prod.stockStatus === 'critico' ? 'danger' : 'warn'}`}>{prod.stockStatus === 'critico' ? 'Crítico' : 'Bajo'}</span>
+              </button>
+            ))}
+          </div>
+        ) : <p className="small muted">Ningún producto con existencia está por debajo de tres días de su ritmo real de venta.</p>}
+      </Card>
+
       {changes.length > 0 ? (
         <Card>
-          <h3><Icon name="alert" size={18} /> Cambios de precio detectados entre IPV</h3>
+          <h3><Icon name="clock" size={18} /> Registro de cambios de precio</h3>
           <p className="small muted">
             Queen los detecta al comparar IPV consecutivos y los SEÑALA: no aplica ningún cambio sola.
             {changes.some((c) => c.name === 'Tequila Corrales Gold') ? ' Incluye el Tequila Corrales Gold: 10.000 → 12.000 CUP el 22 de octubre.' : ''}
@@ -110,7 +154,7 @@ export default function Productos({ data }: { data: StoredData }) {
               <div className="row" key={`${c.productKey}-${c.kind}-${c.date}-${i}`}>
                 <span>
                   <strong>{c.name}</strong> <span className="muted">· {c.dept} · precio de {c.kind}</span><br />
-                  <span className="small muted">{fmtDate(c.date)} · detectado en el IPV{c.kind === 'compra' ? ' (Entrada)' : ''}</span>
+                  <span className="small muted">{fmtDate(c.date)} · {c.kind === 'compra' ? 'Detectado en la Entrada del IPV' : 'Detectado entre IPVs consecutivos'}</span>
                 </span>
                 <span className="mono">{fmtCUP(c.oldPrice ?? 0)} → <strong>{fmtCUP(c.newPrice)}</strong></span>
               </div>
@@ -123,18 +167,31 @@ export default function Productos({ data }: { data: StoredData }) {
       <ChartCard title="Productos por departamento" sub="Toca una barra para ver su detalle">
         <RowChart data={porDept} ariaLabel="Productos por departamento" />
       </ChartCard>
-      <ChartCard title="Más vendidos (venta histórica del período)" sub="Toca una columna para ver su detalle">
+      <ChartCard title="Rentabilidad por producto" sub="Suma la ganancia que cada producto declaró en todos los IPV guardados. No recalcula días antiguos con el precio o costo actual. Toca una columna para ver su detalle.">
         <ColumnChart
-          data={topVendidos.map((p) => ({ label: p.name, venta: p.ventaHistorica }))}
-          series={[{ key: 'venta', label: 'Venta histórica', color: 'var(--chart-green)' }]}
-          ariaLabel="Venta histórica por producto"
+          data={topVendidos.map((p) => ({ label: p.name, ganancia: p.gananciaHistorica }))}
+          series={[{ key: 'ganancia', label: 'Ganancia histórica', color: 'var(--chart-green)' }]}
+          ariaLabel="Ganancia histórica por producto"
           angled
         />
+        {rankingCompleto.length > topVendidos.length ? (
+          <details style={{ marginTop: 10 }}>
+            <summary className="small" style={{ cursor: 'pointer', fontWeight: 700 }}>Ver ranking completo</summary>
+            <div className="list">
+              {rankingCompleto.map((prod, i) => (
+                <div className="row" key={prod.productKey}>
+                  <span><button type="button" className="rh-name" onClick={() => openProduct(prod)}><strong>{i + 1}. {prod.name}</strong></button><br /><span className="small muted">{fmtInt(prod.unidadesVendidas)} unidades · ventas {fmtCUP(prod.ventaHistorica)}</span></span>
+                  <strong style={{ color: prod.gananciaHistorica < 0 ? 'var(--danger)' : 'var(--deep)' }}>{fmtCUP(prod.gananciaHistorica)}</strong>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
       </ChartCard>
 
       <div className="view-chips" role="tablist" aria-label="Vista de productos">
         <button type="button" className={`view-chip ${vista === 'activos' ? 'active' : ''}`} onClick={() => setVista('activos')}>Con existencia ({fmtInt(catalog.conExistencia)})</button>
-        <button type="button" className={`view-chip ${vista === 'todos' ? 'active' : ''}`} onClick={() => setVista('todos')}>Catálogo completo ({fmtInt(catalog.totalProductos)})</button>
+        <button type="button" className={`view-chip ${vista === 'historial' ? 'active' : ''}`} onClick={() => setVista('historial')}>Historial ({fmtInt(catalog.totalProductos - catalog.conExistencia)})</button>
         <button type="button" className={`view-chip ${vista === 'cambios' ? 'active' : ''}`} onClick={() => setVista('cambios')}>Cambios de precio ({fmtInt(changes.length)})</button>
       </div>
       <div className="view-chips sub" role="tablist" aria-label="Departamento">
@@ -163,14 +220,14 @@ export default function Productos({ data }: { data: StoredData }) {
           )}
         </Card>
       ) : shown.length === 0 ? (
-        <EmptyState icon="search" title="Nada con ese filtro" text="Cambia la vista, el departamento o la búsqueda." />
+        <EmptyState icon="search" title="Nada con ese filtro" text={vista === 'activos' ? 'Cambia la vista, el departamento o la búsqueda. Los que están en 0 viven en el Historial.' : 'Cambia la vista, el departamento o la búsqueda.'} />
       ) : (
         <div className="list">
           {shown.map((p) => {
             const sug = sugByKey.get(p.productKey)
             const open = openKey === p.productKey
             return (
-              <Card key={p.productKey} className="prod-card">
+              <Card key={p.productKey} className="prod-card"><span id={`prod-${p.productKey}`} style={{ display: 'block', height: 0, overflow: 'hidden' }} aria-hidden="true" />
                 <button type="button" className="prod-head" onClick={() => setOpenKey(open ? null : p.productKey)} aria-expanded={open}>
                   <span className="prod-title">
                     <strong>{p.name}</strong>
@@ -262,6 +319,29 @@ export default function Productos({ data }: { data: StoredData }) {
               </div>
             ))}
           </div>
+        </Card>
+      ) : null}
+      {explicadas.length > 0 || entradasDistintas.length > 0 ? (
+        <Card>
+          <h3>Diferencias explicadas (visibles, sin ajustar en silencio)</h3>
+          {explicadas.length > 0 ? (
+            <div className="list">
+              {explicadas.map(({ p: prod, c }) => (
+                <div className="row" key={`precio-${prod.productKey}-${c.date}`} style={{ background: 'var(--turquoise-soft)', borderRadius: 12, padding: '8px 12px' }}>
+                  <span className="small"><strong>{prod.name}</strong> · {fmtDate(c.date)} — {c.texto}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {entradasDistintas.length > 0 ? (
+            <div className="list">
+              {entradasDistintas.map(({ p: prod, e }) => (
+                <div className="row" key={`costo-${prod.productKey}-${e.date}`} style={{ background: 'var(--warn-soft)', borderRadius: 12, padding: '8px 12px' }}>
+                  <span className="small"><strong>{prod.name}</strong> · {fmtDate(e.date)} — Entraron {fmtInt(e.cantidad)}{prod.um ? ` ${prod.um}` : ''} a {fmtCUP(e.costoEntrada)}: el costo promedio pasa de {e.costoAnterior != null ? fmtCUP(e.costoAnterior) : '—'} a <strong>{fmtCUP(e.costoPromedio)}</strong>.</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </Card>
       ) : null}
       {catalog.sinExplicar.length > 0 ? (

@@ -71,7 +71,6 @@ const SIDE_PRINCIPAL: NavItem[] = [
 ]
 const SIDE_MAS: NavItem[] = [
   { id: 'almacen', label: 'Almacén', icon: 'package' },
-  { id: 'cuentas', label: 'Cuentas', icon: 'receipt' },
   { id: 'dias', label: 'Días', icon: 'calendar' },
   { id: 'documentos', label: 'Documentos', icon: 'doc' },
   { id: 'economia', label: 'Economía', icon: 'chart' },
@@ -196,13 +195,41 @@ function ChangePasswordScreen({ session, onDone, onLogout }: { session: Session;
   )
 }
 
+function BootScreen({ slow, onRetry }: { slow: boolean; onRetry: () => void }) {
+  return (
+    <div className="queen-boot-screen">
+      <div className="queen-boot" role="status" aria-live="polite">
+        <div className="queen-boot-mark queen-orb-stage-juvenil" aria-hidden="true">
+          <QueenReactorMark stageId="juvenil" state="thinking" size={84} />
+        </div>
+        <p className="queen-boot-title">Preparando el sistema</p>
+        <p className="queen-boot-status">Queen está conectando tus datos…</p>
+        <div className="queen-boot-progress" aria-hidden="true"><i /></div>
+        {slow ? (
+          <div className="queen-boot-slow">
+            <p>Está tardando más de lo normal: puede ser la conexión o que el servidor está despertando.</p>
+            <button type="button" className="btn primary block" onClick={onRetry}>Reintentar ahora</button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [mustChange, setMustChange] = useState(false)
   const [section, setSection] = useState<Section>('inicio')
   const [data, setData] = useState<StoredData>(() => (SB_MODE ? { ...EMPTY_DATA } : loadData()))
   const [ready, setReady] = useState(false)
+  const [bootSlow, setBootSlow] = useState(false)
   const [remoteError, setRemoteError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (ready) { setBootSlow(false); return }
+    const timer = window.setTimeout(() => setBootSlow(true), 7000)
+    return () => window.clearTimeout(timer)
+  }, [ready])
 
   useEffect(() => {
     if (SB_MODE) {
@@ -421,7 +448,7 @@ export default function App() {
     if (id === 'sistema') return vencidasCount
     return 0
   }
-  if (!ready) return null
+  if (!ready) return <BootScreen slow={bootSlow} onRetry={() => window.location.reload()} />
   if (!session) return <LoginScreen onLogin={(s, mc) => { setSession(s); setMustChange(mc) }} />
   if (mustChange) return <ChangePasswordScreen session={session} onDone={() => setMustChange(false)} onLogout={doLogout} />
 
@@ -487,7 +514,15 @@ export default function App() {
 
         <main className="main">
           {remoteError ? <div className="error-box" style={{ marginBottom: 14 }}>{remoteError}</div> : null}
-          <Suspense fallback={<section className="card"><p className="small muted" style={{ margin: 0 }}>Cargando la sección…</p></section>}>
+          <Suspense fallback={(
+            <section className="card" role="status" aria-live="polite" style={{ textAlign: 'center' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}>
+                <QueenReactorMark stageId={queenSnapshot?.stageId ?? 'juvenil'} state="thinking" size={52} />
+              </div>
+              <p className="small muted" style={{ margin: 0 }}>Cargando la sección…</p>
+              <div className="queen-boot-progress" aria-hidden="true"><i /></div>
+            </section>
+          )}>
           {section === 'inicio' ? <Inicio data={data} isAdmin={isAdmin} onImportClick={() => setSection('sistema')} onNavigate={setSection} /> : null}
           {section === 'dias' ? <Dias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
           {section === 'cuentas' ? <Cuentas data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}

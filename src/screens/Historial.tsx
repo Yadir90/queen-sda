@@ -8,6 +8,7 @@ import { downloadText } from '../lib/download'
 import type { Bulletin, StoredData } from '../types'
 import { fmtCUP, fmtDate } from '../lib/utils'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
+import '../components/sectionsMirror.css'
 
 /**
  * Historial de boletines diarios: rejilla del mes (verde =
@@ -120,26 +121,72 @@ export default function Historial({ data, bulletins, today, isAdmin, onBulletins
             <button key={mk} type="button" className={`chip-btn${mk === activeMonth ? ' active' : ''}`} onClick={() => setMonthKey(mk)}>{mk}</button>
           ))}
         </div>
-        <div className="hist-grid" style={{ marginTop: 12 }}>
-          {Array.from({ length: totalDays }, (_, i) => {
-            const date = `${activeMonth}-${String(i + 1).padStart(2, '0')}`
-            const b = byDate.get(date)
-            if (!b) {
-              return (
-                <div key={date} className="hist-cell none" aria-label={`${fmtDate(date)}: sin boletín`}>
-                  <span className="h-num">{i + 1}</span><span className="h-tag">Sin boletín</span>
-                </div>
-              )
-            }
-            const cls = b.status === 'enviado' ? 'sent' : b.status === 'error' ? 'err' : 'pending'
-            const tag = b.status === 'enviado' ? 'Enviado' : b.status === 'error' ? 'Error' : 'Pendiente'
-            return (
-              <button key={date} type="button" className={`hist-cell ${cls}`} onClick={() => goTo(date)} aria-label={`${fmtDate(date)}: boletín ${tag.toLowerCase()} — ir a la tarjeta`}>
-                <span className="h-num">{i + 1}</span><span className="h-tag">{tag}</span>
-              </button>
-            )
-          })}
-        </div>
+        {/* Rejilla del mes del original (HistorialMonthGrid): semana que
+            empieza en lunes con sus huecos, enviado en verde sólido,
+            pendiente en dorado, sin boletín punteado, hoy con anillo
+            dorado y seleccionado con doble anillo. */}
+        {(() => {
+          const MONTH_NAMES_H = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+          const [hy, hm] = activeMonth.split('-').map(Number)
+          const monthLabelH = `${MONTH_NAMES_H[(hm || 1) - 1]} de ${hy}`
+          const leadH = (new Date(hy, (hm || 1) - 1, 1, 12).getDay() + 6) % 7
+          const enviadosH = monthBulletins.filter((b) => b.status === 'enviado').length
+          const pendientesH = monthBulletins.length - enviadosH
+          return (
+            <div style={{ marginTop: 12 }}>
+              <p className="hist-month-head">
+                {monthLabelH}
+                <span className="hm-count">{monthBulletins.length} {monthBulletins.length === 1 ? 'boletín' : 'boletines'}</span>
+                {enviadosH > 0 ? <span className="hm-count"><span className="hm-dot" style={{ background: '#23aa70' }} />{enviadosH} enviado{enviadosH === 1 ? '' : 's'}</span> : null}
+                {pendientesH > 0 ? <span className="hm-count"><span className="hm-dot" style={{ background: 'var(--gold)' }} />{pendientesH} pendiente{pendientesH === 1 ? '' : 's'}</span> : null}
+              </p>
+              <div className="hist-dow-row" aria-hidden="true">
+                {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((l) => <span key={l}>{l}</span>)}
+              </div>
+              <div className="hist-month-grid" role="group" aria-label={`Boletines de ${monthLabelH}: toca un día con boletín para ir a su tarjeta`}>
+                {Array.from({ length: leadH }, (_, i) => <div key={`vacio-${i}`} aria-hidden="true" />)}
+                {Array.from({ length: totalDays }, (_, i) => {
+                  const date = `${activeMonth}-${String(i + 1).padStart(2, '0')}`
+                  const b = byDate.get(date)
+                  if (!b) {
+                    return (
+                      <div key={date} title={`${fmtDate(date)}: sin boletín`} className="hist-cell2 none">
+                        {i + 1}
+                      </div>
+                    )
+                  }
+                  const sent = b.status === 'enviado'
+                  const resumen = `Boletín ${b.date}: ${sent ? 'enviado' : b.status === 'error' ? 'con error de envío' : 'pendiente de envío'}`
+                  return (
+                    <button
+                      key={date}
+                      type="button"
+                      className={`hist-cell2 ${sent ? 'sent' : 'pending'}`}
+                      onClick={() => goTo(date)}
+                      aria-pressed={flash === date}
+                      aria-label={`Ir a la tarjeta del boletín del ${fmtDate(date)}: ${resumen}`}
+                      title={`${fmtDate(date)} · ${resumen}`}
+                      style={{
+                        boxShadow: flash === date
+                          ? '0 0 0 2px var(--surface), 0 0 0 4px var(--deep)'
+                          : date === today
+                            ? '0 0 0 2px var(--gold)'
+                            : undefined,
+                      }}
+                    >
+                      {i + 1}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="hist-legend" aria-label="Leyenda del estado de los boletines">
+                <span><i style={{ background: '#23aa70' }} />Enviado</span>
+                <span><i style={{ background: 'color-mix(in srgb, var(--gold) 62%, var(--surface-tonal))' }} />Pendiente</span>
+                <span><i style={{ border: '1px dashed var(--border)' }} />Sin boletín</span>
+              </div>
+            </div>
+          )
+        })()}
         <p className="small muted" style={{ marginTop: 10 }}>Toca un día con boletín para bajar a su tarjeta.</p>
       </Card>
 

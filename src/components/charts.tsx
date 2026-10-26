@@ -334,3 +334,171 @@ export function MonthHeatMap({ days, monthKey, todayISO: today, compact = false 
     </div>
   )
 }
+
+/* ================= Comparadores de períodos (charts.tsx original) =====
+ * Port literal de DeptCompareChart / BucketCompareChart del original:
+ * los mismos datos ({name|label, actual, comparado}), las mismas series
+ * (Actual = verde, Comparado = gris) y el mismo ColumnChart. */
+export type ComparePoint = { name: string; actual: number; comparado: number }
+export function DeptCompareChart({ data }: { data: ComparePoint[] }) {
+  if (!data.length) return <ChartEmpty />
+  return <ColumnChart angled data={data.map((item) => ({ ...item, label: item.name }))} series={[{ key: 'actual', label: 'Actual', color: CHART_COLOR.green }, { key: 'comparado', label: 'Comparado', color: CHART_COLOR.gray }]} ariaLabel="Ventas por departamento del período actual contra el comparado" />
+}
+
+export type BucketComparePoint = { label: string; actual: number; comparado: number }
+export function BucketCompareChart({ data }: { data: BucketComparePoint[] }) {
+  if (!data.length) return <ChartEmpty />
+  return <ColumnChart data={data} series={[{ key: 'actual', label: 'Actual', color: CHART_COLOR.green }, { key: 'comparado', label: 'Comparado', color: CHART_COLOR.gray }]} ariaLabel="Ventas por tramo del período actual contra el comparado" />
+}
+
+/* ================= FutureCard (futureCharts.tsx original) ==============
+ * Tarjeta de la galería: título font-display, subtítulo y nota «Cómo
+ * leerlo». En el original lleva clases Tailwind (rounded-3xl border
+ * bg-[var(--surface)] p-4 sm:p-5); el clon no tiene Tailwind, así que se
+ * usan las clases card/chart-card propias, que ya replican esos valores. */
+export function FutureCard({ title, subtitle, children, nota, flat = false }: { title: string; subtitle: string; children: ReactNode; nota?: string; flat?: boolean }) {
+  return (
+    <section aria-label={title} className={flat ? '' : 'card chart-card'}>
+      <h3 className="chart-card-title">{title}</h3>
+      <p className="sub" style={{ marginTop: 2 }}>{subtitle}</p>
+      <div style={{ marginTop: 12 }}>{children}</div>
+      {nota ? <p className="small muted" style={{ marginTop: 12, marginBottom: 0 }}><strong style={{ color: 'var(--text)' }}>Cómo leerlo:</strong> {nota}</p> : null}
+    </section>
+  )
+}
+
+/* ================= Constructores (futureCharts.tsx original) ==========
+ * buildRiver / buildCategoryBars literales. Adaptación de arquitectura
+ * (documentada): en el original los ingresos extras son una lista
+ * {date, amount} aparte; en el clon viven dentro de cada día
+ * (DayData.extras: {concepto, importe}), así que el llamador pasa el
+ * total de extras de cada día como extrasImporte alineado con su fecha. */
+export const FX = { deep: '#0B3D2E', emerald: '#0E9F6E', turquoise: '#0EA5BD', gold: '#C9A227', amber: '#E9A13B', red: '#D64541' } as const
+
+export type RiverDay = { date: string; ventasDia: number; gananciaBruta: number; gananciaNeta: number; extrasImporte: number }
+export type RiverExpense = { date: string; category: string; total: number }
+export type RiverData = {
+  ventas: number; costo: number; bruta: number; nomina: number; insumos: number
+  otrosGastos: number; totalGastos: number; extras: number; utilidad: number
+  dias: number; hayDatos: boolean
+}
+export function buildRiver(days: RiverDay[], expenses: RiverExpense[], fromISO: string, toISO: string): RiverData {
+  const inRange = (iso: string) => iso >= fromISO && iso <= toISO
+  const ds = days.filter((d) => inRange(d.date))
+  const ventas = ds.reduce((s, d) => s + d.ventasDia, 0)
+  const bruta = ds.reduce((s, d) => s + d.gananciaBruta, 0)
+  const neta = ds.reduce((s, d) => s + d.gananciaNeta, 0)
+  let nomina = 0, insumos = 0, otrosGastos = 0
+  for (const e of expenses) {
+    if (!inRange(e.date)) continue
+    const cat = e.category.toLowerCase()
+    if (cat.includes('nómina') || cat.includes('nomina')) nomina += e.total
+    else if (cat.includes('insumo')) insumos += e.total
+    else otrosGastos += e.total
+  }
+  const totalGastos = nomina + insumos + otrosGastos
+  const extrasTotal = ds.reduce((s, d) => s + d.extrasImporte, 0)
+  return {
+    ventas, costo: ventas - bruta, bruta,
+    nomina, insumos, otrosGastos, totalGastos,
+    extras: extrasTotal,
+    utilidad: neta - totalGastos + extrasTotal,
+    dias: ds.length,
+    hayDatos: ds.length > 0 || totalGastos > 0 || extrasTotal > 0,
+  }
+}
+
+export type CategoryBar = { label: string; total: number; pct: number }
+export function buildCategoryBars(expenses: RiverExpense[], fromISO: string, toISO: string): CategoryBar[] {
+  const map = new Map<string, number>()
+  for (const e of expenses) {
+    if (e.date < fromISO || e.date > toISO) continue
+    map.set(e.category, (map.get(e.category) ?? 0) + e.total)
+  }
+  const rows = [...map.entries()].map(([label, total]) => ({ label, total })).sort((a, b) => b.total - a.total)
+  const max = rows[0]?.total ?? 0
+  return rows.map((r) => ({ ...r, pct: max > 0 ? (r.total / max) * 100 : 0 }))
+}
+
+/* ================= LuminousBars (futureCharts.tsx original) =========== */
+export function LuminousBars({ items, emptyText }: { items: CategoryBar[]; emptyText: string }) {
+  const [sel, setSel] = useState<string | null>(null)
+  if (!items.length) return <p className="small muted" style={{ margin: 0 }}>{emptyText}</p>
+  const total = items.reduce((s, i) => s + i.total, 0)
+  const selItem = items.find((i) => i.label === sel) ?? null
+  return (
+    <div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {items.map((item, idx) => (
+          <button key={item.label} type="button" onClick={() => setSel(sel === item.label ? null : item.label)} aria-label={`${item.label}: ${fmtCUP(item.total)}. Toca para ver su parte del total.`} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, padding: 0, font: 'inherit', cursor: 'pointer' }}>
+            <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+              <span style={{ fontWeight: 600, color: 'var(--text)' }}>{item.label}</span>
+              <span style={{ color: 'var(--dim)' }}>{fmtCUP(item.total)} · <strong style={{ color: 'var(--text)' }}>{total > 0 ? Math.round((item.total / total) * 100) : 0} %</strong></span>
+            </span>
+            <span style={{ display: 'block', marginTop: 4, height: 10, overflow: 'hidden', borderRadius: 999, background: 'var(--border)' }}>
+              <span style={{ display: 'block', height: '100%', borderRadius: 999, width: `${Math.max(2, item.pct)}%`, background: `linear-gradient(90deg, ${idx % 2 ? FX.turquoise : FX.emerald}, ${FX.gold})`, backgroundSize: `${10000 / Math.max(2, item.pct)}% 100%`, backgroundRepeat: 'no-repeat', transition: 'width .6s ease' }} />
+            </span>
+          </button>
+        ))}
+      </div>
+      <DetailLine text={selItem ? `${selItem.label}: ${fmtCUP(selItem.total)}, el ${total > 0 ? Math.round((selItem.total / total) * 100) : 0} % de los gastos del período. La barra más larga es la categoría mayor.` : null} />
+    </div>
+  )
+}
+
+/* ================= CashBars (futureCharts.tsx original) ===============
+ * El dueño eliminó el Sankey («Río de caja») en 2026-10-18: los mismos
+ * datos reales en barras horizontales — etiqueta, cifra y % de la venta. */
+export function CashBars({ data, periodLabel }: { data: RiverData; periodLabel: string }) {
+  const [sel, setSel] = useState<string | null>(null)
+  const d = data
+  if (!d.hayDatos || d.ventas <= 0) {
+    return (
+      <FutureCard title="¿En qué se va el dinero?" subtitle={`Las partes de la venta de ${periodLabel}, en barras.`}
+        nota="cada barra es una parte de la venta: su etiqueta, su cifra y su porcentaje. Sin venta registrada no hay barras que dibujar.">
+        <p className="small muted" style={{ margin: 0, lineHeight: 1.55 }}>En {periodLabel} no hay IPV con ventas ni gastos registrados: cuando entren los datos, las barras se dibujan solas.</p>
+      </FutureCard>
+    )
+  }
+  const pctVenta = (v: number) => (d.ventas > 0 ? (v / d.ventas) * 100 : 0)
+  type Row = { key: string; label: string; value: number; color: string; detail: string }
+  const rows: Row[] = [
+    { key: 'costo', label: 'Costo de lo vendido', value: d.costo, color: FX.turquoise, detail: `Costo de lo vendido: ${fmtCUP(d.costo)}, el ${Math.round(pctVenta(d.costo))} % de la venta. Es lo que costaron los productos que salieron: la venta menos la ganancia bruta de los IPV.` },
+    { key: 'bruta', label: 'Ganancia bruta', value: d.bruta, color: FX.emerald, detail: `Ganancia bruta: ${fmtCUP(d.bruta)}, el ${Math.round(pctVenta(d.bruta))} % de la venta. Es lo que queda tras el costo, antes de pagar los gastos del negocio.` },
+    { key: 'nomina', label: 'Nómina RH', value: d.nomina, color: FX.gold, detail: `Nómina RH: ${fmtCUP(d.nomina)} en salarios registrados en Gastos, el ${Math.round(pctVenta(d.nomina))} % de la venta.` },
+    { key: 'insumos', label: 'Insumos (gasto)', value: d.insumos, color: '#7FB3D5', detail: `Insumos: ${fmtCUP(d.insumos)} de compras registradas en Gastos, el ${Math.round(pctVenta(d.insumos))} % de la venta.` },
+    { key: 'otros', label: 'Otros gastos', value: d.otrosGastos, color: '#B39DDB', detail: `Otros gastos: ${fmtCUP(d.otrosGastos)} (salidas de caja y demás categorías de Gastos), el ${Math.round(pctVenta(d.otrosGastos))} % de la venta.` },
+  ]
+  const selRow = rows.find((r) => r.key === sel) ?? null
+  const barRow = (label: string, value: number, color: string, bold = false, h = 10) => (
+    <>
+      <span style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, fontSize: 13 }}>
+        <span style={{ fontWeight: bold ? 700 : 600, color: 'var(--text)' }}>{label}</span>
+        <span style={{ color: bold ? 'var(--text)' : 'var(--dim)', fontWeight: bold ? 700 : 400 }}>{fmtCUP(value)} · {Math.round(pctVenta(value))} %</span>
+      </span>
+      <span style={{ display: 'block', marginTop: 4, height: h, overflow: 'hidden', borderRadius: 999, background: 'var(--border)' }}>
+        <span style={{ display: 'block', height: '100%', borderRadius: 999, width: `${Math.max(1.5, Math.min(100, pctVenta(value)))}%`, background: color, transition: 'width .6s ease' }} />
+      </span>
+    </>
+  )
+  return (
+    <FutureCard title="¿En qué se va el dinero?" subtitle={`Las partes de la venta de ${periodLabel}, en barras.`}
+      nota="cada barra se mide contra la venta total: si la venta es la barra completa (100 %), cada parte ocupa su pedazo. Toca una barra para ver su porqué.">
+      <div style={{ marginBottom: 12 }}>{barRow('Venta bruta total', d.ventas, FX.deep, true, 12)}</div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {rows.map((row) => (
+          <button key={row.key} type="button" onClick={() => setSel(sel === row.key ? null : row.key)} aria-label={`${row.label}: ${fmtCUP(row.value)}, ${Math.round(pctVenta(row.value))} por ciento de la venta. Toca para ver el porqué.`} style={{ display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 0, padding: 0, font: 'inherit', cursor: 'pointer' }}>
+            {barRow(row.label, row.value, row.color)}
+          </button>
+        ))}
+      </div>
+      <div style={{ marginTop: 12, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {d.extras > 0 ? <span className="chip">+ Ingresos extras · {fmtCUP(d.extras)} (suman a favor)</span> : null}
+        <span className="chip" style={{ borderColor: d.utilidad < 0 ? FX.red : FX.emerald, color: d.utilidad < 0 ? FX.red : FX.emerald, fontWeight: 700 }}>
+          Utilidad neta: {fmtCUP(d.utilidad)} · {Math.round(pctVenta(d.utilidad))} % de la venta{d.utilidad < 0 ? ' (el período va en rojo)' : ''}
+        </span>
+      </div>
+      <DetailLine text={selRow ? selRow.detail : `Utilidad neta: ${fmtCUP(d.utilidad)}. Es la ganancia neta de los IPV, menos los gastos, más los ingresos extras: lo que el negocio ganó de verdad en el período.`} />
+    </FutureCard>
+  )
+}

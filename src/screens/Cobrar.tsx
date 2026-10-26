@@ -36,16 +36,80 @@ function agingColor(rec: Receivable, saldo: number, ref: string, paid: boolean):
   return `hsl(${Math.round(145 - 145 * r)} 62% ${Math.round(66 - 24 * r)}%)`
 }
 
+/** Comprobante de un abono, con los datos reales de la cuenta.
+ *  En el original lo genera el servidor (listPaymentReceipts) y su
+ *  tarjeta es ReceiptPreviewCard; el clon no tiene esa tabla ni ese
+ *  generador en documentosCore/backend, así que la vista previa se
+ *  dibuja aquí con la MISMA tarjeta y los datos reales del abono
+ *  (persona, cuenta, fechas, importe, resto y método). */
+export interface ReceiptPreview {
+  key: string; person: string; amount: number; paidDate: string; method: string
+  recDate: string; totalAmount: number; remaining: number
+}
+
+function ReceiptPreviewCard({ receipt }: { receipt: ReceiptPreview }) {
+  const isPartial = receipt.remaining > 0
+  const row = (label: string, value: string, opts: { strong?: boolean; warn?: boolean } = {}) => (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border)', padding: '10px 0' }}>
+      <span style={{ fontSize: 13, color: 'var(--dim)' }}>{label}</span>
+      <span style={{ textAlign: 'right', fontWeight: 700, fontSize: opts.strong ? 16 : 14, color: opts.warn ? '#a16207' : 'var(--deep)' }}>{value}</span>
+    </div>
+  )
+  return (
+    <div style={{ overflow: 'hidden', borderRadius: 26, border: '1px solid var(--border)', background: 'var(--surface)', boxShadow: 'var(--card-shadow)' }}>
+      <div style={{ padding: '24px 24px 20px', color: '#fff', background: 'linear-gradient(135deg, var(--deep) 0%, var(--deep-2) 100%)' }}>
+        <p style={{ fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 700, lineHeight: 1.25, margin: 0 }}>Restaurante - Bar La Reina</p>
+        <p style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.18em', color: '#bfe3ce', margin: '2px 0 0' }}>Júcaro</p>
+        <p style={{ marginTop: 6, fontSize: 11, color: '#8fc7a5' }}>Queen SDA — Sistema de Automatización de Datos V2.0</p>
+        <span style={{ marginTop: 16, display: 'inline-block', borderRadius: 999, padding: '4px 12px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fff', background: isPartial ? '#c9a227' : '#16a34a' }}>{isPartial ? 'Comprobante · Pago parcial' : 'Comprobante · Pago total'}</span>
+      </div>
+      <div aria-hidden="true"><div style={{ height: 3, background: '#16a34a' }} /><div style={{ height: 2, background: 'var(--turquoise)' }} /><div style={{ height: 1, background: 'var(--gold)' }} /></div>
+      <div style={{ padding: '20px 24px' }}>
+        <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0 }}>Comprobante de pago</h3>
+        <p style={{ marginTop: 2, fontSize: 13, color: 'var(--dim)' }}>Hola, {receipt.person}: confirmamos el pago de tu cuenta en Restaurante - Bar La Reina.</p>
+        <div style={{ marginTop: 8 }}>
+          {row('Cuenta creada el', fmtDate(receipt.recDate))}
+          {row('Pagado el', fmtDate(receipt.paidDate))}
+          {row('Monto total de la cuenta', fmtCUP(receipt.totalAmount))}
+          {row(isPartial ? 'Pagó en este abono' : 'Pagó', fmtCUP(receipt.amount), { strong: true })}
+          {isPartial ? row('Queda por pagar', fmtCUP(receipt.remaining), { strong: true, warn: true }) : null}
+          {row('Forma de pago', receipt.method === 'transferencia' ? 'Transferencia' : 'Efectivo')}
+        </div>
+        <p style={{ marginTop: 16, fontSize: 15, fontWeight: 700, color: 'var(--deep)' }}>Gracias por confiar en nosotros.</p>
+        <p style={{ marginTop: 4, fontSize: 12, lineHeight: 1.6, color: 'var(--dim)' }}>Este comprobante lo generó automáticamente Queen SDA — Sistema de Automatización de Datos V2.0 al registrarse tu pago.</p>
+      </div>
+      <div style={{ padding: '12px 24px', fontSize: 11, color: '#8fc7a5', background: 'var(--deep)' }}>Queen SDA — Sistema de Automatización de Datos V2.0 · Restaurante - Bar La Reina</div>
+    </div>
+  )
+}
+
+/** Cronología de la cuenta (timelineBlock / receivableTimeline del
+ *  original): «Cuenta creada» y cada abono, en orden, con el saldo que
+ *  quedaba tras cada paso. El clon no trae smsLogs ni ciclo de arrastre
+ *  en la cuenta, así que esos dos tipos de evento no aparecen. */
+function accountTimeline(rec: Receivable, payments: ReturnType<typeof effectivePayments>) {
+  const original = Math.max(0, rec.originalAmount || rec.amount)
+  type Ev = { key: string; date: string; kind: 'creada' | 'abono'; amount?: number; method?: string; local?: boolean; balance: number }
+  let balance = original
+  const events: Ev[] = [{ key: `created-${rec.id}`, date: rec.date, kind: 'creada', amount: original, balance }]
+  for (const pay of [...payments].sort((a, b) => a.paidDate.localeCompare(b.paidDate))) {
+    balance = Math.max(0, balance - Math.max(0, pay.amount))
+    events.push({ key: `payment-${pay.id}`, date: pay.paidDate, kind: 'abono', amount: pay.amount, method: pay.paymentMethod, local: pay.local, balance })
+  }
+  return events
+}
+
 /* Tarjeta de cuenta del original (account-swipe-card): acento de color
    por persona (borde interior izquierdo de 3px), «Debe X de Y», marca
    de antigüedad que envejece con el plazo propio; tocar abre su
    cronología, deslizar → prepara el pago, deslizar ← detalles. */
-function AccountCard({ rec, saldo, payments, isAdmin, onPay }: {
+function AccountCard({ rec, saldo, payments, isAdmin, onPay, onReceipt }: {
   rec: Receivable
   saldo: number
   payments: ReturnType<typeof effectivePayments>
   isAdmin: boolean
   onPay: (rec: Receivable, saldo: number) => void
+  onReceipt: (r: ReceiptPreview) => void
 }) {
   const [open, setOpen] = useState(false)
   const [dx, setDx] = useState(0)
@@ -114,15 +178,35 @@ function AccountCard({ rec, saldo, payments, isAdmin, onPay }: {
         {isAdmin && !paid ? <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button> : null}
       </div>
       {open ? (
-        <div className="rec-detail">
-          <div className="row"><span>Fecha de la cuenta</span><strong>{fmtDate(rec.date)}</strong></div>
-          <div className="row"><span>Importe original</span><strong>{fmtCUP(rec.originalAmount)}</strong></div>
-          {payments.map((p) => (
-            <div className="row" key={p.id}><span>Abono · {fmtDate(p.paidDate)} · {p.paymentMethod || '—'}{p.local ? ' (en esta copia)' : ''}</span><strong>− {fmtCUP(p.amount)}</strong></div>
-          ))}
-          {payments.length === 0 ? <div className="row"><span>Abonos</span><strong>Ninguno todavía</strong></div> : null}
-          <div className="row"><span>Saldo</span><strong>{paid ? 'Pagada' : fmtCUP(saldo)}</strong></div>
-          {isAdmin && !paid ? <p className="small muted" style={{ margin: '6px 0 0' }}>Desliza la tarjeta a la derecha o toca «Abonar» para preparar el pago de esta cuenta.</p> : null}
+        <div className="rec-detail" aria-label={`Cronología de la cuenta de ${rec.client}`}>
+          <p style={{ margin: '0 0 8px', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--dim)' }}>Cronología de la cuenta</p>
+          <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+            {accountTimeline(rec, payments).map((event, index, all) => (
+              <li key={event.key} style={{ position: 'relative', display: 'grid', gridTemplateColumns: '12px minmax(0, 1fr)', gap: 8, paddingBottom: index < all.length - 1 ? 12 : 0 }}>
+                {index < all.length - 1 ? <span aria-hidden="true" style={{ position: 'absolute', left: 5, top: 12, bottom: 0, width: 1, background: 'var(--border)' }} /> : null}
+                <span aria-hidden="true" style={{ position: 'relative', zIndex: 1, marginTop: 4, width: 12, height: 12, borderRadius: '50%', border: '2px solid var(--surface)', background: event.kind === 'abono' ? 'var(--paid)' : 'var(--accent)' }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', justifyContent: 'space-between', gap: '2px 12px', fontSize: 12 }}>
+                    <span style={{ fontWeight: 600 }}>{event.kind === 'creada' ? 'Cuenta creada' : 'Abono'} · {fmtDate(event.date)}</span>
+                    <span style={{ fontWeight: 700 }}>Saldo {fmtCUP(event.balance)}</span>
+                  </div>
+                  <div style={{ marginTop: 2, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '2px 8px', fontSize: 11, color: 'var(--dim)' }}>
+                    {event.kind === 'creada' ? <span>Importe inicial {fmtCUP(event.amount ?? 0)}</span> : null}
+                    {event.kind === 'abono' ? (
+                      <>
+                        <span>Pagó {fmtCUP(event.amount ?? 0)} · {event.method === 'transferencia' ? 'Transferencia' : 'Efectivo'}{event.local ? ' (en esta copia)' : ''}</span>
+                        <button type="button" className="btn" style={{ minHeight: 30, padding: '3px 10px', fontSize: '0.75rem' }}
+                          onClick={() => onReceipt({ key: `${rec.id}-${event.key}`, person: rec.client, amount: event.amount ?? 0, paidDate: event.date, method: event.method || 'efectivo', recDate: rec.date, totalAmount: Math.max(0, rec.originalAmount || rec.amount), remaining: event.balance })}>
+                          Comprobante
+                        </button>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+          {isAdmin && !paid ? <p className="small muted" style={{ margin: '8px 0 0' }}>Desliza la tarjeta a la derecha o toca «Abonar» para preparar el pago de esta cuenta.</p> : null}
         </div>
       ) : null}
     </article>
@@ -146,6 +230,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
   const [filter, setFilter] = useState<AccountFilter>('pendientes')
   const [query, setQuery] = useState('')
   const [showHelp, setShowHelp] = useState(false)
+  const [receiptPreview, setReceiptPreview] = useState<ReceiptPreview | null>(null)
   const ref = todayISO()
 
   // --- Panel de pago (la lógica de abono de siempre, sin tocar) ---
@@ -202,11 +287,14 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
     return pend.sort((a, b) => a.rec.date.localeCompare(b.rec.date))
   }, [data, filter, query, ref])
 
-  const receipts = useMemo(() => {
-    const out: Array<{ key: string; person: string; amount: number; paidDate: string; method: string; recDate: string }> = []
+  const receipts = useMemo<ReceiptPreview[]>(() => {
+    const out: ReceiptPreview[] = []
     for (const rec of data.receivables) {
-      for (const p of effectivePayments(rec, data.localPayments)) {
-        out.push({ key: `${rec.id}-${p.id}`, person: rec.client, amount: p.amount, paidDate: p.paidDate, method: p.paymentMethod || '—', recDate: rec.date })
+      const totalAmount = Math.max(0, rec.originalAmount || rec.amount)
+      let balance = totalAmount
+      for (const pay of [...effectivePayments(rec, data.localPayments)].sort((a, b) => a.paidDate.localeCompare(b.paidDate))) {
+        balance = Math.max(0, balance - Math.max(0, pay.amount))
+        out.push({ key: `${rec.id}-${pay.id}`, person: rec.client, amount: pay.amount, paidDate: pay.paidDate, method: pay.paymentMethod || 'efectivo', recDate: rec.date, totalAmount, remaining: balance })
       }
     }
     return out.sort((a, b) => b.paidDate.localeCompare(a.paidDate))
@@ -344,7 +432,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           ) : (
             <div className="account-list">
               {accountRows.map(({ rec, saldo }) => (
-                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} isAdmin={isAdmin} onPay={preparePay} />
+                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
               ))}
             </div>
           )}
@@ -476,13 +564,29 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
               {receipts.map((r) => (
                 <div className="list-row" key={r.key} style={{ cursor: 'default' }}>
                   <span className="row-ico"><Icon name="receipt" size={20} /></span>
-                  <span className="grow">{r.person}<span className="muted">Cuenta del {fmtDate(r.recDate)} · {r.method} · {fmtDate(r.paidDate)}</span></span>
+                  <span className="grow">{r.person}<span className="muted">Cuenta del {fmtDate(r.recDate)} · {r.method === 'transferencia' ? 'Transferencia' : 'Efectivo'} · {fmtDate(r.paidDate)}</span></span>
                   <strong>{fmtCUP(r.amount)}</strong>
+                  <button type="button" className="btn" onClick={() => setReceiptPreview(r)} aria-label={`Ver vista previa del comprobante de ${r.person}`}>Vista previa</button>
                 </div>
               ))}
             </Card>
           )}
         </>
+      ) : null}
+
+      {receiptPreview ? (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', background: 'rgba(0,0,0,0.4)' }} role="presentation" onClick={(e) => { if (e.target === e.currentTarget) setReceiptPreview(null) }}>
+          <div style={{ maxHeight: '92dvh', width: '100%', maxWidth: 600, overflowY: 'auto', borderRadius: '28px 28px 0 0', background: 'var(--bg)', padding: 16 }} role="dialog" aria-modal="true" aria-label={`Vista previa del comprobante de pago de ${receiptPreview.person}`}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 12 }}>
+              <h3 style={{ margin: 0 }}>Vista previa del comprobante</h3>
+              <button type="button" className="btn" onClick={() => setReceiptPreview(null)} aria-label="Cerrar vista previa">Cerrar</button>
+            </div>
+            <ReceiptPreviewCard receipt={receiptPreview} />
+            <p className="small muted" style={{ marginTop: 12 }}>
+              Este comprobante se dibuja con los datos reales de ese abono tal como quedaron registrados. En el sistema original además se envía por correo si el cliente tiene correo en su ficha; en esta copia no hay envío de comprobantes, así que no se muestra ningún estado de envío inventado.
+            </p>
+          </div>
+        </div>
       ) : null}
 
       {view === 'entidades' ? (

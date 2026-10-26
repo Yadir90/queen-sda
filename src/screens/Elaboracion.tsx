@@ -11,6 +11,7 @@ import {
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
 import { savePackageReference, deletePackageReference, supabaseConfigured } from '../lib/backend'
 import { sbDeletePackageReference, sbSavePackageReference } from '../lib/supabaseBackend'
+import '../components/sectionsMirror.css'
 
 /* Elaboración del externo, con las subpestañas del original SIEMPRE
    visibles (Productos · Rentabilidad · Barra · ml · Paquetes y
@@ -28,10 +29,12 @@ const SB_MODE = supabaseConfigured()
 
 type Sub = 'productos' | 'rentabilidad' | 'barra' | 'paquetes' | 'precios' | 'historial'
 
-const AREAS: Array<{ id: string; label: string; depts: string[] }> = [
-  { id: 'cocina', label: 'Cocina', depts: ['Elaboración'] },
-  { id: 'pizzas', label: 'Pizzas', depts: ['Pizzas'] },
-  { id: 'cocteleria', label: 'Coctelería', depts: ['Cantina'] },
+/* Áreas del original (ELABORATION_AREAS, App.tsx:19131) con su
+   clasificación por departamento (elaborationAreaOf). */
+const AREAS: Array<{ id: string; label: string; description: string; depts: string[] }> = [
+  { id: 'kitchen', label: 'Cocina', description: 'Platos y elaboraciones de cocina', depts: ['Elaboración'] },
+  { id: 'pizzas', label: 'Pizzas', description: 'Pizzas y preparaciones de esa área', depts: ['Pizzas'] },
+  { id: 'cocktails', label: 'Coctelería', description: 'Cócteles y tragos preparados', depts: ['Cantina'] },
 ]
 
 function trendChip(p: DerivedPackage) {
@@ -43,7 +46,8 @@ function trendChip(p: DerivedPackage) {
 
 export default function Elaboracion({ data, isAdmin, onChanged }: { data: StoredData; isAdmin: boolean; onChanged: () => void }) {
   const [sub, setSub] = useState<Sub>('productos')
-  const [area, setArea] = useState('cocina')
+  const [area, setArea] = useState('all')
+  const [search, setSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [ok, setOk] = useState<string | null>(null)
 
@@ -117,13 +121,17 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
       <TabHeader icon="receipt" title="Elaboración" desc="Productos, rentabilidad, paquetes y precios de la cocina" badge="Paquetes y precios" />
 
       {/* La barra de subpestañas se pinta SIEMPRE, como en el original. */}
-      <div className="view-chips" role="tablist" aria-label="Secciones de Elaboración">
-        <button type="button" className={`view-chip ${sub === 'productos' ? 'active' : ''}`} onClick={() => setSub('productos')}>Productos <span className="chip">{fmtInt(catalog.totalProductos)}</span></button>
-        <button type="button" className={`view-chip ${sub === 'rentabilidad' ? 'active' : ''}`} onClick={() => setSub('rentabilidad')}>Rentabilidad {perdidaCount > 0 ? <span className="chip danger">{fmtInt(perdidaCount)}</span> : null}</button>
-        <button type="button" className={`view-chip ${sub === 'barra' ? 'active' : ''}`} onClick={() => setSub('barra')}>Barra · ml</button>
-        <button type="button" className={`view-chip ${sub === 'paquetes' ? 'active' : ''}`} onClick={() => setSub('paquetes')}>Paquetes y rendimientos <span className="chip">{fmtInt(refsView.packages.length)}</span></button>
-        <button type="button" className={`view-chip ${sub === 'precios' ? 'active' : ''}`} onClick={() => setSub('precios')}>Precios {preciosBadge > 0 ? <span className="chip warn">{fmtInt(preciosBadge)}</span> : null}</button>
-        <button type="button" className={`view-chip ${sub === 'historial' ? 'active' : ''}`} onClick={() => setSub('historial')}>Historial <span className="chip">{fmtInt(archivadas)}</span></button>
+      {/* Pestañas principales del original (.elaboration-main-tabs,
+          theme.css:8856): etiqueta + pastilla con el conteo; la de
+          Rentabilidad y la de Precios llevan la pastilla en rojo
+          (is-danger) cuando hay pérdidas o precios en riesgo. */}
+      <div className="elaboration-main-tabs" role="tablist" aria-label="Secciones de Elaboración">
+        <button type="button" role="tab" aria-selected={sub === 'productos'} className={sub === 'productos' ? 'is-active' : ''} onClick={() => setSub('productos')}><span>Productos</span><small>{fmtInt(catalog.products.filter((x) => AREAS.some((a) => a.depts.includes(x.dept))).length)}</small></button>
+        <button type="button" role="tab" aria-selected={sub === 'rentabilidad'} className={sub === 'rentabilidad' ? 'is-active' : ''} onClick={() => setSub('rentabilidad')}><span>Rentabilidad</span><small className={perdidaCount > 0 ? 'is-danger' : ''}>{fmtInt(perdidaCount)}</small></button>
+        <button type="button" role="tab" aria-selected={sub === 'barra'} className={sub === 'barra' ? 'is-active' : ''} onClick={() => setSub('barra')}><span>Barra · ml</span><small>{fmtInt(catalog.products.filter((x) => x.dept === 'Cantina').length)}</small></button>
+        <button type="button" role="tab" aria-selected={sub === 'paquetes'} className={sub === 'paquetes' ? 'is-active' : ''} onClick={() => setSub('paquetes')}><span>Paquetes y rendimientos</span><small>{fmtInt(refsView.packages.length)}</small></button>
+        <button type="button" role="tab" aria-selected={sub === 'precios'} className={sub === 'precios' ? 'is-active' : ''} onClick={() => setSub('precios')}><span>Precios</span><small className={preciosBadge > 0 ? 'is-danger' : ''}>{fmtInt(preciosBadge)}</small></button>
+        <button type="button" role="tab" aria-selected={sub === 'historial'} className={sub === 'historial' ? 'is-active' : ''} onClick={() => setSub('historial')}><span>Historial</span><small>{fmtInt(archivadas)}</small></button>
       </div>
 
       {error ? <div className="error-box" style={{ marginBottom: 12 }}>{error}</div> : null}
@@ -131,34 +139,87 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
 
       {sub === 'productos' ? (
         <>
-          <div className="view-chips sub" role="tablist" aria-label="Área">
-            {AREAS.map((a) => (
-              <button key={a.id} type="button" className={`view-chip ${area === a.id ? 'active' : ''}`} onClick={() => setArea(a.id)}>{a.label}</button>
-            ))}
+          {/* Panel de área del original (.elaboration-area-panel): título,
+              pestañas por área con conteos y buscador propio. */}
+          <div className="elaboration-area-panel">
+            <div className="elaboration-area-heading">
+              <div><h3>Área</h3><p>Agrupa y encuentra cada ficha sin mezclar las elaboraciones.</p></div>
+              <span>{fmtInt(catalog.products.filter((x) => (area === 'all' || (AREAS.find((a) => a.id === area)?.depts ?? []).includes(x.dept)) && (!search.trim() || x.name.toLowerCase().includes(search.trim().toLowerCase()))).length)} visibles</span>
+            </div>
+            <div className="elaboration-area-tabs" role="tablist" aria-label="Áreas de fichas de costo">
+              <button type="button" role="tab" aria-selected={area === 'all'} className={area === 'all' ? 'is-active' : ''} onClick={() => setArea('all')}><strong>Todas</strong><span>{fmtInt(catalog.products.filter((x) => AREAS.some((a) => a.depts.includes(x.dept))).length)}</span></button>
+              {AREAS.map((a) => (
+                <button key={a.id} type="button" role="tab" aria-selected={area === a.id} className={area === a.id ? 'is-active' : ''} onClick={() => setArea(a.id)}><strong>{a.label}</strong><span>{fmtInt(catalog.products.filter((x) => a.depts.includes(x.dept)).length)}</span></button>
+              ))}
+            </div>
           </div>
+          <label className="elaboration-search">
+            <span className="sr-only">Buscar producto para elaborar</span>
+            <Icon name="search" size={18} />
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por producto o área…" />
+          </label>
           <p className="small muted">
-            Borde de estado según el análisis de precios de Queen: verde gana, amarillo margen bajo la meta, rojo pérdida.
-            En el original el borde rojo también marca «sin ficha de costo»; las fichas no viajan en el respaldo, así que
-            aquí el estado sale solo de precio y costo del IPV.
+            El estado se lee en la etiqueta de cada tarjeta (regla del dueño en el original: los bordes NO cambian
+            de color): pérdida, margen bajo la meta o con ganancia, según el análisis de precios de Queen sobre
+            precio y costo del IPV. En el original el estado sale de la ficha de costo; las fichas no viajan en
+            el respaldo, así que aquí no se marca «sin ficha»: se marca «sin datos» cuando falta precio o costo.
           </p>
-          <div className="list">
-            {catalog.products.filter((p) => (AREAS.find((a) => a.id === area)?.depts ?? []).includes(p.dept)).map((p) => {
-              const sug = sugByKey.get(p.productKey)
-              const estado = !sug || sug.status === 'sin-datos' ? 'sin-datos' : sug.status
+          {(() => {
+            const q = search.trim().toLowerCase()
+            const groups = AREAS
+              .filter((a) => area === 'all' || area === a.id)
+              .map((a) => ({
+                ...a,
+                products: catalog.products.filter((x) => a.depts.includes(x.dept) && (!q || x.name.toLowerCase().includes(q) || x.dept.toLowerCase().includes(q))),
+              }))
+              .filter((g) => g.products.length > 0)
+            if (groups.length === 0) {
               return (
-                <div className={`row prod-row estado-${estado}`} key={p.productKey}>
-                  <span>
-                    <strong>{p.name}</strong>
-                    <span className="small muted"> · {p.menuFamily} · existencia {fmtInt(p.currentStock)} {p.um}</span>
-                  </span>
-                  <span className="mono">
-                    {p.precioVentaVigente != null ? fmtCUP(p.precioVentaVigente) : '—'}
-                    {p.margenPct != null ? <span className="small muted"> · margen {p.margenPct} %</span> : null}
-                  </span>
+                <div className="elaboration-empty">
+                  <h3 className="font-bold">Sin productos elaborados</h3>
+                  <p className="small muted" style={{ marginTop: 4 }}>No hay coincidencias en esta área. Prueba otra pestaña o cambia la búsqueda.</p>
                 </div>
               )
-            })}
-          </div>
+            }
+            return (
+              <div className="elaboration-product-groups">
+                {groups.map((g) => (
+                  <section key={g.id} aria-labelledby={`elaboration-area-${g.id}`} className="elaboration-product-group">
+                    <div className="elaboration-group-heading">
+                      <div><h3 id={`elaboration-area-${g.id}`}>{g.label}</h3><p>{g.description}</p></div>
+                      <span>{fmtInt(g.products.length)}</span>
+                    </div>
+                    <div className="elaboration-product-grid">
+                      {g.products.map((prod) => {
+                        const sug = sugByKey.get(prod.productKey)
+                        const cardState = !sug || sug.status === 'sin-datos' ? 'is-incomplete' : sug.status === 'perdida' ? 'is-loss' : sug.status === 'sano' ? 'is-healthy' : 'is-low'
+                        const stateLabel = !sug || sug.status === 'sin-datos'
+                          ? 'Faltan datos'
+                          : sug.status === 'perdida'
+                            ? `En pérdida${sug.marginPct != null ? ` · ${sug.marginPct} %` : ''}`
+                            : sug.status === 'sano'
+                              ? `Con ganancia${sug.marginPct != null ? ` · ${sug.marginPct} %` : ''}`
+                              : `Margen bajo${sug.marginPct != null ? ` · ${sug.marginPct} %` : ''}`
+                        return (
+                          <div key={prod.productKey} className="elaboration-product-card-wrap">
+                            <div className={`elaboration-product-card ${cardState}`} aria-label={`${prod.name}: ${stateLabel}`}>
+                              <span className="elaboration-product-placeholder" aria-hidden="true">{prod.name.slice(0, 1).toUpperCase()}</span>
+                              <span className="elaboration-product-copy">
+                                <strong>{prod.name}</strong>
+                                <span>{prod.dept} · {prod.menuFamily}</span>
+                                <small>Existencia {fmtInt(prod.currentStock)} {prod.um}{prod.precioVentaVigente != null ? ` · ${fmtCUP(prod.precioVentaVigente)}` : ''}</small>
+                              </span>
+                              <span className={`elaboration-recipe-state ${cardState}`}>{stateLabel}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )
+          })()}
         </>
       ) : null}
 
@@ -238,7 +299,7 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
 }
 
 function Rentabilidad({ catalog, suggestions }: { catalog: ReturnType<typeof buildProductsCatalog>; suggestions: ReturnType<typeof buildPriceSuggestions> }) {
-  const [vista, setVista] = useState<'alertas' | 'ranking'>('alertas')
+  const [vista, setVista] = useState<'alertas' | 'ranking' | 'comparar'>('alertas')
   const perdida = suggestions.items.filter((i) => i.status === 'perdida')
   const riesgo = suggestions.items.filter((i) => i.status === 'riesgo')
   const stockByKey = useMemo(() => new Map(catalog.products.map((p) => [p.productKey, p])), [catalog])
@@ -263,6 +324,7 @@ function Rentabilidad({ catalog, suggestions }: { catalog: ReturnType<typeof bui
       <div className="view-chips sub" role="tablist" aria-label="Vista de rentabilidad">
         <button type="button" className={`view-chip ${vista === 'alertas' ? 'active' : ''}`} onClick={() => setVista('alertas')}>Alertas</button>
         <button type="button" className={`view-chip ${vista === 'ranking' ? 'active' : ''}`} onClick={() => setVista('ranking')}>Ranking</button>
+        <button type="button" className={`view-chip ${vista === 'comparar' ? 'active' : ''}`} onClick={() => setVista('comparar')}>Comparar</button>
       </div>
       {vista === 'alertas' ? (
         <Card>
@@ -279,15 +341,77 @@ function Rentabilidad({ catalog, suggestions }: { catalog: ReturnType<typeof bui
           )}
           <p className="small muted">Las vistas Comparar, Precios y Mermas del original trabajan sobre las fichas de costo y los registros de merma de su base, que no viajan en el respaldo.</p>
         </Card>
+      ) : vista === 'ranking' ? (
+        <>
+          <div className="elaboration-section-intro" style={{ marginBottom: 12 }}>
+            <div><h3>Ranking de rentabilidad</h3><p>Ordenado por ganancia histórica registrada en los IPV, del producto más rentable al menos rentable.</p></div>
+          </div>
+          <ChartCard title="Ranking por ganancia histórica" sub="Toca una columna para ver su detalle">
+            <ColumnChart
+              data={ranking.map((p) => ({ label: p.name, ganancia: p.gananciaHistorica }))}
+              series={[{ key: 'ganancia', label: 'Ganancia histórica', color: 'var(--chart-green)' }]}
+              ariaLabel="Ganancia histórica por producto"
+              angled
+            />
+          </ChartCard>
+        </>
       ) : (
-        <ChartCard title="Ranking por ganancia histórica" sub="Toca una columna para ver su detalle">
-          <ColumnChart
-            data={ranking.map((p) => ({ label: p.name, ganancia: p.gananciaHistorica }))}
-            series={[{ key: 'ganancia', label: 'Ganancia histórica', color: 'var(--chart-green)' }]}
-            ariaLabel="Ganancia histórica por producto"
-            angled
-          />
-        </ChartCard>
+        <Comparar suggestions={suggestions} />
+      )}
+    </>
+  )
+}
+
+
+function Comparar({ suggestions }: { suggestions: ReturnType<typeof buildPriceSuggestions> }) {
+  const opciones = useMemo(
+    () => suggestions.items.filter((i) => i.status !== 'sin-datos'),
+    [suggestions],
+  )
+  const [aKey, setAKey] = useState('')
+  const [bKey, setBKey] = useState('')
+  const a = opciones.find((i) => i.productKey === aKey) ?? opciones[0]
+  const b = opciones.find((i) => i.productKey === bKey) ?? opciones[1]
+  return (
+    <>
+      <div className="elaboration-section-intro" style={{ marginBottom: 12 }}>
+        <div><h3>Comparador de recetas</h3><p>Elige dos platos para contrastar costo, venta, ganancia, margen y precio sugerido.</p></div>
+      </div>
+      {opciones.length < 2 ? (
+        <div className="elaboration-empty"><h3 className="font-bold">Selecciona dos recetas</h3><p className="small muted" style={{ marginTop: 4 }}>La comparación se muestra cuando haya al menos dos productos con costo y precio vigentes.</p></div>
+      ) : (
+        <>
+          <div className="elaboration-compare-pickers" style={{ marginBottom: 12 }}>
+            <label><span>Primer plato</span>
+              <select aria-label="Primer plato a comparar" value={a?.productKey ?? ''} onChange={(ev) => setAKey(ev.target.value)}>
+                {opciones.map((i) => <option key={i.productKey} value={i.productKey}>{i.name}</option>)}
+              </select>
+            </label>
+            <label><span>Segundo plato</span>
+              <select aria-label="Segundo plato a comparar" value={b?.productKey ?? ''} onChange={(ev) => setBKey(ev.target.value)}>
+                {opciones.map((i) => <option key={i.productKey} value={i.productKey}>{i.name}</option>)}
+              </select>
+            </label>
+          </div>
+          {a && b ? (
+            <div className="elaboration-compare-grid">
+              {[a, b].map((i) => (
+                <article key={i.productKey}>
+                  <h3>{i.name}</h3>
+                  <p>{i.dept}</p>
+                  <dl>
+                    <div><dt>Costo por unidad</dt><dd>{fmtCUP(i.costPrice ?? 0)}</dd></div>
+                    <div><dt>Precio de venta</dt><dd>{fmtCUP(i.salePrice ?? 0)}</dd></div>
+                    <div><dt>Ganancia por unidad</dt><dd>{fmtCUP((i.salePrice ?? 0) - (i.costPrice ?? 0))}</dd></div>
+                    <div><dt>Margen</dt><dd>{i.marginPct != null ? `${i.marginPct} %` : '—'}</dd></div>
+                    <div><dt>Precio sugerido por Queen</dt><dd>{i.suggestedPrice != null ? fmtCUP(i.suggestedPrice) : '—'}</dd></div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          ) : null}
+          <p className="small muted" style={{ marginTop: 10 }}>En el original el comparador contrasta las fichas de costo (costo por ración); las fichas no viajan en el respaldo, así que aquí compara costo, venta y margen vigentes del catálogo del IPV.</p>
+        </>
       )}
     </>
   )

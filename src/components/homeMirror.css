@@ -1,0 +1,100 @@
+/* homeMirror.css — estilos del espejo de Inicio.
+   Valores copiados del original: futureCharts (Tailwind) y theme.css
+   (smart-summary / fx-vital). El clon no tiene Tailwind, así que cada
+   clase hm-* declara exactamente los mismos valores que la utilidad
+   del original (p. ej. rounded-3xl = 24px, p-4 = 16px, text-[13px]).
+   Pausa en segundo plano: main.tsx pone html[data-queen-motion=
+   "paused"] al ocultar la app (como el original) y el index.css del
+   clon ya pausa TODAS las animaciones con ese atributo; aquí se
+   refuerza para las vitales y se respeta prefers-reduced-motion. */
+
+/* ---------- FutureCard del original ---------- */
+.hm-future-card {
+  border-radius: 24px; border: 1px solid var(--border);
+  background: var(--surface); padding: 16px; margin-bottom: 16px;
+  box-shadow: var(--card-shadow);
+}
+@media (min-width: 640px) { .hm-future-card { padding: 20px; } }
+.hm-future-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text); margin: 0; }
+.hm-future-sub { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.hm-future-body { margin-top: 12px; }
+.hm-future-nota { margin: 12px 0 0; font-size: 12px; line-height: 1.6; color: var(--dim); }
+.hm-future-nota strong { color: var(--text); }
+.hm-detail-line {
+  margin: 12px 0 0; border: 1px solid var(--border); border-radius: 16px;
+  background: var(--bg); padding: 8px 12px; font-size: 13px; line-height: 1.6; color: var(--text);
+}
+.hm-empty { font-size: 14px; color: var(--dim); margin: 0; line-height: 1.55; }
+
+/* ---------- DayTimeline del original ---------- */
+.hm-tl-scroll { overflow-x: auto; padding-bottom: 4px; }
+.hm-tl-strip { position: relative; min-width: 540px; }
+.hm-tl-line {
+  position: relative; height: 4px; border-radius: 999px;
+  background: linear-gradient(90deg, #0E9F6E, #0EA5BD, #C9A227);
+}
+.hm-tl-dot {
+  position: absolute; top: 50%; width: 16px; height: 16px; padding: 0;
+  transform: translate(-50%, -50%); border-radius: 50%;
+  border: 2px solid #fff; cursor: pointer;
+}
+.hm-tl-hours { margin-top: 6px; display: flex; justify-content: space-between; font-size: 10px; font-weight: 600; color: var(--dim); }
+.hm-tl-untimed { margin-top: 8px; }
+.hm-tl-untimed-title { margin: 0; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--dim); }
+.hm-tl-chips { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
+.hm-tl-chip {
+  border-radius: 999px; border: 1px solid var(--border); padding: 4px 10px;
+  font-size: 12px; font-weight: 600; color: var(--dim); background: var(--surface); cursor: pointer;
+}
+.hm-tl-chip.is-sel { border-color: var(--accent); color: var(--accent); }
+.hm-tl-chip-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 4px; vertical-align: baseline; }
+
+/* ---------- NightCloseConsole del original ---------- */
+.hm-nc-track { height: 12px; overflow: hidden; border-radius: 999px; background: var(--border); }
+.hm-nc-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, #0E9F6E, #0EA5BD, #C9A227);
+  transition: width .6s ease;
+}
+.hm-nc-steps { margin: 12px 0 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.hm-nc-step { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; }
+.hm-nc-badge {
+  margin-top: 2px; display: flex; width: 24px; height: 24px; flex: none;
+  align-items: center; justify-content: center; border-radius: 50%;
+  font-size: 12px; font-weight: 700; color: #fff;
+}
+.hm-nc-text { flex: 1; min-width: 0; }
+.hm-nc-text strong { color: var(--text); }
+.hm-nc-text span { display: block; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.hm-nc-action {
+  flex: none; border-radius: 999px; border: 1px solid var(--accent);
+  padding: 6px 12px; font-size: 12px; font-weight: 700; color: var(--accent);
+  background: var(--surface); cursor: pointer; min-height: 32px;
+}
+
+/* ---------- Resumen de hoy (smart-summary del theme.css original) ---------- */
+.smart-summary {
+  position: relative; overflow: hidden; display: block;
+  margin-bottom: 18px; padding: 15px 16px 15px 18px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 18px;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--accent) 6%, var(--surface)), var(--surface-tonal));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .05);
+}
+.smart-summary::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); }
+.smart-summary > div { display: flex; align-items: center; gap: 7px; color: var(--deep-2); font-size: 13px; }
+.smart-summary > div strong { font-size: 13px; letter-spacing: -.01em; }
+.smart-summary ul { margin: 9px 0 0 25px; padding: 0; color: var(--text); font-size: 12px; line-height: 1.55; list-style: disc; }
+@media (prefers-color-scheme: dark) { .smart-summary > div { color: var(--text); } }
+
+/* ---------- Animación vital del original (theme.css) ----------
+   «Respira»: solo transform, como el original. */
+@keyframes fxVitalSerene { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.004); } }
+@keyframes fxVitalAlert { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.009); } }
+.fx-vital-serene { animation: fxVitalSerene 4.6s ease-in-out infinite; will-change: transform; }
+.fx-vital-alert { animation: fxVitalAlert 1.7s ease-in-out infinite; will-change: transform; }
+html[data-queen-motion="paused"] .fx-vital-serene,
+html[data-queen-motion="paused"] .fx-vital-alert { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-vital-serene, .fx-vital-alert, .hm-nc-fill { animation: none !important; transition: none !important; }
+}

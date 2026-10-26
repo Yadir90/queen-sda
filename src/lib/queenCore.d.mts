@@ -144,3 +144,58 @@ export interface QueenAnswer {
   unverified: string[]
 }
 export function answerQueen(data: QueenData, question: string, opts?: { refDate?: string }): QueenAnswer
+
+/* Consola (puerto de QueenTab del original): salud, patrones,
+   anticipaciones, sugerencias, bandeja SMS y transparencia. */
+export type QueenHealthState = 'healthy' | 'warning' | 'error' | 'working' | 'expectant'
+export const QUEEN_HEALTH_COPY: Record<QueenHealthState, { label: string; detail: string }>
+export function buildQueenHealth(data: QueenData, refDate: string): { state: QueenHealthState; label: string; detail: string }
+export function queenQuestionPattern(question: string): string
+
+export interface QueenAnticipation {
+  id: string
+  level: 'prioridad' | 'atencion' | 'rutina'
+  title: string
+  detail: string
+  actionLabel: string
+  tab?: string
+  question?: string
+  panel?: string
+}
+export function buildQueenAnticipations(data: QueenData, refDate: string, opts?: { freq?: Record<string, number>; openCorrections?: number; now?: { date: string; hour: number } }): QueenAnticipation[]
+export function buildQueenSuggestions(data: QueenData, refDate: string): QueenObservation[]
+
+export interface QueenSmsDue {
+  clientKey: string
+  client: string
+  category: string
+  persona: string | null
+  morosas: number
+  morosasTotal: number
+  total: number
+  transport: 'sin-transporte'
+  transportLabel: string
+}
+export function buildQueenSmsDue(data: QueenData, refDate: string): QueenSmsDue[]
+
+export interface QueenAnswerMeta {
+  confidence: 'alta' | 'media' | 'baja'
+  confidenceReason: string
+  reasoningSteps: string[]
+  dataUsed: string[]
+  connectedInsight?: string
+  proactiveSuggestion?: string
+  followUp?: string
+}
+export function deriveQueenAnswerMeta(ans: QueenAnswer): QueenAnswerMeta
+
+export interface QueenLearnedCorrection {
+  id: string
+  turnKey: string
+  question: string
+  pattern?: string
+  correction: string
+  createdAt: string
+  status: string
+}
+export function applyQueenLearnedCorrections(ans: QueenAnswer, question: string, corrections: QueenLearnedCorrection[]): QueenAnswer

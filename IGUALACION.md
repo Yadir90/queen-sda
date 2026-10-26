@@ -1,3 +1,258 @@
+# ACTUALIZACIÓN 2026-10-26 — PAQUETE DE CORRECCIÓN «ESPEJO» (mandato del dueño, 25-oct 23:44/23:47: «que sea el mismo con todo, un espejo, un clon del que diseñamos aquí» / «Haz una copia exacta de todo el sistema»)
+
+Las cuatro áreas se rehicieron POR PUERTO del código del original
+(`~/workspace/ts-spaces/panorama-mensual-la-reina/client/src/`): componentes,
+clases, keyframes y valores copiados literalmente donde la arquitectura del
+clon (Vite + Supabase/localStorage, sin servidor del artefacto) lo permite.
+Lo que sigue es el registro por pantalla: qué se espejó, con qué verificación,
+y qué diferencia honesta sobrevive y por qué.
+
+Verificación nueva de coordinación: `npm run verify:paridad` (56
+comprobaciones sobre el código Y sobre el JS/CSS construido): piezas de
+Sistema (OrganismMap, hélice `dna-helix` literal con doble recorrido de
+luces, radar, StartupTimeline, simulación, banco de errores), estructura de
+la consola de Queen, bloques de Inicio/Días/Cobrar, las 19 secciones de Más,
+pantalla de arranque y ausencia de la entrada «Cuentas». Batería previa
+completa en verde tras el paquete: import, ipv (36/36), rh-sync, economía,
+productos (32/32), documentos (68/68), queen (46/46), automatizaciones
+(42/42). Auditoría visual sintética (Chromium headless por CDP, app en modo local
+sembrada con el respaldo real, 15 pantallas × claro/oscuro × 360 px y
+1280 px = 60 combinaciones): CERO desbordes horizontales tras corregir el
+único defecto cazado (la píldora de selección del ADN desbordaba a 1280 px
+porque la cabecera no heredaba el `flex-wrap: wrap` del ámbito
+`.system-network-system` del original; corregido en `systemMirror.css`).
+
+## Arranque y navegación (compartido)
+- Pantalla de arranque `queen-boot-screen` LITERAL del original (reactor,
+  «Preparando el sistema», «Queen está conectando tus datos…», barrido
+  `queen-boot-scan` .85 s, panel `queen-boot-slow` a los 7 s con «Reintentar
+  ahora»). SIN anillos decorativos: el original los eliminó por corrección
+  del dueño del 2026-10-18; el reactor va solo.
+- Fallback de Suspense con reactor y barra de progreso indeterminada.
+- La entrada «Cuentas» de la barra lateral NO existe en el original como
+  pestaña: eliminada. `Cuentas.tsx` queda como destino interno (abre Cobrar
+  en vista Clientes con el contexto de persona), igual que en el original.
+
+## Sistema
+Espejado: sin TabHeader; reloj SOLO en Monitor (LiveClockCard 12 h);
+«De un vistazo» (aquí, no en Inicio) con radar de 8 áreas y salud = media de
+los 15 segmentos de ADN del original (100/72/38/1 por segmento); organismos
+vivos: OrganismMap (silueta SVG, latido, 12 partes literales), DnaHelix (doble
+hélice `dna-helix` literal: cintas con paths del original, dos luces viajeras
+con animateMotion de 4.6 s en recorridos opuestos, bases por pares de ancho,
+selección con píldora informativa y línea de mutaciones con datos reales),
+QueenBrain (red neuronal en las posiciones literales + IpvNeuralMap con sol,
+3 anillos y planetas por día real de IPV; etapa CALCULADA con
+`buildQueenEvolution`, ya no fija), IntegrationMap literal navegable,
+simulación que EJECUTA los 8 escenarios deterministas del original sobre los
+datos reales, banco de errores (células de errores de queenCore + centinelas
+de integridad + historial), StartupTimeline con tiempos medidos de
+`performance`, Organizador persistente, Rendimiento y Día×hora alimentados
+por lecturas sembradas de las jornadas REALES del respaldo (una por jornada;
+memoria y latencia NO se inventan: quedan «sin dato» hasta que existan
+lecturas reales).
+Diferencias honestas:
+- La imagen WebP del cerebro del artefacto no existe en el clon: se usa la
+  misma red neuronal en las posiciones literales del original (coordenadas
+  y paleta copiadas).
+- Sin Recharts (rendimiento en el A16 y peso): gráficos en SVG/HTML nativo
+  con la misma raíz visual, pestañas y leyendas del original.
+- StartupTimeline usa clases CSS propias de igual valor visual (el clon no
+  usa Tailwind).
+- El planeta de un día IPV no ofrece descarga: el respaldo no conserva los
+  bytes del Excel original.
+- Sin botón de «intervención inmune»: en el original lo ejecuta el servidor;
+  en esta copia no hay servidor que la ejecute y no se simula.
+- Los nodos «Gastos» y «Otros ingresos» del mapa de integración abren
+  Economía (en el original abren Gastos/OtrosIngresos, pantallas que el clon
+  no tiene como destino propio).
+- Señales que NO viajan en el respaldo y se declaran «No viaja en el
+  respaldo» sin inventar valor: patrones reconocidos, acciones autónomas,
+  tasa de precisión y el detalle de versiones del ADN con checksum (sí se
+  muestran la etapa actual y su progreso, derivados del respaldo).
+- La hora de las jornadas sembradas de Rendimiento se agrupa a las 12:00
+  (el respaldo no conserva la hora exacta de cada lectura): declarado en la
+  propia vista.
+- Paneles de actividad y notificaciones: muestran el estado real de ESTA
+  copia y declaran que no hay actividad de servidor ni cola de avisos en
+  vivo (las funciones en la nube siguen diferidas por decisión del dueño).
+- Organizador: en el clon persiste en localStorage del dispositivo; se
+  declara en la vista que no hay guardado en servidor hasta desplegarlo.
+
+## Queen
+Espejado: consola sin TabHeader con cabecera propia (orbe a 46 px en la
+etapa calculada, título, subtítulo literal, borrado del hilo con
+confirmación armada y «…»); franja de evolución con chips de 5 estados por
+índice; barra de chips Anticipación / Sugerencias / SMS / Memoria con
+contadores reales y un panel cada vez; hilo puerto de QueenThread (orbe de
+Queen con anillos por etapa, nombre «Queen», hora, avatar del usuario por
+iniciales, responder citando con cita en la burbuja, «Cómo lo comprobé» con
+línea de verificación real y confianza derivada de ella
+(`deriveQueenAnswerMeta`), tarjetas accionables (Navegar/Aplicar), feedback
+Sí/No con «Aprender corrección» que GUARDA la corrección y la APLICA en
+respuestas posteriores (`applyQueenLearnedCorrections`), indicador de
+escribiendo de 3 puntos tras 550 ms de «pensando», burbujas teñidas por
+etapa); historial (últimos 30), frecuentes y borrador persistidos con las
+claves del original; composer fijo con popover de preguntas rápidas (las 4
+literales del original + las del clon); Anticipación = puerto fiel de
+`buildQueenAnticipations` con las fuentes de datos del clon; Sugerencias =
+las 4 fuentes reales del clon; Memoria dentro del panel de chips.
+Diferencias honestas:
+- SMS de cobro: bandeja literal y conteos reales, pero el envío y el buzón
+  dependen del backend del original y de la aprobación en Android; cada
+  fila declara «Sin transporte en esta copia». Nunca se simula un envío.
+- Mensajes automáticos del sistema (boletín/cierre/respaldo) y borrado del
+  hilo en servidor: la API del original no existe en el clon; el borrado es
+  local y así lo dice el pie.
+- Foto de perfil del usuario: no viaja en los datos → avatar por iniciales
+  de 28 px con la misma estructura.
+- Corrector ortográfico del original (`useSpellcheck`): no existe en el
+  clon → atributo nativo `spellCheck`.
+- Estados del orbe «working»/«expectant» por actividad en vivo: no viajan;
+  «working» sí se muestra mientras Queen piensa.
+- Las acciones de los avisos de Anticipación preguntan en el hilo en vez de
+  navegar (QueenScreen no recibe navegación del App en el clon).
+- Clases de utilidad Tailwind del hilo original → equivalentes locales
+  marcados en `queenMirror.css`; el `.queen-chat` heredado de index.css
+  queda anulado dentro de la consola.
+
+## Inicio
+Espejado: DayTimeline + NightCloseConsole literales («El día y su cierre»:
+cinta 10:00–22:00 con ahora/eventos/cierre y pasos IPV/cuadre/gastos/boletín
+con acciones reales); comparador de períodos literal con DeptCompareChart y
+BucketCompareChart; «El río de caja» (CashBars) y «Gastos por categoría»
+(LuminousBars) portados con sus algoritmos literales (`buildRiver`,
+`buildCategoryBars`); «De dónde salen los totales de cuentas» literal;
+«De un vistazo» ELIMINADO de Inicio (vive solo en Sistema; el del clon
+promediaba 3 comprobaciones inventadas como salud); «Resumen de hoy» con la
+lista y los iconos del `smartSummaries` literal y la animación vital del
+original (fxVitalSerene 4.6 s / fxVitalAlert 1.7 s por urgencia).
+Diferencias honestas:
+- Clases Tailwind del original → clases `hm-*` con los valores exactos
+  (el clon no usa Tailwind).
+- Eventos con hora de la cinta del día: solo existen los boletines de hoy
+  con `sentAt`; el clon no tiene buzón de salida del artefacto.
+- Sin eventos de avisos de Queen en la consola de cierre: Inicio no recibe
+  `queenAlerts` en el clon; la fila usa el estado real de boletines.
+- CashBars/LuminousBars viven en el original dentro de Economía/Gastos; en
+  el clon quedan portados y exportados en `charts.tsx` y usados por Inicio.
+
+## Días
+Espejado: detalle de RH por trabajador (nombre, ocupación, días sin
+redondear, horas = días × 12, a cobrar) con totales y línea de fundamento
+(`rhFechas`); botón «Descargar el día» que entrega el resumen completo del
+día en texto con todas sus cifras reales.
+Diferencia honesta:
+- «Eliminar el día» NO se incluye: ni el backend local ni el Supabase del
+  clon exponen `deleteDay` ni la autorización reforzada del original
+  (`authorizeSensitiveAction("delete-ipv")`); simularlo sería falso.
+- La descarga no es el «IPV actualizado» xlsx del original (el respaldo no
+  conserva el Excel): es el resumen completo del día en .txt.
+
+## Cobrar / Cuentas
+Espejado: cronología expandible literal (cuenta creada + abonos con el saldo
+tras cada paso) y tarjeta de comprobante (ReceiptPreviewCard) literal en
+modal, desde la cronología y desde Comprobantes.
+Diferencias honestas:
+- Comprobantes del servidor del original (`listPaymentReceipts` con estado
+  de envío y reenvío) no existen en el clon: la misma tarjeta se construye
+  desde el abono real y declara que no hay estado de envío en esta copia.
+- Avatar con foto / `defaultPersonAvatar`: la foto no viaja → iniciales con
+  la paleta existente.
+- La cronología no incluye eventos de SMS ni «arrastre a nueva quincena»:
+  `smsLogs` y `workerCycleStart` no viajan en el respaldo.
+
+## Economía
+Rehecha como la EconomiaTab del original: 9 bloques con EconomyMeters
+primero (fórmulas del propio original: meta diaria, reserva del 10 %,
+punto de equilibrio con coste fijo diario real), flujo operativo con su
+avisos, punto de equilibrio, rentabilidad por categoría, 6 indicadores,
+impacto administrativo, participación de gastos y evolución de márgenes.
+Se conservan el cierre del dueño, las quincenas naturales y el alta de
+gasto del clon.
+Diferencias honestas:
+- El selector agrega por MES completo: el núcleo local no agrega por
+  período arbitrario como el servidor del original.
+- Anomalías de Queen: se muestran con el botón deshabilitado y el motivo
+  (el endpoint de la nube sigue sin desplegar, por decisión del dueño).
+- Sin botón «Ver el detalle en Cobrar»: la pantalla no recibe navegación.
+
+## Elaboración
+Puerto de ProductsByArea + Elaboración del original: pestañas, panel de
+área con buscador, rejilla con insignia NUEVO y orden por precio; rentabilidad
+real por plato con Comparar; sin bordes de color por estado (el original no
+los usa).
+Diferencias honestas:
+- Solo se muestran las fichas cuando el catálogo y los gastos permiten
+  construirlas: las fichas de costo del original no viajan en el respaldo.
+- Sin crear producto manual ni importación/exportación de fichas Excel
+  (parser del artefacto).
+
+## Productos
+«Stock bajo» literal con el umbral del original; rentabilidad por ganancia
+histórica descendente; cambios de precio con la fuente real («Respaldo del
+SDA»/«Hoja RH»/«IPV» + fecha); Activos/Historial; «Diferencias explicadas».
+Diferencias honestas:
+- Sin códigos de barras ni foto: no viajan en el respaldo.
+- La frase «(había X a ese costo)» del original no se incluye: el núcleo
+  del clon no expone la existencia previa a ese costo.
+
+## Almacén
+Títulos y estructura literales de la superficie del original.
+Diferencia honesta (la mayor del área, declarada también en pantalla):
+- El almacén del original es un módulo manual vivo (escáner, movimientos,
+  existencias propias en su base de datos); el respaldo solo trae la foto
+  del IPV. El clon muestra esa foto y lo declara; no simula movimientos.
+
+## Laboratorio
+Reescrito como puerto de LaboratorioTab del original (el clon tenía un
+simulador de 40 filas que no existe en el original: eliminado).
+Diferencias honestas:
+- Sugerencias calculadas con `buildPriceSuggestions` local; los factores
+  por categoría del servidor del original no viajan.
+- IpvLabPanel sin subir IPV (el clon no tiene el parser/roundTrip/cola del
+  artefacto).
+
+## RH
+Héroe de ciclo del original, columna «Salario diario», banner de ciclo
+cerrado/abierto, aviso de pago a trabajador con 0 días, banda total y
+leyenda de cuadrados con su significado; la «A» de ausencia NO se pinta
+como estado porque el registro de jornada no viaja (declarado en la
+leyenda). El PDF de nómina sigue viviendo en Documentos (la pantalla no
+imprime). La ficha simplificada de trabajador es decisión registrada del
+dueño, no una omisión.
+
+## Transferencias
+Pase precargado con TODO el saldo por defecto (dinámica del formulario del
+original) y acceso «Usar todo el saldo».
+Diferencia honesta: no se puede editar un movimiento (el backend local y el
+de Supabase del clon solo añaden/excluyen); los formularios separados del
+original quedan cubiertos por el formulario único real del clon.
+
+## Documentos
+No es una pestaña del original: es la consolidación del clon, declarada
+como tal. Chips de mes legibles («octubre de 2026»). Entrega de documentos
+en el navegador en vez de «Archivo listo» con PDF de servidor (el generador
+vive en el servidor del original); firmas y cuño con los textos honestos
+del propio original («pendiente de trazo real», «cuño digital no
+disponible en esta copia»).
+
+## Historial
+Puerto de HistorialMonthGrid: rejilla del mes con huecos por lunes, anillo
+dorado para hoy, doble anillo para el día seleccionado, verdes sólidos del
+original (#23aa70) y leyenda.
+Diferencia honesta: el envío real de boletines por correo espera las
+funciones en la nube diferidas por decisión del dueño; no se simula la
+retención de 30 minutos del original.
+
+## Más / Secciones
+Las 19 secciones del original con nombre, icono y descripción tomados de
+su propia lista de pestañas (`tabs` de App.tsx), sin «Cuentas» ni
+«Documentos» como tarjetas (no son secciones del original) y con
+«Existencias» restaurada como en el original.
+
+---
+
 # IGUALACION.md — Especificación de igualación visual e interactiva
 
 **Objetivo:** que la app externa (`~/workspace/queen-sda-app/`) quede igual al sistema

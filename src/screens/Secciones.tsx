@@ -2,17 +2,30 @@ import type { Section, StoredData } from '../types'
 import { TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { effectiveSaldo, fmtCUP, fmtInt } from '../lib/utils'
+import '../components/sectionsMirror.css'
 
-/* Vista «Más» del original: rejilla de tarjetas-botón con TODAS las
-   secciones menos Inicio/Cobrar/Queen/Sistema, en orden alfabético en
-   español — insignia de 48px radio 16 en turquesa suave con el icono en
-   #084C5C, etiqueta, descripción breve y chevron. Al pie: días
-   importados y dinero en la calle (solo cuentas de clientes).
-   En esta copia navegan Días, Cuentas, RH · Pagos, Economía (con los
-   gastos dentro), Transferencias, Productos, Elaboración, Almacén,
-   Laboratorio, Documentos e Historial, e Importar (dentro de
-   Sistema); el resto se muestra con su estado honesto de
-   «siguiente fase», sin fingir que abre algo. */
+/* Vista «Más» del original: rejilla de tarjetas-botón con insignia de
+   48px radio 16 en turquesa suave e icono en #084C5C, etiqueta,
+   descripción y chevron; al pie, días importados y dinero en la
+   calle (solo cuentas de clientes).
+   CONTENIDO (rasero del dueño, 25-oct: copia exacta): las 19
+   secciones del sistema que no son Inicio/Cobrar/Queen/Sistema —
+   todos los Tab del original menos esos cuatro y el propio «Más» —
+   en orden alfabético en español, con los nombres, iconos y
+   descripciones LITERALES de la lista `tabs` de su App.tsx
+   (App.tsx:2488-2510). Existencias es Tab del original aunque su
+   lista de navegación lo omite (se abre desde Productos): por eso
+   aquí figura como sección sin destino propio en el clon, con su
+   descripción de TAB_BADGES («Libro de existencias»).
+   Diferencias de arquitectura del clon, declaradas en la propia
+   rejilla: Gastos abre Economía (donde viven los gastos en esta
+   copia), Menú abre Documentos (donde se genera el menú) e
+   Importar abre Sistema (donde se importa el respaldo/IPV); las
+   secciones que el clon aún no tiene se muestran con su estado
+   honesto de «siguiente fase», sin fingir que abren algo. La
+   pantalla «Cuentas» del clon no es una sección del original (las
+   cuentas viven dentro de Cobrar) y por eso ya no figura en esta
+   rejilla: sigue accesible desde Cobrar y la barra lateral. */
 
 interface MasItem {
   name: string
@@ -22,26 +35,25 @@ interface MasItem {
 }
 
 const ITEMS: MasItem[] = [
-  { name: 'Ajustes', desc: 'Perfil, acceso y seguridad', icon: 'settings' },
-  { name: 'Almacén', desc: 'Entradas, salidas y existencias desde la foto del IPV', icon: 'package', go: 'almacen' },
-  { name: 'Archivo', desc: 'Meses cerrados', icon: 'archive' },
-  { name: 'Cronología', desc: 'Registro por categorías', icon: 'list' },
-  { name: 'Cuentas', desc: 'Cuentas por cobrar por persona y contacto', icon: 'receipt', go: 'cuentas' },
-  { name: 'Días', desc: 'Rejilla de días importados y su detalle', icon: 'calendar', go: 'dias' },
-  { name: 'Documentos', desc: 'Nómina, informe, menú, presentación y respaldo descargables', icon: 'doc', go: 'documentos' },
-  { name: 'Economía', desc: 'Análisis del período y cierre de mes', icon: 'chart', go: 'economia' },
-  { name: 'Elaboración', desc: 'Productos, paquetes, rendimientos y referencias', icon: 'receipt', go: 'elaboracion' },
-  { name: 'Entradas', desc: 'Entradas desde el IPV', icon: 'package' },
-  { name: 'Gastos', desc: 'Salidas de caja registradas (en Economía)', icon: 'receipt', go: 'economia' },
-  { name: 'Historial', desc: 'Boletines diarios enviados y pendientes', icon: 'clock', go: 'historial' },
-  { name: 'Importar', desc: 'El respaldo del SDA se importa desde Sistema', icon: 'upload', go: 'sistema' },
-  { name: 'Inventario', desc: 'Bienes del local', icon: 'archive' },
-  { name: 'Laboratorio', desc: 'Aislado · sin tocar datos reales', icon: 'flask', go: 'laboratorio' },
-  { name: 'Menú', desc: 'Para clientes, sin firma ni cuño (en Documentos)', icon: 'doc', go: 'documentos' },
-  { name: 'Otros ingresos', desc: 'Ingresos fuera de las ventas del IPV', icon: 'plus' },
-  { name: 'Productos', desc: 'Ficha maestra de productos', icon: 'package', go: 'productos' },
-  { name: 'RH · Pagos', desc: 'Ciclos de 15 días exactos, pago el día 16', icon: 'people', go: 'rh' },
-  { name: 'Transferencias', desc: 'Tarjeta del negocio y pases al banco', icon: 'transfer', go: 'transferencias' },
+  { name: 'Ajustes', desc: 'Perfil, acceso y configuración', icon: 'settings' },
+  { name: 'Almacén', desc: 'Control manual de existencias del almacén', icon: 'package', go: 'almacen' },
+  { name: 'Archivo', desc: 'Meses cerrados y morosas', icon: 'archive' },
+  { name: 'Cronología', desc: 'Registro cronológico interactivo de todo el sistema, por categorías', icon: 'list' },
+  { name: 'Días', desc: 'Días importados y detalle diario', icon: 'calendar', go: 'dias' },
+  { name: 'Economía', desc: 'Fondos, márgenes y análisis económico', icon: 'chart', go: 'economia' },
+  { name: 'Elaboración', desc: 'Fichas de costo de los productos', icon: 'receipt', go: 'elaboracion' },
+  { name: 'Entradas', desc: 'Entradas e inversión del IPV', icon: 'package' },
+  { name: 'Existencias', desc: 'Libro de existencias', icon: 'archive' },
+  { name: 'Gastos', desc: 'Gastos y salidas de caja', icon: 'receipt', go: 'economia' },
+  { name: 'Historial', desc: 'Boletines generados y su estado de envío', icon: 'clock', go: 'historial' },
+  { name: 'Importar', desc: 'Subir Excel diario del IPV', icon: 'upload', go: 'sistema' },
+  { name: 'Inventario', desc: 'Registro independiente de los bienes del local', icon: 'archive' },
+  { name: 'Laboratorio', desc: 'Simulación aislada e IPV de prueba que se cuadra a 0, sin tocar datos reales', icon: 'flask', go: 'laboratorio' },
+  { name: 'Menú', desc: 'Menú del día desde Productos, editable y en PDF', icon: 'doc', go: 'documentos' },
+  { name: 'Otros ingresos', desc: 'Coctelería, pizzería, entrada y mesas', icon: 'plus' },
+  { name: 'Productos', desc: 'Ficha maestra: existencia, precios, costo promedio y ganancia', icon: 'package', go: 'productos' },
+  { name: 'RH · Pagos', desc: 'Nómina quincenal y historial', icon: 'people', go: 'rh' },
+  { name: 'Transferencias', desc: 'Acumulado por pasar al banco', icon: 'transfer', go: 'transferencias' },
 ]
 
 export function MasScreen({ onNavigate, data }: { onNavigate: (s: Section) => void; data: StoredData }) {
@@ -68,7 +80,7 @@ export function MasScreen({ onNavigate, data }: { onNavigate: (s: Section) => vo
             </>
           )
           return item.go ? (
-            <button key={item.name} type="button" className="mas-card" onClick={() => onNavigate(item.go!)}>
+            <button key={item.name} type="button" className="mas-card" onClick={() => onNavigate(item.go!)} aria-label={`Ir a ${item.name}: ${item.desc}`}>
               {inner}
             </button>
           ) : (

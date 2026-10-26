@@ -1,8 +1,22 @@
 /* Gráficos de Sistema del original, portados de client/src/App.tsx
    (DiagnosticRadar) y client/src/charts.tsx (SystemRealtimeCharts).
-   SVG/HTML nativos, sin librerías. Regla del original: lo no medido no
-   se dibuja — un área sin verificar no entra en el radar y una métrica
-   sin dos lecturas reales muestra el aviso en vez del gráfico. */
+   PORT LITERAL de estructura y clases del original: la raíz es
+   <section className="system-realtime-charts">, las pestañas son
+   .system-chart-tabs, cada vista es .system-chart-panel, el anillo es
+   .system-health-donut/.system-chart-legend y la rejilla es
+   .system-hourgrid* — los estilos viven en components/systemMirror.css,
+   copiados tal cual de theme.css. Diferencia de arquitectura declarada:
+   el original dibuja Actividad/Eventos/Rendimiento con Recharts; el
+   clon no carga esa librería (rendimiento en el A16), así que esos
+   tres paneles usan el SVG/HTML nativo que ya traía el clon, dentro de
+   la misma estructura y con las mismas lecturas.
+   Regla del original: lo no medido no se dibuja — un área sin
+   verificar no entra en el radar y una métrica sin dos lecturas reales
+   muestra el aviso en vez del gráfico. Las lecturas pueden ser de
+   apertura o sembradas desde las jornadas reales del respaldo
+   (lib/sysReadings.ts): la vista «Rendimiento · Peso» se alimenta de
+   ambas; Memoria y Latencia solo de las de apertura, que son las
+   únicas que las miden de verdad. */
 
 import { useEffect, useMemo, useState } from 'react'
 import { ColumnChart } from './charts'
@@ -53,8 +67,11 @@ export function LiveClock() {
     const id = window.setInterval(tick, 1000)
     return () => window.clearInterval(id)
   }, [])
+  // Formato del LiveClockCard original: 12 horas con am/pm, nunca militar.
   const dateLine = new Intl.DateTimeFormat('es-CU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(now)
-  const timeLine = new Intl.DateTimeFormat('es-CU', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(now)
+  const h24 = now.getHours()
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  const timeLine = `${h12}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')} ${h24 < 12 ? 'am' : 'pm'}`
   return (
     <div className="live-clock">
       <p className="lc-date">{dateLine}</p>
@@ -95,12 +112,13 @@ const METRICS: Array<{ id: MetricId; label: string; unit: string; color: string 
   { id: 'latenciaMs', label: 'Latencia', unit: 'ms', color: '#e9a13b' },
 ]
 
+/* SYSTEM_CHART_VIEWS del original, tal cual (ids incluidos). */
 const VIEWS = [
   { id: 'salud', label: 'Salud' },
   { id: 'actividad', label: 'Actividad' },
   { id: 'eventos', label: 'Eventos' },
   { id: 'rendimiento', label: 'Rendimiento' },
-  { id: 'horas', label: 'Día × hora' },
+  { id: 'rejilla', label: 'Día × hora' },
 ] as const
 type ViewId = (typeof VIEWS)[number]['id']
 
@@ -188,38 +206,43 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
   }, [metricValues])
 
   return (
-    <div>
-      <div className="rt-head">
-        <span className="premium-kicker"><i aria-hidden /> Lectura gráfica</span>
+    <section className="system-realtime-charts" aria-labelledby="system-realtime-charts-title">
+      <header>
+        <div>
+          <span className="system-live-kicker"><i aria-hidden="true" /> Lectura gráfica</span>
+          <h3 id="system-realtime-charts-title">Sistema en tiempo real</h3>
+          <p>Salud, actividad, eventos y rendimiento con las lecturas reales disponibles.</p>
+        </div>
         <time dateTime={checkedAt}>{checkedLabel}</time>
-      </div>
-      <div className="rt-tabs" role="tablist" aria-label="Gráficos del sistema">
+      </header>
+      <div className="system-chart-tabs" role="tablist" aria-label="Gráficos del sistema">
         {VIEWS.map((item) => (
-          <button key={item.id} type="button" role="tab" aria-selected={view === item.id} className={view === item.id ? 'active' : ''} onClick={() => setView(item.id)}>{item.label}</button>
+          <button key={item.id} type="button" role="tab" aria-selected={view === item.id} onClick={() => setView(item.id)}>{item.label}</button>
         ))}
       </div>
 
       {view === 'salud' ? (
-        <div role="tabpanel" aria-label="Distribución de salud del sistema">
+        <div className="system-chart-panel" role="tabpanel" aria-label="Distribución de salud del sistema">
           {healthSummary.length ? (
-            <div className="rt-donut-layout">
-              <div className="rt-donut" role="img" aria-label={`Estados de ${health.length} componentes del sistema`}>
+            <div className="system-health-chart-layout">
+              <div className="system-health-donut" role="img" aria-label={`Estados de ${health.length} componentes del sistema`}>
                 <svg viewBox="0 0 120 120" aria-hidden="true">
-                  <circle cx="60" cy="60" r={donutRadius} fill="none" stroke="var(--surface-tonal)" strokeWidth="11" />
+                  <circle className="system-health-donut-track" cx="60" cy="60" r={donutRadius} strokeWidth="11" />
                   {donutSegments.map((item) => (
                     <circle
-                      key={item.state} cx="60" cy="60" r={donutRadius} fill="none" strokeWidth="11"
+                      key={item.state} className="system-health-donut-segment" cx="60" cy="60" r={donutRadius} strokeWidth="11"
                       stroke={item.color}
                       strokeDasharray={`${item.length} ${donutCircumference - item.length}`}
                       strokeDashoffset={-item.start}
                       transform="rotate(-90 60 60)"
                       opacity={healthState && healthState !== item.state ? 0.3 : 1}
+                      onClick={() => setHealthState(item.state)}
                     />
                   ))}
                 </svg>
                 <span><strong>{health.length}</strong><small>componentes</small></span>
               </div>
-              <div className="rt-legend" aria-label="Estados de salud">
+              <div className="system-chart-legend" aria-label="Estados de salud">
                 {healthSummary.map((item) => (
                   <button key={item.state} type="button" aria-pressed={healthState === item.state} onClick={() => setHealthState((cur) => (cur === item.state ? null : item.state))}>
                     <i style={{ background: item.color, boxShadow: `0 0 8px ${item.color}` }} /><span>{item.name}</span><strong>{item.value}</strong>
@@ -228,7 +251,7 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
               </div>
             </div>
           ) : <div className="chart-empty">Sin componentes que mostrar.</div>}
-          <p className="rt-reading" role="status">{selectedHealth ? `${selectedHealth.name}: ${selectedHealth.value} componente${selectedHealth.value === 1 ? '' : 's'}.` : 'Toca un estado en la leyenda para aislar su lectura.'}</p>
+          <p className="system-chart-reading" role="status">{selectedHealth ? `${selectedHealth.name}: ${selectedHealth.value} componente${selectedHealth.value === 1 ? '' : 's'}.` : 'Toca un estado para aislar su lectura.'}</p>
           <div className="rt-health-list">
             {health.map((p) => (
               <div className="rt-health-row" key={p.label}>
@@ -242,7 +265,7 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
       ) : null}
 
       {view === 'actividad' ? (
-        <div role="tabpanel" aria-label="Avance de rutinas activas">
+        <div className="system-chart-panel" role="tabpanel" aria-label="Avance de rutinas activas">
           {activities.length ? (
             <>
               <div className="rt-activity">
@@ -254,30 +277,30 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
                   </div>
                 ))}
               </div>
-              <p className="rt-reading">Avances calculados de los datos reales de esta copia en este momento.</p>
+              <p className="system-chart-reading">Avances calculados de los datos reales de esta copia en este momento; las tareas derivadas de las jornadas sembradas cuentan como actividad histórica real, no inventada.</p>
             </>
           ) : <div className="chart-empty">No hay tareas activas ni pendientes ahora.</div>}
         </div>
       ) : null}
 
       {view === 'eventos' ? (
-        <div role="tabpanel" aria-label="Fallos registrados por día">
+        <div className="system-chart-panel" role="tabpanel" aria-label="Fallos registrados por día">
           {events.length ? (
             <ColumnChart
-              ariaLabel="Días con cuadre distinto de cero por jornada importada"
-              series={[{ key: 'fallos', label: 'Fallos de cuadre', color: 'var(--danger)' }]}
+              ariaLabel="Fallos reales por jornada importada: cuadre distinto de cero y mermas con costo"
+              series={[{ key: 'fallos', label: 'Fallos', color: 'var(--danger)' }]}
               data={events.map((e) => ({ label: e.date.slice(5), detail: fmtDateShort(e.date), fallos: e.fallos }))}
             />
-          ) : <div className="chart-empty">Sin jornadas importadas todavía: no hay eventos que contar.</div>}
-          <p className="rt-reading">Un fallo = un día importado cuyo cuadre no es cero. Sale del respaldo, sin tocarlo.</p>
+          ) : <div className="chart-empty">Aún no hay jornadas completas para representar.</div>}
+          <p className="system-chart-reading">Un fallo por jornada = cuadre distinto de cero (1) más merma con costo registrada ese día (1). Un valor 0 es una jornada registrada sin fallos; una fecha ausente no se dibuja.</p>
         </div>
       ) : null}
 
       {view === 'rendimiento' ? (
-        <div role="tabpanel" aria-label="Rendimiento de esta copia">
-          <div className="rt-tabs rt-metric-tabs" role="tablist" aria-label="Métrica de rendimiento">
+        <div className="system-chart-panel" role="tabpanel" aria-label="Tendencia de rendimiento">
+          <div className="system-performance-switch" role="group" aria-label="Métrica de rendimiento">
             {METRICS.map((m) => (
-              <button key={m.id} type="button" role="tab" aria-selected={metricId === m.id} className={metricId === m.id ? 'active' : ''} onClick={() => setMetricId(m.id)}>{m.label} ({m.unit})</button>
+              <button key={m.id} type="button" aria-pressed={metricId === m.id} onClick={() => setMetricId(m.id)}>{m.label}</button>
             ))}
           </div>
           {perfLine ? (
@@ -286,59 +309,45 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
                 <line x1="8" y1={perfLine.h - 10} x2={perfLine.w - 8} y2={perfLine.h - 10} stroke="var(--border)" />
                 <polyline points={perfLine.pts} fill="none" stroke={metric.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
               </svg>
-              <p className="rt-reading">{metricValues.length} lecturas disponibles · eje desde 0 · {metric.unit} · última: {fmtInt(metricValues[metricValues.length - 1].value)} {metric.unit}</p>
+              <p className="system-chart-reading">{metricValues.length} lecturas disponibles · eje desde 0 · {metric.unit} · última: {fmtInt(metricValues[metricValues.length - 1].value)} {metric.unit}</p>
             </>
           ) : (
-            <div className="chart-empty">La métrica «{metric.label}» aún no tiene dos lecturas reales en esta copia: se muestra este aviso en vez del gráfico. Cada apertura de Sistema deja una lectura medida en este dispositivo.</div>
+            <div className="chart-empty">Esta métrica necesita dos lecturas reales. «Peso» se siembra con el peso real de cada jornada del respaldo y crece con cada apertura; «Memoria» y «Latencia» solo las miden las lecturas de apertura de este dispositivo.</div>
           )}
         </div>
       ) : null}
 
-      {view === 'horas' ? (
-        <div role="tabpanel" aria-label="Comprobaciones por día y hora">
-          {hourGrid.days.length && hourGrid.max > 0 ? (
+      {view === 'rejilla' ? (
+        <div className="system-chart-panel" role="tabpanel" aria-label="Comprobaciones del sistema por día y hora">
+          {hourGrid.days.length && hourGrid.max > 0 && hourGrid.peak ? (
             <>
-              <p className="rt-reading" style={{ textAlign: 'left', margin: '0 0 10px' }}>
-                Hora punta: <strong>{hourGrid.peak ? `${String(hourGrid.peak.hour).padStart(2, '0')}:00` : '—'}</strong>
-                {hourGrid.peak ? ` — ${hourGrid.peak.count} lectura${hourGrid.peak.count === 1 ? '' : 's'} el ${fmtDateShort(hourGrid.peak.day)}` : ''}
-              </p>
-              <div className="hour-grid" role="img" aria-label="Rejilla de lecturas por día y hora">
-                <div className="hour-row hour-axis" aria-hidden="true">
-                  <span className="hour-day" />
-                  {Array.from({ length: 24 }).map((_, h) => (
-                    <span key={h} className={`hour-cell axis${hourGrid.peak?.hour === h ? ' axis-peak' : ''}`} title={hourGrid.peak?.hour === h ? 'Punta: la hora más cargada' : undefined}>{h === 0 || h === 6 || h === 12 || h === 18 ? h : h === 23 ? 24 : hourGrid.peak?.hour === h ? '▾' : ''}</span>
-                  ))}
-                </div>
+              <div className="system-hourgrid-head">
+                <strong>{String(hourGrid.peak.hour).padStart(2, '0')}:00</strong>
+                <p>Hora punta de comprobaciones: {hourGrid.peak.count} lectura{hourGrid.peak.count === 1 ? '' : 's'} el {new Intl.DateTimeFormat('es-CU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date(`${hourGrid.peak.day}T12:00:00`))} a las {String(hourGrid.peak.hour).padStart(2, '0')}:00.</p>
+              </div>
+              <div className="system-hourgrid" role="img" aria-label={`Rejilla de comprobaciones por día y hora: la hora más cargada es las ${String(hourGrid.peak.hour).padStart(2, '0')}:00 del ${hourGrid.peak.day}, con ${hourGrid.peak.count} lecturas`}>
+                <div className="system-hourgrid-peak" style={{ left: `calc(34px + (100% - 34px) * ${(hourGrid.peak.hour + 0.5) / 24})` }} aria-hidden="true"><span>Punta</span></div>
                 {hourGrid.days.map((day) => (
-                  <div className="hour-row" key={day}>
-                    <span className="hour-day" title={fmtDateShort(day)}>{dayLetter(day)}</span>
-                    {Array.from({ length: 24 }).map((_, h) => {
-                      const c = hourGrid.counts.get(`${day}|${h}`) ?? 0
-                      const isPeak = hourGrid.peak?.day === day && hourGrid.peak?.hour === h
-                      return (
-                        <span
-                          key={h}
-                          className={`hour-cell${isPeak ? ' is-peak' : ''}`}
-                          style={{ background: hourLevelColor(hourGrid.level(c)) }}
-                          title={`${fmtDateShort(day)} · ${String(h).padStart(2, '0')}:00 · ${c} lectura${c === 1 ? '' : 's'}${isPeak ? ' · Punta' : ''}`}
-                        />
-                      )
-                    })}
+                  <div className="system-hourgrid-row" key={day}>
+                    <span className="system-hourgrid-day">{dayLetter(day)} {day.slice(8)}</span>
+                    <div className="system-hourgrid-cells">
+                      {Array.from({ length: 24 }, (_, h) => {
+                        const c = hourGrid.counts.get(`${day}|${h}`) ?? 0
+                        return <i key={h} style={{ background: hourLevelColor(hourGrid.level(c)) }} title={`${day} ${String(h).padStart(2, '0')}:00 — ${c} lectura${c === 1 ? '' : 's'}`} />
+                      })}
+                    </div>
                   </div>
                 ))}
+                <div className="system-hourgrid-axis" aria-hidden="true"><span>0</span><span>6</span><span>12</span><span>18</span><span>24 (h)</span></div>
               </div>
-              <div className="hour-legend" aria-label="Leyenda de niveles">
-                {hourGrid.legend.map((l) => (
-                  <span key={l.level}><i style={{ background: hourLevelColor(l.level) }} />{l.label}</span>
-                ))}
-                <span className="muted">lecturas por hora</span>
+              <div className="system-hourgrid-legend" aria-label="Leyenda de lecturas por hora">
+                {hourGrid.legend.map((item) => <span key={item.level}><i style={{ background: hourLevelColor(item.level) }} />{item.label}</span>)}
               </div>
+              <p className="system-chart-reading">Cada bloque es una hora: su intensidad es el número de comprobaciones registradas en esa hora. Una hora sin lecturas queda en el tono vacío; no se rellena actividad que no se midió. Las jornadas sembradas del respaldo se agrupan a las 12:00 porque el respaldo trae la fecha, no la hora: esa columna marca jornadas, no una hora medida.</p>
             </>
-          ) : (
-            <div className="chart-empty">Todavía no hay lecturas con hora registradas en esta copia: no se rellena actividad que no se midió. La rejilla «Día × hora» se puebla con las lecturas reales de Sistema.</div>
-          )}
+          ) : <div className="chart-empty">Aún no hay comprobaciones con hora registrada para dibujar la rejilla.</div>}
         </div>
       ) : null}
-    </div>
+    </section>
   )
 }

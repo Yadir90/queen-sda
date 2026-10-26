@@ -27,7 +27,8 @@
     "verify:productos": "node scripts/verify-productos.mjs",
     "verify:documentos": "node scripts/verify-documentos.mjs",
     "verify:queen": "node scripts/verify-queen.mjs",
-    "verify:automatizaciones": "node scripts/verify-automatizaciones.mjs"
+    "verify:automatizaciones": "node scripts/verify-automatizaciones.mjs",
+    "verify:paridad": "node scripts/verify-paridad.mjs"
   },
   "type": "module",
   "version": "1.0.0"

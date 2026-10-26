@@ -76,7 +76,7 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
         <div className="month-chips" role="group" aria-label="Mes del informe">
           {months.map((mk) => (
             <button key={mk} type="button" className={`chip-btn${mk === activeMonth ? ' active' : ''}`} onClick={() => setMonthKey(mk)}>
-              {mk}
+              {['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'][Number(mk.slice(5, 7)) - 1]} de {mk.slice(0, 4)}
             </button>
           ))}
         </div>

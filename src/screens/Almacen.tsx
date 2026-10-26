@@ -4,6 +4,7 @@ import { Card, EmptyState, TabHeader } from '../components/ui'
 import { Icon } from '../components/icons'
 import { buildProductsCatalog, buildWarehouse } from '../lib/productosCore.mjs'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
+import '../components/sectionsMirror.css'
 
 /* Almacén del externo: se lee de la foto de almacén que trae cada IPV
    (hoja «Almacén»), tal como entró. Diferencia honesta: el registro
@@ -41,7 +42,7 @@ export default function Almacen({ data }: { data: StoredData }) {
           </div>
 
           <Card>
-            <h3>Saldos por producto (última foto)</h3>
+            <h3>Existencias disponibles</h3>
             <div className="list">
               {wh.balances.map((b) => (
                 <div className="row" key={b.key}>
@@ -93,7 +94,7 @@ export default function Almacen({ data }: { data: StoredData }) {
           ) : null}
 
           <Card>
-            <h3>Fotos de almacén por día</h3>
+            <h3>Registro de movimientos</h3>
             <div className="list">
               {wh.rows.map((r, i) => (
                 <div className="row" key={`${r.date}-${r.product}-${i}`}>

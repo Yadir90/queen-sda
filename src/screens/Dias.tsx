@@ -5,6 +5,12 @@ import { Icon } from '../components/icons'
 import ImportBackup from '../components/ImportBackup'
 import ImportIpv from '../components/ImportIpv'
 import { fmtCUP, fmtDate, fmtDateShort, fmtInt, todayISO } from '../lib/utils'
+import { downloadText } from '../lib/download'
+
+/** Días con decimales como en RH (0,5 sin redondear a 1). */
+function fmtDias(n: number): string {
+  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
+}
 
 const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
@@ -128,6 +134,44 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
     return out
   }, [data.days, today])
 
+  // Descargar el día: resumen generado en el dispositivo con los datos
+  // reales de ese IPV (la utilidad de descarga existente). No es el
+  // Excel del IPV: el clon no guarda el archivo original ni genera su
+  // versión actualizada — ver el informe del área.
+  const downloadDay = (d: DayData) => {
+    const lines = [
+      `Resumen del día — ${fmtDate(d.date)}`,
+      'Queen SDA — Sistema de Automatización de Datos V2.0 · Restaurante-bar La Reina',
+      '',
+      `Ventas del día: ${fmtCUP(d.ventasDia)}`,
+      `Ganancia bruta: ${fmtCUP(d.gananciaBruta)}`,
+      `Ganancia neta: ${fmtCUP(d.gananciaNeta)}`,
+      `Cuadre: ${d.cuadre === 0 ? '0 — CUADRE OK' : fmtCUP(d.cuadre)}`,
+      `Gastos del IPV: ${fmtCUP(d.gastosIpv)}`,
+      '',
+      'Fondos',
+      `Efectivo (arqueo): ${fmtCUP(d.fondos.efectivo)}`,
+      `Transferencias: ${fmtCUP(d.fondos.transferencias)}`,
+      `Cuentas por cobrar del día: ${fmtCUP(d.fondos.totalCuentasPorCobrar)}`,
+      `Divisas (en CUP): ${fmtCUP(d.fondos.divisasCUP)}`,
+      `Zelle: ${fmtCUP(d.fondos.zelle)}`,
+      `Total de fondos: ${fmtCUP(d.fondos.totalFondos)}`,
+      '',
+      'Departamentos',
+      ...d.departments.map((dep) => `${dep.name}: ${fmtCUP(dep.ventas)} (ganancia ${fmtCUP(dep.ganancia)})`),
+      ...(d.fondos.cuentasDetalle?.length ? ['', 'Cuentas del Desglose', ...d.fondos.cuentasDetalle.map((c) => `${c.nombre}${c.observacion ? ` · ${c.observacion}` : ''}: ${fmtCUP(c.saldo)}`)] : []),
+      ...(d.rh?.length ? [
+        '',
+        `RH del día — foto del IPV${d.rhFechas?.length ? ` (marcas del ${fmtDate(d.rhFechas[0])} al ${fmtDate(d.rhFechas[d.rhFechas.length - 1])})` : ''}`,
+        ...d.rh.map((e) => `${e.nombre}${e.ocupacion ? ` · ${e.ocupacion}` : ''}: ${fmtDias(e.dias)} día${e.dias === 1 ? '' : 's'} · ${fmtDias(e.dias * 12)} h · a cobrar ${fmtCUP(e.totalCobrar)}`),
+        `Total a cobrar RH: ${fmtCUP(d.rh.reduce((t, e) => t + e.totalCobrar, 0))}`,
+      ] : []),
+      '',
+      'Estas cifras son las del IPV, sin tocar: el IPV es la fuente de verdad.',
+    ]
+    downloadText(lines.join('\n'), `resumen-dia-${d.date}.txt`)
+  }
+
   const day: DayData | undefined = data.days.find((d) => d.date === selected)
   const todayImported = data.days.some((d) => d.date === today)
 
@@ -225,12 +269,45 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
             </>
           ) : null}
           {day.rh?.length ? (
-            <p className="small muted" style={{ marginTop: 14 }}>
-              Foto de RH: {fmtInt(day.rh.length)} trabajadores · a cobrar {fmtCUP(day.rh.reduce((s, e) => s + e.totalCobrar, 0))}
-              {day.rhFechas?.length ? ` · marcas del ${fmtDate(day.rhFechas[0])} al ${fmtDate(day.rhFechas[day.rhFechas.length - 1])}` : ''}.
-            </p>
+            <>
+              <h3 style={{ marginTop: 18 }}>RH del día — por trabajador</h3>
+              <p className="small muted" style={{ marginTop: 0 }}>
+                Foto de RH de este IPV{day.rhFechas?.length ? ` · marcas del ${fmtDate(day.rhFechas[0])} al ${fmtDate(day.rhFechas[day.rhFechas.length - 1])}` : ''}. Jornada de 12 h por día marcado (10:00 am–10:00 pm), como en RH.
+              </p>
+              <div className="rh-table-wrap">
+                <table className="rh-table">
+                  <thead>
+                    <tr><th>Trabajador</th><th style={{ textAlign: 'right' }}>Días</th><th style={{ textAlign: 'right' }}>Horas</th><th style={{ textAlign: 'right' }}>A cobrar</th></tr>
+                  </thead>
+                  <tbody>
+                    {day.rh.map((e, i) => (
+                      <tr key={`${e.nombre}-${i}`}>
+                        <td>{e.nombre}{e.ocupacion ? <span className="muted" style={{ display: 'block', fontSize: '0.8rem' }}>{e.ocupacion}</span> : null}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtDias(e.dias)}</td>
+                        <td style={{ textAlign: 'right' }}>{fmtDias(e.dias * 12)} h</td>
+                        <td style={{ textAlign: 'right' }}><strong>{fmtCUP(e.totalCobrar)}</strong></td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td><strong>Total RH del día</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{fmtDias(day.rh.reduce((t, e) => t + e.dias, 0))}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{fmtDias(day.rh.reduce((t, e) => t + e.dias * 12, 0))} h</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{fmtCUP(day.rh.reduce((t, e) => t + e.totalCobrar, 0))}</strong></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </>
           ) : null}
           <p className="small muted">Estas cifras son las del IPV, sin tocar: el IPV es la fuente de verdad.{isAdmin ? ' Si el IPV de este día se corrigió, súbelo de nuevo con «Editar este IPV»: el archivo nuevo reemplaza al guardado, misma fecha, sin duplicar.' : ''}</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
+            <button className="btn" onClick={() => downloadDay(day)}>Descargar el día</button>
+            {/* Eliminar el día: FUERA a propósito. El backend del clon
+                (local y Supabase) no expone ninguna acción de borrado de
+                días equivalente a deleteDay del original (que además
+                exige autorización reforzada); simularlo tocaría datos
+                sin respaldo. Declarado en el informe del área. */}
+          </div>
           {isAdmin ? (
             <>
               <button className="btn" onClick={() => setShowIpvEdit((v) => !v)}>Editar este IPV</button>
