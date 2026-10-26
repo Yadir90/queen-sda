@@ -723,3 +723,172 @@ section.queen-chat { max-height: none; gap: 0; padding: 0 0 136px; }
 @media (prefers-color-scheme: dark) {
   .queen-panel-count-warn { color: #fbbf24; background: #3a3117; }
 }
+
+/* D-20: @keyframes portados VERBATIM de theme.css del original (organismo, humo, tinta, sellos y arranque de Queen).
+   Las reglas que los consumen se portan con cada superficie; donde la
+   superficie no existe en esta copia, la definición queda como en el
+   original (p. ej. queen-boot-orbit también es huérfano allí). */
+@keyframes queen-approved-breathe {
+  0%, 100% { transform: translate3d(0, .25%, 0) scale(.994); opacity: .985; }
+  50% { transform: translate3d(0, -.45%, 0) scale(1.012); opacity: 1; }
+}
+@keyframes queen-approved-energy {
+  0% { transform: rotate(0deg) scale(.78) translate3d(-7%, 2%, 0); opacity: .16; }
+  45% { transform: rotate(145deg) scale(1.08) translate3d(4%, -5%, 0); opacity: .42; }
+  100% { transform: rotate(360deg) scale(.78) translate3d(-7%, 2%, 0); opacity: .16; }
+}
+@keyframes queen-approved-glow {
+  0%, 100% { opacity: .6; transform: scale(.96); }
+  50% { opacity: 1; transform: scale(1.045); }
+}
+@keyframes queen-boot-breathe { 0%,100% { transform:translate3d(0,1px,0) scale(.98); opacity:.88; } 50% { transform:translate3d(0,-2px,0) scale(1.035); opacity:1; } }
+@keyframes queen-boot-orbit { to { transform:rotate(360deg); } }
+@keyframes queen-color-weave {
+  0% { transform: rotate(0deg) scale(1.05) translate3d(-2%, 1%, 0); opacity: .55; }
+  42% { transform: rotate(155deg) scale(1.22) translate3d(3%, -2%, 0); opacity: .84; }
+  75% { transform: rotate(270deg) scale(1.08) translate3d(-1%, 3%, 0); opacity: .68; }
+  100% { transform: rotate(360deg) scale(1.05) translate3d(-2%, 1%, 0); opacity: .55; }
+}
+@keyframes queen-flow-counter {
+  0% { transform: rotate(360deg) scale(.94) translate3d(2%, -2%, 0); }
+  50% { transform: rotate(175deg) scale(1.24) translate3d(-3%, 2%, 0); }
+  100% { transform: rotate(0deg) scale(.94) translate3d(2%, -2%, 0); }
+}
+@keyframes queen-ink-primary {
+  0%, 100% { transform: translate3d(-12%, 6%, 0) rotate(-12deg) scale(1.06); border-radius: 42% 58% 63% 37% / 55% 43% 57% 45%; }
+  24% { transform: translate3d(7%, -11%, 0) rotate(47deg) scale(1.2); border-radius: 61% 39% 42% 58% / 39% 61% 44% 56%; }
+  53% { transform: translate3d(11%, 5%, 0) rotate(121deg) scale(.96); border-radius: 38% 62% 55% 45% / 63% 37% 59% 41%; }
+  78% { transform: translate3d(-5%, 10%, 0) rotate(198deg) scale(1.14); border-radius: 58% 42% 36% 64% / 48% 57% 43% 52%; }
+}
+@keyframes queen-ink-secondary-a {
+  0%, 100% { transform: translate3d(14%, -12%, 0) rotate(18deg) scale(.92); }
+  44% { transform: translate3d(-12%, 7%, 0) rotate(-102deg) scale(1.2); }
+  72% { transform: translate3d(4%, 13%, 0) rotate(-169deg) scale(1.02); }
+}
+@keyframes queen-ink-secondary-b {
+  0%, 100% { transform: translate3d(-9%, -14%, 0) rotate(8deg) scale(1.06); }
+  38% { transform: translate3d(13%, 7%, 0) rotate(112deg) scale(.9); }
+  73% { transform: translate3d(-4%, 14%, 0) rotate(224deg) scale(1.17); }
+}
+@keyframes queen-ink-secondary-c {
+  0%, 100% { transform: translate3d(10%, 13%, 0) rotate(-22deg) scale(.96); }
+  48% { transform: translate3d(-13%, -5%, 0) rotate(139deg) scale(1.16); }
+}
+@keyframes queen-ink-turbulence {
+  0%, 100% { transform: scale(.88) rotate(-8deg); opacity: .12; }
+  45% { transform: scale(1.18) rotate(88deg); opacity: .48; }
+  74% { transform: scale(1.03) rotate(177deg); opacity: .26; }
+}
+@keyframes queen-orb-alive {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(.98); }
+  45% { transform: translate3d(0, -3%, 0) scale(1.025); }
+  70% { transform: translate3d(0, -1%, 0) scale(1.005); }
+}
+@keyframes queen-reactor-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.035); } }
+@keyframes queen-smoke-drift-a {
+  0%, 100% { transform: translate3d(-9%, 7%, 0) rotate(-10deg) scale(.9); opacity: .38; }
+  34% { transform: translate3d(8%, -9%, 0) rotate(72deg) scale(1.13); opacity: .7; }
+  68% { transform: translate3d(2%, 8%, 0) rotate(148deg) scale(1.02); opacity: .5; }
+}
+@keyframes queen-smoke-drift-b {
+  0%, 100% { transform: translate3d(10%, -5%, 0) rotate(18deg) scale(1.08); opacity: .48; }
+  48% { transform: translate3d(-10%, 8%, 0) rotate(-96deg) scale(.88); opacity: .74; }
+}
+@keyframes queen-smoke-glow {
+  0%, 100% { transform: scale(.94); opacity: .34; }
+  50% { transform: scale(1.08); opacity: .68; }
+}
+@keyframes queen-sphere-breathing {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(var(--queen-breathe-min, .98));
+  }
+  50% {
+    transform: translate3d(0, -1.2%, 0) scale(var(--queen-breathe-max, 1.045));
+  }
+}
+@keyframes queen-thinking-pulse {
+  0%, 100% { transform: scale(.82); opacity: .18; }
+  50% { transform: scale(1.08); opacity: .72; }
+}
+@keyframes queenFxBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@keyframes queenFxOrbit {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+/* ===== Icono de Queen: limpio, quieto y del color de su etapa =====
+   Corrección del dueño (2026-10-18, prioridad máxima, reportada
+   varias veces): el icono de Queen queda SOLO el reactor del
+   concepto 02 teñido con el color de su etapa (lo pinta el propio
+   SVG en futureCharts.tsx). Se apaga TODO lo demás en TODAS las
+   superficies (perfil, navegación, chat, panel, evolución, arranque
+   y acceso): la «respiración» que escalaba el icono (el halo que el
+   dueño veía rojo), cualquier resplandor, sombra o drop-shadow con
+   el color de la etapa o de la salud, las luciérnagas/partículas y
+   las órbitas decorativas del arranque. El giro de los anillos del
+   reactor NO se toca: es el movimiento propio del concepto 02.
+   Este bloque va el último a propósito: manda sobre todas las
+   capas anteriores de la esfera. */
+.queen-orb,
+.queen-organism,
+.queen-evolution-stage-image,
+.queen-evolution-stages li.is-current .queen-evolution-stage-image,
+.queen-organism-core,
+.queen-boot-mark,
+.queen-boot-mark > img {
+  animation: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+.queen-orb img,
+.queen-organism-picture img,
+.queen-evolution-stage-image > img {
+  animation: none !important;
+  filter: none !important;
+}
+/* Sin resplandor interior de salud/etapa en el perfil. */
+.queen-organism-expression,
+.queen-orb-health-aura {
+  box-shadow: none !important;
+  animation: none !important;
+}
+/* Sin luciérnagas ni partículas, en ninguna superficie. */
+.queen-orb-fireflies,
+.queen-profile-fireflies,
+.queen-orb-pulse,
+.queen-boot-orbit {
+  display: none !important;
+}
+/* Los anillos del reactor SÍ giran: la rotación es parte del
+   diseño del concepto 02 (aclaración del dueño, 2026-10-18). Lo
+   que se eliminó fue el halo «respiración», el resplandor y las
+   partículas, no el giro propio de los anillos, que conserva la
+   animación reactorSpin de su bloque original. */
+/* Punto de «etapa actual» de la línea de evolución: sin pulso ni halo. */
+
+/* ===== Orbe de voz de Queen (acabado del dueño, 2026-10-26) =====
+   Estados gobernados por la voz real (onstart/onend de la síntesis
+   y el estado del reconocimiento). Solo transform/opacity: ligero
+   en el A16. La pausa global (html[data-queen-motion="paused"]) lo
+   detiene en segundo plano como al resto del sistema. */
+.qv-orb { display: block; flex: 0 0 auto; }
+.qv-orb .qv-bar { transform-box: fill-box; transform-origin: center; }
+.qv-orb .qv-ring { transform-box: fill-box; transform-origin: center; opacity: 0; }
+.qv-orb--idle .qv-disc { animation: qvBreathe 3.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.qv-orb--listening .qv-ring--a { animation: qvRingPulse 1.6s ease-out infinite; }
+.qv-orb--listening .qv-ring--b { animation: qvRingPulse 1.6s ease-out 0.8s infinite; }
+.qv-orb--listening .qv-bar { animation: qvListen 1.1s ease-in-out infinite; animation-delay: calc(var(--i) * 0.09s); }
+.qv-orb--speaking .qv-bar { animation: qvWave 0.86s ease-in-out infinite; animation-delay: calc(var(--i) * 0.11s); animation-duration: calc(0.72s + var(--i) * 0.06s); }
+.qv-orb--speaking .qv-disc { animation: qvBreathe 1.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes qvBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045); } }
+@keyframes qvRingPulse { 0% { transform: scale(0.92); opacity: 0.85; } 70% { transform: scale(1.22); opacity: 0.12; } 100% { transform: scale(1.3); opacity: 0; } }
+@keyframes qvListen { 0%, 100% { transform: scaleY(0.55); } 50% { transform: scaleY(0.95); } }
+@keyframes qvWave { 0%, 100% { transform: scaleY(0.3); } 35% { transform: scaleY(1); } 70% { transform: scaleY(0.5); } }
+@media (prefers-reduced-motion: reduce) {
+  .qv-orb--idle .qv-disc, .qv-orb--speaking .qv-disc { animation-duration: 5s; }
+  .qv-orb--speaking .qv-bar, .qv-orb--listening .qv-bar { animation-duration: 1.8s; }
+  .qv-orb--listening .qv-ring--a, .qv-orb--listening .qv-ring--b { animation-duration: 2.6s; }
+}
+.queen-speaking-tag { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--deep); }

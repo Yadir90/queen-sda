@@ -1,11 +1,11 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import type { StoredData, TransferMovement } from '../types'
-import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { ActionMenu, Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { BANK_COMMISSION, conciliationDates, conciliationForDay, isEffectiveMovement, transferSummary } from '../lib/economiaCore.mjs'
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
-import { addTransferMovement, setTransferMovementExcluded, supabaseConfigured } from '../lib/backend'
-import { sbAddTransferMovement, sbSetTransferMovementExcluded } from '../lib/supabaseBackend'
+import { addTransferMovement, deleteTransferMovement, setTransferMovementExcluded, supabaseConfigured, updateTransferMovement } from '../lib/backend'
+import { sbAddTransferMovement, sbDeleteTransferMovement, sbSetTransferMovementExcluded, sbUpdateTransferMovement } from '../lib/supabaseBackend'
 import '../components/sectionsMirror.css'
 
 /* Transferencias del externo: la tarjeta del negocio como en el
@@ -63,6 +63,49 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
   const [formError, setFormError] = useState<string | null>(null)
   const [formOk, setFormOk] = useState<string | null>(null)
   const [formBusy, setFormBusy] = useState(false)
+
+  /* Edición y borrado, como en el original: los movimientos del IPV
+     no se tocan aquí (se corrige el Excel); el saldo tras la edición
+     no puede quedar negativo en ningún punto del historial. */
+  const [editing, setEditing] = useState<{ id: string; date: string; amount: string; detail: string } | null>(null)
+  const [editError, setEditError] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const EDITABLE: TransferMovement['source'][] = ['pase', 'gasto-transferencia', 'manual']
+  const DELETABLE: TransferMovement['source'][] = ['pase', 'gasto-transferencia', 'manual', 'pago-cuenta', 'extra']
+
+  const saveEdit = async (m: TransferMovement) => {
+    if (!editing) return
+    const abs = Math.round(Number(editing.amount) || 0)
+    if (!editing.date || abs <= 0) { setEditError('Pon la fecha y un importe mayor que cero.'); return }
+    const signed = m.amount < 0 ? -abs : abs
+    const patched = movements
+      .map((x) => (x.id === m.id ? { ...x, date: editing.date, amount: signed } : x))
+      .sort((a, b) => a.date.localeCompare(b.date))
+    let bal = 0
+    for (const x of patched) {
+      if (isEffectiveMovement(x)) bal += x.amount
+      if (bal < -0.005) { setEditError(`El saldo quedaría negativo (${fmtCUP(bal)}) el ${fmtDate(x.date)}: como en el original, no se guarda. Baja el importe o mueve la fecha.`); return }
+    }
+    setEditError('')
+    try {
+      const patch = { date: editing.date, amount: signed, detail: editing.detail.trim() || m.detail }
+      if (SB_MODE) await sbUpdateTransferMovement(m.id, patch, m)
+      else updateTransferMovement(m.id, patch)
+      setEditing(null)
+      onChanged()
+    } catch (e) {
+      setEditError(e instanceof Error ? e.message : 'No se pudo guardar la edición.')
+    }
+  }
+
+  const removeMovement = async (m: TransferMovement) => {
+    setConfirmDeleteId(null)
+    try {
+      if (SB_MODE) await sbDeleteTransferMovement(m.id)
+      else deleteTransferMovement(m.id)
+      onChanged()
+    } catch { /* sin conexión o sin permiso: el historial queda como estaba */ }
+  }
 
   const toggleExcluded = async (m: TransferMovement) => {
     setBusyId(m.id)
@@ -298,6 +341,50 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
                         <Icon name={m.excluded ? 'eye' : 'eyeOff'} size={16} />
                         {m.excluded ? 'Contarlo' : 'No es de La Reina'}
                       </button>
+                    ) : null}
+                    {isAdmin && !m.superseded && (EDITABLE.includes(m.source) || DELETABLE.includes(m.source)) ? (
+                      <ActionMenu label={`Acciones del movimiento ${m.detail || SOURCE_LABEL[m.source]}`}>
+                        {EDITABLE.includes(m.source) ? (
+                          <button type="button" onClick={() => { setEditing({ id: m.id, date: m.date, amount: String(Math.abs(m.amount)), detail: m.detail }); setEditError(''); setConfirmDeleteId(null) }}>
+                            <Icon name="edit" size={14} /> Editar
+                          </button>
+                        ) : null}
+                        {DELETABLE.includes(m.source) ? (
+                          <button type="button" className="danger" onClick={() => { setConfirmDeleteId(m.id); setEditing(null) }}>
+                            <Icon name="trash" size={14} /> Borrar movimiento
+                          </button>
+                        ) : null}
+                      </ActionMenu>
+                    ) : null}
+                    {isAdmin && editing?.id === m.id ? (
+                      <form
+                        className="mov-edit"
+                        onSubmit={(e) => { e.preventDefault(); void saveEdit(m) }}
+                        style={{ flexBasis: '100%', display: 'grid', gap: 8, marginTop: 8 }}
+                        aria-label={`Editar movimiento ${m.detail || SOURCE_LABEL[m.source]}`}
+                      >
+                        <p className="small muted" style={{ margin: 0 }}>El saldo se recalcula antes de guardar y no puede quedar negativo.</p>
+                        <div className="field"><label htmlFor={`mv-date-${m.id}`}>Fecha</label>
+                          <input id={`mv-date-${m.id}`} type="date" value={editing.date} onChange={(e) => setEditing({ ...editing, date: e.target.value })} required /></div>
+                        <div className="field"><label htmlFor={`mv-amount-${m.id}`}>Importe (CUP)</label>
+                          <input id={`mv-amount-${m.id}`} type="number" min={1} step={1} value={editing.amount} onChange={(e) => setEditing({ ...editing, amount: e.target.value })} required /></div>
+                        <div className="field"><label htmlFor={`mv-detail-${m.id}`}>{m.type === 'gasto' ? 'Concepto' : 'Nota'}</label>
+                          <input id={`mv-detail-${m.id}`} type="text" maxLength={300} value={editing.detail} onChange={(e) => setEditing({ ...editing, detail: e.target.value })} /></div>
+                        {editError ? <div className="error-box">{editError}</div> : null}
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <button type="submit" className="btn primary">Guardar cambios</button>
+                          <button type="button" className="btn" onClick={() => setEditing(null)}>Cancelar</button>
+                        </div>
+                      </form>
+                    ) : null}
+                    {isAdmin && confirmDeleteId === m.id ? (
+                      <div className="confirm-inline" style={{ flexBasis: '100%', marginTop: 8 }}>
+                        <span className="small">¿Borrar este movimiento ({m.amount >= 0 ? '+' : '−'}{fmtCUP(Math.abs(m.amount))} del {fmtDate(m.date)})? El saldo se recalcula sin él.</span>
+                        <span className="confirm-actions">
+                          <button type="button" className="btn" onClick={() => setConfirmDeleteId(null)}>Cancelar</button>
+                          <button type="button" className="btn btn-danger-solid" onClick={() => void removeMovement(m)}>Borrar</button>
+                        </span>
+                      </div>
                     ) : null}
                   </div>
                 )

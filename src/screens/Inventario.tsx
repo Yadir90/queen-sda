@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent } from 'react'
 import type { StoredData, VenueInventoryItem } from '../types'
-import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { ActionMenu, Card, EmptyState, InfoHelp, TabHeader, TAB_BADGES, ViewModeToggle, useCatalogLayout } from '../components/ui'
 import { Icon } from '../components/icons'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
 import { MediaImage } from '../components/MediaImage'
@@ -20,15 +20,22 @@ const SB_MODE = supabaseConfigured()
    departamento, estado, clasificación, modelo, fabricante y
    observaciones — los que el dato no trae se muestran vacíos («—»),
    nunca inventados. Buscador y filtros por departamento y estado
-   como en el original, y la lista agrupada por departamento.
+   como en el original; la lista es PLANA (sin agrupar), con el
+   alternador cuadrícula/lista del original (useCatalogLayout,
+   «sda-layout-inventario», por defecto cuadrícula) y tarjetas
+   .catalog-card con cabecera, rejilla de datos 2×2 (4 en lista
+   ancha) y ActionMenu (Editar / Dar de baja con motivo opcional /
+   Eliminar, con sus diálogos de confirmación) — puerto de la
+   tarjeta del original; su CSS comenta que así «el flex no reduce
+   el texto hasta mostrar una letra por línea» (defecto que el
+   dueño fotografió el 26-oct en la fila anterior).
    Foto desde la media por slug del nombre si la hubiera (en el dato
-   cargado no viene ninguna: la ausencia se dibuja como ausencia).
-   Alta/edición SOLO admin, persistiendo la clave completa
-   'venue-inventory' en Supabase (o el StoredData local), como
-   workers-extended. Diferencias honestas: sin importar Excel,
-   sin PDF por correo y sin dar de baja/eliminar como acciones
-   separadas del original — la baja se hace editando el estado a
-   «Baja», como permite el propio formulario de edición. */
+   cargado no viene ninguna: la ausencia se dibuja como el recuadro
+   tonal del original). Alta/edición SOLO admin, persistiendo la
+   clave completa 'venue-inventory' en Supabase (o el StoredData
+   local), como workers-extended. Diferencias honestas: sin
+   importar Excel, sin PDF por correo y sin acciones de foto del
+   menú (tomar/subir/quitar): la foto de bienes no viaja en el dato. */
 
 interface Draft {
   inventoryId: string
@@ -103,6 +110,10 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [layout, toggleLayout] = useCatalogLayout('sda-layout-inventario', 'grid')
+  const [confirmLow, setConfirmLow] = useState<VenueInventoryItem | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<VenueInventoryItem | null>(null)
+  const [lowReason, setLowReason] = useState('')
 
   const departments = useMemo(() => [...new Set(items.map((i) => i.department).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })), [items])
   const statuses = useMemo(() => [...new Set(items.map((i) => i.currentStatus).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' })), [items])
@@ -113,16 +124,6 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
       return matchesText && (department === 'Todos' || item.department === department) && (status === 'Todos' || item.currentStatus === status)
     })
   }, [items, search, department, status])
-  const grouped = useMemo(() => {
-    const map = new Map<string, VenueInventoryItem[]>()
-    for (const it of filtered) {
-      const key = it.department || 'Sin departamento'
-      const list = map.get(key) ?? []
-      list.push(it)
-      map.set(key, list)
-    }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es', { sensitivity: 'base' }))
-  }, [filtered])
   const activeItems = items.filter((i) => norm(i.currentStatus) !== 'baja')
   const totalQuantity = activeItems.reduce((s, i) => s + i.quantity, 0)
   const knownValue = activeItems.reduce((s, i) => s + (i.unitCost == null ? 0 : i.unitCost * i.quantity), 0)
@@ -154,7 +155,22 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
     manufacturer: d.manufacturer.trim(),
     observations: d.observations.trim(),
     source: base ? base.source : 'manual',
+    lowReason: base?.lowReason,
   })
+
+  const applyLow = () => {
+    if (!confirmLow) return
+    const target = confirmLow
+    const reason = lowReason.trim()
+    setConfirmLow(null); setLowReason('')
+    void persist(items.map((i) => (i.id === target.id ? { ...i, currentStatus: 'Baja', lowReason: reason || i.lowReason } : i)), `«${target.article}» dado de baja.`)
+  }
+  const applyDelete = () => {
+    if (!confirmDelete) return
+    const target = confirmDelete
+    setConfirmDelete(null)
+    void persist(items.filter((i) => i.id !== target.id), `«${target.article}» eliminado del inventario.`)
+  }
 
   const submitAdd = (ev: FormEvent) => {
     ev.preventDefault()
@@ -173,9 +189,11 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
   return (
     <div>
       <TabHeader icon="archive" title="Inventario" desc="Registro independiente de los bienes del local" badge={TAB_BADGES.inventario} />
-      <p className="small muted" style={{ marginBottom: 14 }}>
-        Este módulo es independiente de la contabilidad y de Almacén. «Despreciable» significa frágil, que se puede romper.
-      </p>
+      <div style={{ marginBottom: 14 }}>
+        <InfoHelp label="Cómo funciona Inventario">
+          Este módulo es independiente de la contabilidad y de Almacén. Al importar de nuevo, el ID Inventario decide qué artículo se actualiza: los IDs que siguen se conservan y actualizan, los nuevos se añaden y los que ya no aparecen se eliminan. «Despreciable» significa frágil, que se puede romper.
+        </InfoHelp>
+      </div>
       {msg ? <div className="ok-box" style={{ marginBottom: 14 }}>{msg}</div> : null}
       {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
@@ -209,7 +227,7 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
         </Card>
       ) : null}
 
-      <Card>
+      <div className="inv-filters">
         <div className="field"><label htmlFor="inv-search">Buscar</label>
           <input id="inv-search" aria-label="Buscar en Inventario" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="ID, artículo, modelo…" /></div>
         <div className="field"><label htmlFor="inv-dept">Departamento</label>
@@ -220,62 +238,92 @@ export default function Inventario({ data, isAdmin, onChanged }: { data: StoredD
           <select id="inv-status" aria-label="Filtrar por estado" value={status} onChange={(e) => setStatus(e.target.value)}>
             <option>Todos</option>{statuses.map((s) => <option key={s}>{s}</option>)}
           </select></div>
-        <p className="small muted">{fmtInt(filtered.length)} artículo{filtered.length === 1 ? '' : 's'} con estos filtros, agrupados por departamento.</p>
-      </Card>
+      </div>
+      <div className="inv-toggle-row">
+        <ViewModeToggle layout={layout} onToggle={toggleLayout} label="Inventario" />
+      </div>
 
       {items.length === 0 ? (
         <EmptyState icon="archive" title="Inventario vacío" text="Importa el Excel actualizado o añade el primer artículo a mano." />
       ) : filtered.length === 0 ? (
         <Card><p className="muted">No hay artículos que coincidan con estos filtros.</p></Card>
-      ) : grouped.map(([dept, list]) => (
-        <Card key={dept}>
-          <h3>{dept} <span className="small muted">· {fmtInt(list.reduce((s, i) => s + i.quantity, 0))} en {fmtInt(list.length)} registro{list.length === 1 ? '' : 's'}</span></h3>
-          <div className="list">
-            {list.map((item) => {
-              const fragile = norm(item.classification) === 'despreciable'
-              const isBaja = norm(item.currentStatus) === 'baja'
-              if (editing?.id === item.id) {
-                return (
-                  <form key={item.id} className="row" style={{ display: 'block' }} onSubmit={submitEdit}>
+      ) : (
+        <ul className={layout === 'grid' ? 'catalog-layout-grid' : 'catalog-layout-list'} aria-label={`Artículos del Inventario en ${layout === 'grid' ? 'cuadrícula' : 'lista'}`}>
+          {filtered.map((item) => {
+            const fragile = norm(item.classification) === 'despreciable'
+            const isBaja = norm(item.currentStatus) === 'baja'
+            return (
+              <li key={item.id} className="catalog-card">
+                {editing?.id === item.id ? (
+                  <form onSubmit={submitEdit}>
                     <InventoryFields draft={editDraft} onChange={setEditDraft} prefix={`editar-${item.id}`} />
                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
                       <button type="button" className="btn" onClick={() => setEditing(null)}>Cancelar</button>
                       <button type="submit" className="btn primary" disabled={busy || !editDraft.inventoryId.trim() || !editDraft.article.trim()}>{busy ? 'Guardando…' : 'Guardar cambios'}</button>
                     </div>
                   </form>
-                )
-              }
-              return (
-                <div className="row" key={item.id}>
-                  <MediaImage kind="foto-almacen" entityKey={slug(item.article)} alt="" className="media-thumb alm-photo" fallback={<span className="media-thumb alm-photo" aria-hidden style={{ display: 'grid', placeItems: 'center' }}><Icon name="archive" size={22} /></span>} />
-                  <span style={{ minWidth: 0 }}>
-                    <strong>{item.article}</strong>
-                    <span className="small muted"> · {item.inventoryId}{item.department ? ` · ${item.department}` : ''}{item.acquisitionDate ? ` · ${fmtDate(item.acquisitionDate)}` : ''}</span>
-                    <br />
-                    <span className="small muted">
-                      Cantidad <strong>{fmtInt(item.quantity)}</strong> · Coste unitario <strong>{item.unitCost == null ? '—' : fmtCUP(item.unitCost)}</strong> · Valor <strong>{item.unitCost == null ? '—' : fmtCUP(item.unitCost * item.quantity)}</strong> · Clasificación <strong>{fragile ? 'Frágil · Despreciable' : item.classification || '—'}</strong>
-                    </span>
+                ) : (
+                  <>
+                    <div className={layout === 'grid' ? 'inventory-card-grid-head' : 'inventory-card-list-head'}>
+                      <div className="inventory-card-main">
+                        <MediaImage kind="foto-almacen" entityKey={slug(item.article)} alt={`Foto de ${item.article}`} className="inventory-card-photo" fallback={<span className="inventory-card-photo-fallback" aria-hidden><Icon name="archive" size={24} /></span>} />
+                        <div className="inventory-card-copy">
+                          <p className="inventory-card-name">{item.article}</p>
+                          <p className="inventory-card-meta">{item.inventoryId}{item.department ? ` · ${item.department}` : ''}{item.acquisitionDate ? ` · ${fmtDate(item.acquisitionDate)}` : ''}</p>
+                        </div>
+                      </div>
+                      <span className={`inventory-card-status${isBaja ? ' is-baja' : ''}`}>{item.currentStatus || '—'}</span>
+                    </div>
+                    <div className={`inventory-card-stats ${layout === 'grid' ? 'inventory-card-grid-stats' : 'inventory-card-list-stats'}`}>
+                      <div><span className="stat-label">Cantidad</span><strong>{fmtInt(item.quantity)}</strong></div>
+                      <div><span className="stat-label">Coste unitario</span><strong>{item.unitCost == null ? '—' : fmtCUP(item.unitCost)}</strong></div>
+                      <div><span className="stat-label">Valor</span><strong>{item.unitCost == null ? '—' : fmtCUP(item.unitCost * item.quantity)}</strong></div>
+                      <div><span className="stat-label">Clasificación</span><strong>{fragile ? 'Frágil · Despreciable' : item.classification || '—'}</strong></div>
+                    </div>
                     {(item.model || item.manufacturer || item.observations) ? (
-                      <><br /><span className="small muted">{[item.model && `Modelo: ${item.model}`, item.manufacturer && `Fabricante: ${item.manufacturer}`, item.observations].filter(Boolean).join(' · ')}</span></>
+                      <p className="inventory-card-notes">{[item.model && `Modelo: ${item.model}`, item.manufacturer && `Fabricante: ${item.manufacturer}`, item.observations].filter(Boolean).join(' · ')}</p>
                     ) : null}
-                  </span>
-                  <span className={`chip ${isBaja ? 'warn' : 'ok'}`}>{item.currentStatus || '—'}</span>
-                  {isAdmin ? (
-                    <button type="button" className="btn" onClick={() => { setEditing(item); setEditDraft(draftFrom(item)) }}>
-                      <Icon name="edit" size={14} /> Editar
-                    </button>
-                  ) : null}
-                </div>
-              )
-            })}
-          </div>
-        </Card>
-      ))}
-      <p className="small muted">
-        Foto del bien: se busca en la media del sistema por el nombre del artículo; el dato cargado no trae fotos de
-        bienes, así que la ausencia se muestra como ausencia. Sin importación desde Excel ni PDF por correo en esta
-        copia (diferencias declaradas en IGUALACION.md).
-      </p>
+                    {isAdmin ? (
+                      <div className="inventory-card-actions">
+                        <ActionMenu label={`Acciones de ${item.article}`}>
+                          <button type="button" onClick={() => { setEditing(item); setEditDraft(draftFrom(item)); setConfirmDelete(null); setConfirmLow(null) }}>
+                            <Icon name="edit" size={14} /> Editar
+                          </button>
+                          {!isBaja ? (
+                            <button type="button" onClick={() => { setConfirmLow(item); setConfirmDelete(null); setLowReason('') }}>Dar de baja</button>
+                          ) : null}
+                          <button type="button" className="danger" onClick={() => { setConfirmDelete(item); setConfirmLow(null) }}>
+                            <Icon name="trash" size={14} /> Eliminar
+                          </button>
+                        </ActionMenu>
+                      </div>
+                    ) : null}
+                    {confirmLow?.id === item.id ? (
+                      <div className="inventory-confirm" role="alertdialog" aria-label={`Dar de baja ${item.article}`}>
+                        <p className="confirm-title">Dar de baja este artículo</p>
+                        <input aria-label="Motivo de la baja opcional" value={lowReason} onChange={(e) => setLowReason(e.target.value)} placeholder="Motivo (opcional)" />
+                        <div className="inventory-confirm-actions">
+                          <button type="button" className="btn" onClick={() => setConfirmLow(null)}>Cancelar</button>
+                          <button type="button" className="btn btn-gold" disabled={busy} onClick={applyLow}>Confirmar baja</button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {confirmDelete?.id === item.id ? (
+                      <div className="inventory-confirm is-danger" role="alertdialog" aria-label={`Eliminar ${item.article}`}>
+                        <p><strong>¿Eliminar {item.article}?</strong> Se quitará por completo del inventario.</p>
+                        <div className="inventory-confirm-actions">
+                          <button type="button" className="btn" onClick={() => setConfirmDelete(null)}>Cancelar</button>
+                          <button type="button" className="btn btn-danger-solid" disabled={busy} onClick={applyDelete}>Sí, eliminar</button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
     </div>
   )
 }

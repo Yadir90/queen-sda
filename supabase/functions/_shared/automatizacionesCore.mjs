@@ -89,18 +89,24 @@ export const AUTOMATION_CLOUD_PENDING = 'Tarea en la nube pendiente de despliegu
 function isoNow(now) {
   return now instanceof Date ? now.toISOString() : String(now ?? new Date().toISOString())
 }
+/* Fecha y hora en America/Havana SIEMPRE (D-03): este núcleo corre en
+   las funciones del servidor (UTC) y en el navegador; con la zona del
+   entorno, la fecha del boletín de las 23:45 salía con el día UTC.
+   Intl con timeZone explícito da la misma respuesta en ambos lados. */
+function havanaParts(now) {
+  const instant = now instanceof Date ? now : new Date(isoNow(now))
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Havana', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(instant)
+  const value = (type) => parts.find((p) => p.type === type)?.value ?? ''
+  return { date: `${value('year')}-${value('month')}-${value('day')}`, time: `${value('hour')}:${value('minute')}` }
+}
 function dateOf(now) {
-  return isoNow(now).slice(0, 10)
+  return havanaParts(now).date
 }
 function timeOf(now) {
-  /* Hora local de La Habana a partir de un instante ISO: se usa la
-     hora UTC-4/-5 según el propio Date del entorno que ejecuta. */
-  if (now instanceof Date) {
-    const hh = String(now.getHours()).padStart(2, '0')
-    const mm = String(now.getMinutes()).padStart(2, '0')
-    return `${hh}:${mm}`
-  }
-  return String(now ?? '').slice(11, 16) || '00:00'
+  return havanaParts(now).time
 }
 
 /**

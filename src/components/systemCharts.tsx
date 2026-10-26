@@ -5,11 +5,13 @@
    .system-chart-tabs, cada vista es .system-chart-panel, el anillo es
    .system-health-donut/.system-chart-legend y la rejilla es
    .system-hourgrid* — los estilos viven en components/systemMirror.css,
-   copiados tal cual de theme.css. Diferencia de arquitectura declarada:
-   el original dibuja Actividad/Eventos/Rendimiento con Recharts; el
-   clon no carga esa librería (rendimiento en el A16), así que esos
-   tres paneles usan el SVG/HTML nativo que ya traía el clon, dentro de
-   la misma estructura y con las mismas lecturas.
+   copiados tal cual de theme.css. D-19 CORREGIDA: Actividad, Eventos y
+   Rendimiento se dibujan con Recharts 2.15.3, la misma librería,
+   versión y configuración del original (márgenes, ejes, celdas y
+   líneas literales de charts.tsx), al igual que la mini línea del
+   monitor (SystemSparkline). El modelo de datos de entrada sigue
+   siendo el de esta copia (sysReadings y los derivados de Sistema):
+   lo que cambia es el motor de dibujo, no las lecturas.
    Regla del original: lo no medido no se dibuja — un área sin
    verificar no entra en el radar y una métrica sin dos lecturas reales
    muestra el aviso en vez del gráfico. Las lecturas pueden ser de
@@ -19,9 +21,9 @@
    únicas que las miden de verdad. */
 
 import { useEffect, useMemo, useState } from 'react'
-import { ColumnChart } from './charts'
+import { Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import type { SysReading } from '../lib/sysReadings'
-import { fmtDateShort, fmtInt } from '../lib/utils'
+import { havanaNowParts } from '../lib/utils'
 
 /* ---------------- DiagnosticRadar (port fiel del original) ---------------- */
 
@@ -80,18 +82,19 @@ export function LiveClock() {
   )
 }
 
-export function Sparkline({ values, color = '#45d6b0' }: { values: number[]; color?: string }) {
+/* SystemSparkline del original (charts.tsx): Recharts, sin animación.
+   El contenedor fija la altura que antes ocupaba el SVG (56 px). */
+export function Sparkline({ values, color }: { values: number[]; color?: string }) {
   if (values.length < 2) return null
-  const w = 260
-  const h = 56
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const span = max - min || 1
-  const pts = values.map((v, i) => `${((i / (values.length - 1)) * (w - 8) + 4).toFixed(1)},${(h - 6 - ((v - min) / span) * (h - 12)).toFixed(1)}`).join(' ')
+  const data = values.map((value) => ({ value }))
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className="sparkline" role="img" aria-label="Mini línea de lecturas del sistema">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-    </svg>
+    <div className="sparkline" style={{ height: 56 }} role="img" aria-label="Mini línea de lecturas del sistema">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={data} margin={{ top: 3, right: 2, bottom: 3, left: 2 }}>
+          <Line type="monotone" dataKey="value" stroke={color ?? '#45d6b0'} strokeWidth={2} dot={false} isAnimationActive={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
   )
 }
 
@@ -106,10 +109,11 @@ const STATE_LABEL: Record<SysHealthState, string> = { healthy: 'Correcto', verif
 const STATE_COLOR: Record<SysHealthState, string> = { healthy: '#23aa70', verifying: '#d4a72c', repairing: '#3182ce', error: '#d84a4a' }
 
 type MetricId = 'pesoKb' | 'memoriaMb' | 'latenciaMs'
+/* PERFORMANCE_METRICS del original: mismos colores y orden. */
 const METRICS: Array<{ id: MetricId; label: string; unit: string; color: string }> = [
-  { id: 'pesoKb', label: 'Peso', unit: 'KB', color: '#23aa70' },
-  { id: 'memoriaMb', label: 'Memoria', unit: 'MB', color: '#0e9db3' },
-  { id: 'latenciaMs', label: 'Latencia', unit: 'ms', color: '#e9a13b' },
+  { id: 'pesoKb', label: 'Peso', unit: 'KB', color: '#0b7285' },
+  { id: 'memoriaMb', label: 'Memoria', unit: 'MB', color: '#23aa70' },
+  { id: 'latenciaMs', label: 'Latencia', unit: 'ms', color: '#4a8fe7' },
 ]
 
 /* SYSTEM_CHART_VIEWS del original, tal cual (ids incluidos). */
@@ -131,7 +135,8 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
 }) {
   const [view, setView] = useState<ViewId>('salud')
   const [healthState, setHealthState] = useState<SysHealthState | null>(null)
-  const [metricId, setMetricId] = useState<MetricId>('pesoKb')
+  /* Métrica por defecto del original: Memoria. */
+  const [metricId, setMetricId] = useState<MetricId>('memoriaMb')
 
   const healthSummary = useMemo(() => {
     const counts: Record<SysHealthState, number> = { healthy: 0, verifying: 0, repairing: 0, error: 0 }
@@ -154,11 +159,24 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
     return segment
   })
 
-  const metric = METRICS.find((m) => m.id === metricId) ?? METRICS[0]
+  const metric = METRICS.find((m) => m.id === metricId) ?? METRICS[1]
   const metricValues = readings.flatMap((r) => {
     const v = r[metricId]
     return v == null ? [] : [{ at: r.at, value: v }]
   })
+  /* Series de Recharts con la preparación del original: actividad con
+     etiqueta corta y «En vivo» al 100 %, eventos con las últimas 14
+     jornadas y rendimiento con la hora de cada lectura. */
+  const activityData = activities.slice(0, 8).map((a) => ({
+    ...a,
+    value: a.state === 'live' ? 100 : Math.max(0, Math.min(100, a.value)),
+    shortLabel: a.label.length > 19 ? `${a.label.slice(0, 18)}…` : a.label,
+  }))
+  const eventData = [...events].reverse().slice(-14).map((e) => ({ ...e, label: e.date.slice(5), failedCount: e.fallos }))
+  const performance = metricValues.map((v) => ({
+    label: new Intl.DateTimeFormat('es-CU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date(v.at)),
+    value: v.value,
+  }))
 
   // Rejilla día × hora desde las marcas de tiempo REALES de las lecturas
   // (port del original): una hora sin lecturas queda vacía.
@@ -168,8 +186,10 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
     for (const r of readings) {
       const at = new Date(r.at)
       if (Number.isNaN(at.getTime())) continue
-      const dayKey = `${at.getFullYear()}-${String(at.getMonth() + 1).padStart(2, '0')}-${String(at.getDate()).padStart(2, '0')}`
-      const key = `${dayKey}|${at.getHours()}`
+      /* Día y hora en America/Havana (D-04), no en la zona del dispositivo. */
+      const hv = havanaNowParts(at)
+      const dayKey = hv.iso
+      const key = `${dayKey}|${hv.hour}`
       counts.set(key, (counts.get(key) ?? 0) + 1)
       daySet.add(dayKey)
     }
@@ -193,17 +213,7 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
   }, [readings])
   const hourLevelColor = (level: number) => level === 0 ? 'var(--surface-tonal)' : level === 1 ? 'color-mix(in srgb, #23aa70 30%, var(--surface-tonal))' : level === 2 ? 'color-mix(in srgb, #23aa70 58%, var(--surface-tonal))' : '#23aa70'
   const dayLetter = (dayKey: string) => ['D', 'L', 'M', 'X', 'J', 'V', 'S'][new Date(`${dayKey}T12:00:00`).getDay()] ?? ''
-  const checkedLabel = new Intl.DateTimeFormat('es-CU', { hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(checkedAt))
-
-  const perfLine = useMemo(() => {
-    if (metricValues.length < 2) return null
-    const w = 300
-    const h = 110
-    const vals = metricValues.map((v) => v.value)
-    const max = Math.max(...vals)
-    const pts = metricValues.map((v, i) => `${(8 + (i / (metricValues.length - 1)) * (w - 16)).toFixed(1)},${(h - 10 - (v.value / (max || 1)) * (h - 24)).toFixed(1)}`).join(' ')
-    return { pts, w, h, max }
-  }, [metricValues])
+  const checkedLabel = new Intl.DateTimeFormat('es-CU', { timeZone: 'America/Havana', hour: 'numeric', minute: '2-digit', second: '2-digit' }).format(new Date(checkedAt))
 
   return (
     <section className="system-realtime-charts" aria-labelledby="system-realtime-charts-title">
@@ -265,19 +275,23 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
       ) : null}
 
       {view === 'actividad' ? (
-        <div className="system-chart-panel" role="tabpanel" aria-label="Avance de rutinas activas">
-          {activities.length ? (
+        <div className="system-chart-panel" role="tabpanel" aria-label="Avance de tareas activas">
+          {activityData.length ? (
             <>
-              <div className="rt-activity">
-                {activities.map((a) => (
-                  <div className="rt-act-row" key={a.label}>
-                    <span className="rt-act-name">{a.label}</span>
-                    <span className="rt-act-track"><i style={{ width: `${Math.max(0, Math.min(100, a.value))}%`, background: a.state === 'bad' ? STATE_COLOR.error : a.state === 'warn' ? STATE_COLOR.verifying : a.state === 'live' ? 'var(--chart-turquoise)' : 'var(--chart-green)' }} /></span>
-                    <strong>{Math.round(a.value)} %</strong>
-                  </div>
-                ))}
+              <div className="system-wide-chart" role="img" aria-label="Avance porcentual de rutinas activas">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={activityData} layout="vertical" margin={{ top: 4, right: 18, bottom: 4, left: 4 }}>
+                    <CartesianGrid stroke="var(--border)" horizontal={false} />
+                    <XAxis type="number" domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tick={{ fill: 'var(--dim)', fontSize: 10 }} />
+                    <YAxis type="category" dataKey="shortLabel" width={92} tick={{ fill: 'var(--text)', fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="value" name="Avance" radius={[0, 8, 8, 0]} isAnimationActive={false}>
+                      {activityData.map((item) => <Cell key={`${item.label}-${item.state}`} fill={item.state === 'bad' ? STATE_COLOR.error : item.state === 'warn' ? STATE_COLOR.verifying : item.state === 'live' ? 'var(--chart-turquoise)' : 'var(--chart-green)'} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               </div>
-              <p className="system-chart-reading">Avances calculados de los datos reales de esta copia en este momento; las tareas derivadas de las jornadas sembradas cuentan como actividad histórica real, no inventada.</p>
+              <p className="system-chart-reading">Las rutinas continuas se muestran completas como señal «En vivo»; las demás usan su avance real.</p>
             </>
           ) : <div className="chart-empty">No hay tareas activas ni pendientes ahora.</div>}
         </div>
@@ -285,14 +299,24 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
 
       {view === 'eventos' ? (
         <div className="system-chart-panel" role="tabpanel" aria-label="Fallos registrados por día">
-          {events.length ? (
-            <ColumnChart
-              ariaLabel="Fallos reales por jornada importada: cuadre distinto de cero y mermas con costo"
-              series={[{ key: 'fallos', label: 'Fallos', color: 'var(--danger)' }]}
-              data={events.map((e) => ({ label: e.date.slice(5), detail: fmtDateShort(e.date), fallos: e.fallos }))}
-            />
+          {eventData.length ? (
+            <>
+              <div className="system-wide-chart" role="img" aria-label="Fallos del sistema por jornada observada">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={eventData} margin={{ top: 6, right: 8, bottom: 2, left: -18 }}>
+                    <CartesianGrid stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: 'var(--dim)', fontSize: 10 }} />
+                    <YAxis allowDecimals={false} domain={[0, 'auto']} tick={{ fill: 'var(--dim)', fontSize: 10 }} />
+                    <Tooltip />
+                    <Bar dataKey="failedCount" name="Fallos" radius={[7, 7, 0, 0]} isAnimationActive={false}>
+                      {eventData.map((item) => <Cell key={item.date} fill={item.failedCount > 0 ? STATE_COLOR.error : STATE_COLOR.healthy} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="system-chart-reading">Un fallo por jornada = cuadre distinto de cero (1) más merma con costo registrada ese día (1). Un valor 0 es una jornada registrada sin fallos; una fecha ausente no se dibuja.</p>
+            </>
           ) : <div className="chart-empty">Aún no hay jornadas completas para representar.</div>}
-          <p className="system-chart-reading">Un fallo por jornada = cuadre distinto de cero (1) más merma con costo registrada ese día (1). Un valor 0 es una jornada registrada sin fallos; una fecha ausente no se dibuja.</p>
         </div>
       ) : null}
 
@@ -303,16 +327,23 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
               <button key={m.id} type="button" aria-pressed={metricId === m.id} onClick={() => setMetricId(m.id)}>{m.label}</button>
             ))}
           </div>
-          {perfLine ? (
+          {performance.length >= 2 ? (
             <>
-              <svg viewBox={`0 0 ${perfLine.w} ${perfLine.h}`} className="rt-perf" role="img" aria-label={`Línea de ${metric.label} desde cero`}>
-                <line x1="8" y1={perfLine.h - 10} x2={perfLine.w - 8} y2={perfLine.h - 10} stroke="var(--border)" />
-                <polyline points={perfLine.pts} fill="none" stroke={metric.color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-              </svg>
-              <p className="system-chart-reading">{metricValues.length} lecturas disponibles · eje desde 0 · {metric.unit} · última: {fmtInt(metricValues[metricValues.length - 1].value)} {metric.unit}</p>
+              <div className="system-wide-chart" role="img" aria-label={`${metric.label} del sistema en ${metric.unit}`}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={performance} margin={{ top: 8, right: 10, bottom: 2, left: -14 }}>
+                    <CartesianGrid stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="label" tick={{ fill: 'var(--dim)', fontSize: 9 }} minTickGap={22} />
+                    <YAxis domain={[0, 'auto']} tick={{ fill: 'var(--dim)', fontSize: 10 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="value" name={`${metric.label} (${metric.unit})`} stroke={metric.color} strokeWidth={2.5} dot={{ r: 2.5 }} activeDot={{ r: 5 }} connectNulls={false} isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="system-chart-reading">{performance.length} lecturas disponibles · eje desde 0 · {metric.unit}.</p>
             </>
           ) : (
-            <div className="chart-empty">Esta métrica necesita dos lecturas reales. «Peso» se siembra con el peso real de cada jornada del respaldo y crece con cada apertura; «Memoria» y «Latencia» solo las miden las lecturas de apertura de este dispositivo.</div>
+            <div className="chart-empty">Esta métrica necesita dos lecturas reales. La próxima se toma en unos segundos.</div>
           )}
         </div>
       ) : null}

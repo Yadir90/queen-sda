@@ -101,10 +101,15 @@ export function autoMenuFamily(dept, name) {
 }
 
 /* ============ Libro de existencias (original: computeInventoryBook) ============
-   SIN ajustes manuales ni alias de base de datos (no viajan en el
-   respaldo): la cadena se encadena solo con lo que trae cada IPV. */
+   La cadena se encadena con lo que trae cada IPV y, si se le pasan,
+   con los ajustes manuales del original (inventoryAdjustments:
+   «inicial» fija el saldo inicial de su fecha y reencadena desde
+   ahí; «baja» y «traslado» suman a las bajas/traslados manuales de
+   su fecha). Sin ajustes (la llamada por defecto), el libro es solo
+   la foto de los IPV: los ajustes del servidor original no viajan
+   en el respaldo; los de esta copia viven en su propio almacén. */
 
-export function buildInventoryBook(daysIn) {
+export function buildInventoryBook(daysIn, adjustments = []) {
   const days = [...(daysIn ?? [])].filter((d) => d && d.date).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
   const meta = new Map()
   const moves = new Map()
@@ -148,6 +153,25 @@ export function buildInventoryBook(daysIn) {
       m.entradasIpv += e.cantidad
     }
   }
+  // Ajustes manuales por producto y fecha (forma del servidor
+  // original): se aplican sobre los días del libro — un ajuste con
+  // fecha sin día importado no crea un día fantasma en la cadena.
+  const dayDates = new Set(days.map((d) => d.date))
+  const adjByKey = new Map()
+  for (const adj of adjustments ?? []) {
+    if (!adj || !adj.productKey || !adj.date || !dayDates.has(adj.date)) continue
+    const key = remember(adj.dept, adj.productName, adj.um)
+    if (key !== adj.productKey) continue
+    move(key, adj.date)
+    if (!adjByKey.has(key)) adjByKey.set(key, new Map())
+    const byDate = adjByKey.get(key)
+    const slot = byDate.get(adj.date) ?? { inicial: null, baja: 0, traslado: 0, list: [] }
+    if (adj.kind === 'inicial') slot.inicial = Number(adj.quantity) || 0
+    else if (adj.kind === 'traslado') slot.traslado += Number(adj.quantity) || 0
+    else slot.baja += Number(adj.quantity) || 0
+    slot.list.push(adj)
+    byDate.set(adj.date, slot)
+  }
 
   const products = []
   const descuadres = []
@@ -159,15 +183,22 @@ export function buildInventoryBook(daysIn) {
     let prevEsperado = null
     dates.forEach((date, idx) => {
       const mv = byDate.get(date)
+      const adj = adjByKey.get(key)?.get(date) ?? null
       // Regla del dueño (2026-10-09): si el IPV de ESE día trae
       // saldoInicial, ese manda y la cadena se reencadena desde ahí;
-      // solo si no lo trae se continúa la cadena anterior.
-      const saldoInicial = mv.ipvSaldoInicial != null
-        ? round2(mv.ipvSaldoInicial)
-        : idx === 0 ? 0 : round2(prevContado ?? prevEsperado ?? 0)
+      // solo si no lo trae se continúa la cadena anterior. Un ajuste
+      // «inicial» fijado a mano manda sobre ambos (es la corrección
+      // expresa del saldo de apertura, como en el servidor original).
+      const saldoInicial = adj?.inicial != null
+        ? round2(adj.inicial)
+        : mv.ipvSaldoInicial != null
+          ? round2(mv.ipvSaldoInicial)
+          : idx === 0 ? 0 : round2(prevContado ?? prevEsperado ?? 0)
       const disponible = round2(saldoInicial + mv.entradas)
-      const bajas = mv.bajasIpv
-      const traslados = mv.trasladosIpv
+      const bajasManual = adj?.baja ?? 0
+      const trasladosManual = adj?.traslado ?? 0
+      const bajas = round2(mv.bajasIpv + bajasManual)
+      const traslados = round2(mv.trasladosIpv + trasladosManual)
       const aLaVenta = round2(disponible - bajas - traslados)
       const saldoFinal = round2(aLaVenta - mv.ventas)
       const esFisico = mv.ipvSaldoFinal != null && mv.ipvFuente === 'fisica'
@@ -186,6 +217,11 @@ export function buildInventoryBook(daysIn) {
         ipvDisponible: mv.ipvDisponible,
         bajas,
         traslados,
+        bajasIpv: round2(mv.bajasIpv),
+        trasladosIpv: round2(mv.trasladosIpv),
+        bajasManual: round2(bajasManual),
+        trasladosManual: round2(trasladosManual),
+        adjustments: adj?.list ?? [],
         aLaVenta,
         ipvALaVenta: mv.ipvALaVenta,
         ventas: round2(mv.ventas),
@@ -206,11 +242,12 @@ export function buildInventoryBook(daysIn) {
       ? (lastRow.ipvSaldoFinal != null && lastRow.ipvFuente === 'fisica' ? round2(lastRow.ipvSaldoFinal) : lastRow.saldoFinal)
       : 0
     const primeraFila = history.find((h) => h.conFila) ?? null
-    const faltaSaldoInicial = primeraFila
+    const hasInitialSet = [...(adjByKey.get(key)?.values() ?? [])].some((slot) => slot.inicial != null)
+    const faltaSaldoInicial = !hasInitialSet && (primeraFila
       ? primeraFila.ipvSaldoInicial == null && primeraFila.entradas <= 0 &&
         !history.some((h) => h.ipvSaldoInicial != null) &&
         !history.some((h) => h.ipvSaldoFinal != null && h.ipvFuente === 'fisica')
-      : history.length > 0 && history[0].ipvSaldoInicial == null
+      : history.length > 0 && history[0].ipvSaldoInicial == null)
     products.push({
       ...m,
       firstSeen: dates[0] ?? null,
@@ -220,6 +257,7 @@ export function buildInventoryBook(daysIn) {
       lastIpvSaldoFinal: lastWithIpv ? lastWithIpv.ipvSaldoFinal : null,
       lastDiferencia,
       hasDescuadre: lastDiferencia != null && Math.abs(lastDiferencia) > 0.001,
+      hasInitialSet,
       faltaSaldoInicial,
     })
     for (const h of history) {

@@ -3,7 +3,12 @@ import type { MonthlyArchive, Section, StoredData } from '../types'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { effectiveSaldo, fmtCUP, fmtDate, fmtInt, isMorosa, todayISO } from '../lib/utils'
+import { saveMonthlyArchives, supabaseConfigured } from '../lib/backend'
+import { sbSaveMonthlyArchives } from '../lib/supabaseBackend'
+import { printHtml } from '../lib/download'
 import '../components/sectionsMirror.css'
+
+const SB_MODE = supabaseConfigured()
 
 /* Archivo mensual (oleada 3): espejo del ArchivoTab del original
    (App.tsx:4188) con lo que de verdad viaja. Los resúmenes de mes
@@ -16,11 +21,14 @@ import '../components/sectionsMirror.css'
    La cabecera «Lo que NO se archiva ni se reinicia» es la del
    original, con sus tres tarjetas vivas (cuentas pendientes,
    nómina en curso, por pasar al banco) calculadas de los datos.
-   DECLARADO: la acción de archivar un mes es del servidor del
-   original y esta copia no la sostiene — los meses se muestran
-   con el estado que trae el respaldo y ninguno se marca
-   archivado desde aquí; los PDF del mes y sus facturas de gastos
-   y entradas los genera el constructor del original, no portado. */
+   ARCHIVAR: esta copia sí archiva — el resumen del mes queda con
+   estado «archivado» en su almacén (local o la colección
+   'backup-collections' de app_settings, sin tocar las demás
+   colecciones); un mes sin resumen en el respaldo se archiva con
+   el resumen derivado de sus días por el núcleo de Economía. Los
+   documentos del mes (informe, factura de gastos y factura de
+   entradas) se generan con el constructor de documentos y se
+   abren como vista de impresión/PDF. */
 
 const num = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 const str = (v: unknown): string => (typeof v === 'string' ? v : '')
@@ -33,14 +41,93 @@ function transferBalance(data: StoredData): number {
     .reduce((s, m) => s + m.amount, 0)
 }
 
-export default function ArchivoScreen({ data, bulletins, onNavigate }: {
+export default function ArchivoScreen({ data, bulletins, isAdmin, onChanged, onNavigate }: {
   data: StoredData
   bulletins: StoredData['bulletins']
+  isAdmin: boolean
+  onChanged: () => void
   onNavigate: (s: Section) => void
 }) {
   const [selectedMonth, setSelectedMonth] = useState<string | null>(null)
+  const [confirmArchive, setConfirmArchive] = useState<string | null>(null)
+  const [msg, setMsg] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
   const today = todayISO()
   const archives = data.monthlyArchives
+  const currentMonth = today.slice(0, 7)
+
+  /* Meses con días importados, sin resumen en el respaldo y ya
+     cerrados: se pueden archivar con el resumen derivado. */
+  const archivableMonths = useMemo(() => {
+    const known = new Set(archives.map((a) => a.monthKey))
+    const months = new Set<string>()
+    for (const d of data.days) {
+      const mk = d.date.slice(0, 7)
+      if (mk !== currentMonth && !known.has(mk)) months.add(mk)
+    }
+    return [...months].sort().reverse()
+  }, [archives, data.days, currentMonth])
+
+  const persistArchives = async (next: MonthlyArchive[], okMsg: string) => {
+    setBusy(true); setError(''); setMsg('')
+    try {
+      if (SB_MODE) await sbSaveMonthlyArchives(next)
+      else saveMonthlyArchives(next)
+      setMsg(okMsg)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo archivar el mes.')
+    } finally { setBusy(false) }
+  }
+
+  const archiveExisting = (a: MonthlyArchive) => {
+    setConfirmArchive(null)
+    void persistArchives(
+      archives.map((x) => (x.monthKey === a.monthKey ? { ...x, status: 'archivado', isCurrent: false } : x)),
+      `«${a.label || a.monthKey}» quedó archivado.`,
+    )
+  }
+
+  const archiveDerived = async (monthKey: string) => {
+    setConfirmArchive(null)
+    setBusy(true); setError('')
+    try {
+      const [{ monthEconomy }, { monthLabelEs }] = await Promise.all([import('../lib/economiaCore.mjs'), import('../lib/documentosCore.mjs')])
+      const eco = monthEconomy(data, monthKey, today)
+      const daysCount = data.days.filter((d) => d.date.startsWith(monthKey)).length
+      const record: MonthlyArchive = {
+        monthKey,
+        label: monthLabelEs(monthKey),
+        status: 'archivado',
+        isCurrent: false,
+        daysCount,
+        ventas: eco.ventas,
+        resultado: eco.resultado,
+        gananciaBruta: eco.bruta,
+        gananciaNeta: eco.neta,
+        gastos: eco.gastos,
+        ingresosExtras: eco.ingresosExtras,
+      }
+      if (SB_MODE) await sbSaveMonthlyArchives([...archives, record])
+      else saveMonthlyArchives([...archives, record])
+      setMsg(`«${record.label}» quedó archivado con el resumen derivado de sus ${daysCount} días.`)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo archivar el mes.')
+    } finally { setBusy(false) }
+  }
+
+  const openMonthDoc = async (kind: 'informe' | 'gastos' | 'entradas', monthKey: string) => {
+    setError('')
+    const docs = await import('../lib/documentosCore.mjs')
+    const html = kind === 'informe'
+      ? docs.informeHtml(docs.buildInformeData(data, monthKey, today))
+      : kind === 'gastos'
+        ? docs.gastosInvoiceHtml(docs.buildGastosInvoiceData(data, monthKey))
+        : docs.entradasInvoiceHtml(docs.buildEntradasInvoiceData(data, monthKey))
+    if (!printHtml(html)) setError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+  }
 
   /* Lo que sigue vivo entre meses (tarjetas del original). */
   const pending = useMemo(
@@ -103,6 +190,8 @@ export default function ArchivoScreen({ data, bulletins, onNavigate }: {
   return (
     <section aria-label="Archivo mensual">
       <TabHeader icon="archive" title="Archivo" desc="Meses cerrados y morosas: el resumen de cada mes tal como lo trae el respaldo, con su detalle derivado de los registros." badge={TAB_BADGES.archivo} />
+      {msg ? <div className="ok-box" style={{ marginBottom: 14 }}>{msg}</div> : null}
+      {error ? <div className="error-box" style={{ marginBottom: 14 }}>{error}</div> : null}
 
       <Card>
         <h3>Lo que NO se archiva ni se reinicia</h3>
@@ -136,6 +225,30 @@ export default function ArchivoScreen({ data, bulletins, onNavigate }: {
 
       {!selectedMonth || !detail ? (
         <>
+          {isAdmin && archivableMonths.length > 0 ? (
+            <Card>
+              <h3>Meses por archivar</h3>
+              <p className="small muted">Estos meses tienen días importados y ya cerraron, pero el respaldo no trae su resumen. Al archivarlos, el resumen se deriva de sus días con el núcleo de Economía y queda guardado.</p>
+              <div className="list">
+                {archivableMonths.map((mk) => (
+                  <div className="row" key={mk}>
+                    <span className="mod-row-main">
+                      <span className="mod-row-title">{mk}</span>
+                      <span className="small muted">{fmtInt(data.days.filter((d) => d.date.startsWith(mk)).length)} días importados</span>
+                    </span>
+                    {confirmArchive === mk ? (
+                      <>
+                        <button type="button" className="btn" onClick={() => setConfirmArchive(null)}>Cancelar</button>
+                        <button type="button" className="btn primary" disabled={busy} onClick={() => void archiveDerived(mk)}>Confirmar archivo</button>
+                      </>
+                    ) : (
+                      <button type="button" className="btn primary" onClick={() => setConfirmArchive(mk)}>Archivar mes</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
           <h3 className="mod-section-h">Meses</h3>
           {archives.length === 0 ? (
             <EmptyState icon="archive" title="Todavía no hay meses que archivar" text="Cuando importes tu primer día, su mes aparece aquí. Este respaldo no trae resúmenes mensuales." />
@@ -175,9 +288,7 @@ export default function ArchivoScreen({ data, bulletins, onNavigate }: {
           )}
           <p className="small muted">
             Importar un IPV de un mes ya archivado lo guarda en el archivo de ESE mes y no contamina el mes en curso.
-            El boletín diario sigue siendo solo de su día: el archivo no revive boletines ya enviados. Marcar un mes
-            como archivado es una acción del servidor del sistema original: esta copia muestra el estado que trae
-            el respaldo y no lo cambia desde aquí.
+            El boletín diario sigue siendo solo de su día: el archivo no revive boletines ya enviados.
           </p>
         </>
       ) : (
@@ -188,6 +299,31 @@ export default function ArchivoScreen({ data, bulletins, onNavigate }: {
           <Card>
             <h3 style={{ fontSize: '1.15rem' }}>{detail.summary.label || detail.summary.monthKey} {monthChip(detail.summary)}</h3>
             <p className="small muted">{fmtDate(str(detail.summary.start))} — {fmtDate(str(detail.summary.end))} · {fmtInt(detail.summary.daysCount)} día{detail.summary.daysCount === 1 ? '' : 's'} importado{detail.summary.daysCount === 1 ? '' : 's'}</p>
+            {isAdmin ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <button type="button" className="btn" onClick={() => void openMonthDoc('informe', detail.summary.monthKey)}>
+                  <Icon name="doc" size={15} /> Informe del mes (PDF)
+                </button>
+                <button type="button" className="btn" onClick={() => void openMonthDoc('gastos', detail.summary.monthKey)}>
+                  <Icon name="doc" size={15} /> Factura de gastos (PDF)
+                </button>
+                <button type="button" className="btn" onClick={() => void openMonthDoc('entradas', detail.summary.monthKey)}>
+                  <Icon name="doc" size={15} /> Factura de entradas (PDF)
+                </button>
+                {detail.summary.status !== 'archivado' && !detail.summary.isCurrent ? (
+                  confirmArchive === detail.summary.monthKey ? (
+                    <>
+                      <button type="button" className="btn" onClick={() => setConfirmArchive(null)}>Cancelar</button>
+                      <button type="button" className="btn primary" disabled={busy} onClick={() => archiveExisting(detail.summary)}>Confirmar archivo</button>
+                    </>
+                  ) : (
+                    <button type="button" className="btn primary" onClick={() => setConfirmArchive(detail.summary.monthKey)}>
+                      <Icon name="archive" size={15} /> Archivar mes
+                    </button>
+                  )
+                ) : null}
+              </div>
+            ) : null}
             <div className="grid-2 mod-kpis">
               <div className="stat"><div className="label">Ventas del mes</div><div className="value">{fmtCUP(detail.summary.ventas)}</div></div>
               <div className="stat"><div className="label">Ganancia bruta</div><div className="value">{fmtCUP(num(detail.summary.gananciaBruta))}</div></div>

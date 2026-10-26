@@ -6,9 +6,12 @@ import { buildProductsCatalog, buildWarehouse } from '../lib/productosCore.mjs'
 import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
 import { MediaImage } from '../components/MediaImage'
 import { slug } from '../lib/media'
-import { saveWarehouseExtended, supabaseConfigured } from '../lib/backend'
-import { sbSaveWarehouseExtended } from '../lib/supabaseBackend'
+import { replaceExpenses, saveWarehouseExtended, supabaseConfigured } from '../lib/backend'
+import { sbSaveWarehouseExtended, sbSyncWarehouseExpense } from '../lib/supabaseBackend'
 import { buildWarehouseBalances, nextNumericId, warehouseProductKey } from '../lib/modulosExtended'
+import { reconcileWarehouseExpenses } from '../lib/warehouseExpenses'
+import { lookupWarehouseBarcode, metaForRegisteredBarcode, normalizeBarcode, type BarcodeLookupResult } from '../lib/barcodeLookup'
+import { BarcodeScanner } from '../components/BarcodeScanner'
 import '../components/sectionsMirror.css'
 
 const SB_MODE = supabaseConfigured()
@@ -26,12 +29,13 @@ const SB_MODE = supabaseConfigured()
    'almacen-extended' en Supabase (o el StoredData local), igual que
    workers-extended. La foto del IPV (hoja «Almacén») queda como
    sección secundaria declarada al final, sin perderse.
-   Diferencias honestas que se mantienen: sin escáner de códigos de
-   barras con cámara ni búsqueda en internet del producto (los
-   códigos reales sí se muestran desde los metadatos), y las rebajas
-   manuales no crean gasto automáticamente (esa sincronización vive
-   en el servidor del original; la vista calculada Salidas → Gastos
-   de la foto del IPV se conserva en la sección secundaria). */
+   D-12 CERRADA: el formulario de entrada lleva código de barras con
+   escáner de cámara (jsQR) y búsqueda del producto (ficha local →
+   caché pendiente → OpenFoodFacts, la base abierta por código; el
+   original busca con el buscador+IA de su servidor, que esta copia
+   no tiene: la fuente y sus datos son reales en ambos casos), y las
+   rebajas crean/actualizan/eliminan su gasto enlazado en «Gastos»
+   con la regla del original (lib/warehouseExpenses.ts). */
 
 const fmtQty = (v: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 3 }).format(v)
 
@@ -62,11 +66,47 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
   const editQtyNum = Number(editQuantity)
   const selectedAvailable = available.find((b) => b.product === product)?.quantity ?? 0
 
-  const persist = async (next: WarehouseEntry[], okMsg: string) => {
+  /* Código de barras de la entrada: escáner de cámara y búsqueda del
+     producto (local → caché → internet), como el original. */
+  const [barcode, setBarcode] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookup, setLookup] = useState<BarcodeLookupResult | null>(null)
+
+  const runLookup = async (raw: string) => {
+    const code = normalizeBarcode(raw)
+    if (code.length < 3) { setError('Escribe o escanea un código válido (mínimo 3 caracteres).'); return }
+    setLookupBusy(true); setError('')
+    try {
+      const { result, metaPatch } = await lookupWarehouseBarcode(data, code)
+      setLookup(result)
+      if (result.status === 'local') setProduct(result.product)
+      if (metaPatch) {
+        const meta = { ...data.warehouseMeta, ...metaPatch }
+        if (SB_MODE) await sbSaveWarehouseExtended(entries, meta)
+        else saveWarehouseExtended({ meta })
+        onChanged()
+      }
+    } finally { setLookupBusy(false) }
+  }
+
+  const persist = async (next: WarehouseEntry[], okMsg: string, metaOverride?: StoredData['warehouseMeta']) => {
     setBusy(true); setError(''); setMsg('')
     try {
-      if (SB_MODE) await sbSaveWarehouseExtended(next, data.warehouseMeta)
-      else saveWarehouseExtended({ entries: next })
+      const meta = metaOverride ?? data.warehouseMeta
+      if (SB_MODE) await sbSaveWarehouseExtended(next, meta)
+      else saveWarehouseExtended({ entries: next, meta })
+      /* Gastos enlazados de las rebajas (regla del original): tras
+         guardar los movimientos se reconcilia cada gasto 'almacen'
+         con su rebaja — crear, actualizar o eliminar. */
+      const { expenses, ops } = reconcileWarehouseExpenses({ ...data, warehouseMeta: meta }, next)
+      if (ops.length) {
+        if (SB_MODE) {
+          for (const op of ops) await sbSyncWarehouseExpense(op.expense, op.sourceKey)
+        } else {
+          replaceExpenses(expenses)
+        }
+      }
       setMsg(okMsg)
       onChanged()
     } catch (e) {
@@ -84,10 +124,15 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
       purpose: mode === 'rebaja' ? purpose.trim() : '',
       createdAt: Date.now(), updatedAt: Date.now(),
     }
+    /* Con código de barras, la ficha del producto lo gana al registrar
+       la entrada (registerWarehouseBarcode del original). */
+    const metaOverride = mode === 'entrada' && normalizeBarcode(barcode).length >= 3
+      ? metaForRegisteredBarcode(data, entry.product, barcode)
+      : undefined
     void persist([...entries, entry], mode === 'entrada'
       ? `Entrada registrada: ${entry.product} · ${fmtQty(entry.quantity)}.`
-      : `Rebaja registrada: ${entry.product} · ${fmtQty(entry.quantity)} para «${entry.purpose}».`)
-      .then(() => { setProduct(''); setQuantity(''); setNote(''); setPurpose('') })
+      : `Rebaja registrada: ${entry.product} · ${fmtQty(entry.quantity)} para «${entry.purpose}».`, metaOverride)
+      .then(() => { setProduct(''); setQuantity(''); setNote(''); setPurpose(''); setBarcode(''); setLookup(null) })
   }
 
   const submitEdit = (ev: FormEvent) => {
@@ -142,6 +187,43 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
                 <input id="alm-date" aria-label="Fecha de entrada al almacén" type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
               <div className="field"><label htmlFor="alm-note">Nota <span className="muted">(opcional)</span></label>
                 <input id="alm-note" aria-label="Nota de la entrada de almacén" value={note} onChange={(e) => setNote(e.target.value)} maxLength={300} /></div>
+              <div className="field"><label htmlFor="alm-barcode">Código de barras <span className="muted">(opcional)</span></label>
+                <input id="alm-barcode" aria-label="Código de barras del producto" value={barcode} onChange={(e) => { setBarcode(e.target.value); setLookup(null) }} maxLength={64} inputMode="numeric" placeholder="Escríbelo o escanéalo" />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                  <button type="button" className="btn" disabled={lookupBusy || normalizeBarcode(barcode).length < 3} onClick={() => void runLookup(barcode)}>
+                    {lookupBusy ? <><span className="warehouse-lookup-spinner" aria-hidden="true" /> Buscando…</> : <><Icon name="search" size={14} /> Buscar producto</>}
+                  </button>
+                  <button type="button" className="btn" onClick={() => setScannerOpen(true)}>
+                    <Icon name="camera" size={14} /> Escanear con la cámara
+                  </button>
+                </div>
+              </div>
+              {scannerOpen ? (
+                <BarcodeScanner
+                  onClose={() => setScannerOpen(false)}
+                  onScanned={(code) => { setBarcode(code); setScannerOpen(false); void runLookup(code) }}
+                />
+              ) : null}
+              {lookup ? (
+                <div className={lookup.status === 'error' ? 'error-box' : 'ok-box'} style={{ marginBottom: 12 }} role="status">
+                  {lookup.status === 'local' ? (
+                    <>Este código ya está registrado: <strong>{lookup.product}</strong>{lookup.brand ? ` · ${lookup.brand}` : ''}. El nombre quedó puesto en el producto.</>
+                  ) : lookup.status === 'ready' ? (
+                    <>
+                      Encontrado en internet: <strong>{lookup.product}</strong>
+                      {lookup.brand ? ` · ${lookup.brand}` : ''}{lookup.category ? ` · ${lookup.category}` : ''}
+                      {lookup.description ? <><br />{lookup.description}</> : null}
+                      <br />
+                      <button type="button" className="btn" style={{ marginTop: 8 }} onClick={() => setProduct(lookup.product)}>Usar este nombre</button>
+                      {lookup.productSourceUrl ? <> <a className="small" href={lookup.productSourceUrl} target="_blank" rel="noreferrer">Ver la fuente</a></> : null}
+                    </>
+                  ) : lookup.status === 'not-found' ? (
+                    <>Ninguna fuente conoce este código todavía. Puedes registrar la entrada con el nombre escrito a mano: el código queda guardado en la ficha del producto.</>
+                  ) : (
+                    <>La búsqueda en internet falló (sin conexión o la base no respondió). El código igual queda guardado en la ficha al registrar la entrada.</>
+                  )}
+                </div>
+              ) : null}
               <button type="submit" className="btn primary" disabled={busy || !product.trim() || !(qtyNum > 0) || !date}>{busy ? 'Guardando…' : 'Registrar entrada'}</button>
             </form>
           ) : available.length === 0 ? (
@@ -160,7 +242,7 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
                 <input id="alm-wdate" aria-label="Fecha de la rebaja" type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
               <div className="field"><label htmlFor="alm-purpose">Para qué se cogió</label>
                 <input id="alm-purpose" aria-label="Para qué se cogió el producto" value={purpose} onChange={(e) => setPurpose(e.target.value)} required maxLength={300} /></div>
-              <p className="small muted">Si el producto tiene precio de costo, esta salida pasa automáticamente a «Gastos» por cantidad × precio de costo en el sistema principal. En esta copia la rebaja queda registrada y las existencias se recalculan; no se crea un gasto duplicado (ver la sección secundaria de la foto del IPV).</p>
+              <p className="small muted">Si el producto tiene precio de costo vigente conocido sin ambigüedad, esta salida pasa automáticamente a «Gastos» como «Salida de almacén» por cantidad × precio de costo, enlazada a esta rebaja: editarla o borrarla ajusta o elimina su gasto. Sin precio de costo conocido, la rebaja queda solo como registro físico.</p>
               <button type="submit" className="btn primary" disabled={busy || !product || !(qtyNum > 0) || qtyNum > selectedAvailable || !purpose.trim() || !date}>{busy ? 'Guardando…' : 'Registrar rebaja'}</button>
             </form>
           )}
@@ -196,8 +278,7 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
         <p className="small muted" style={{ marginTop: 10 }}>
           Existencias calculadas desde los {fmtInt(entries.length)} movimientos manuales reales. Los metadatos de producto
           (código de barras, marca, categoría, descripción y fuente) vienen de «warehouse_product_meta_v1» del sistema
-          principal. El escáner de códigos de barras con cámara y la búsqueda en internet del original no están
-          portados a esta copia: no se fingen.
+          principal y de las búsquedas por código hechas en esta copia (ficha local, caché y OpenFoodFacts).
         </p>
       </Card>
 

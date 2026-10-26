@@ -26,7 +26,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Section } from '../types'
 import { Icon, type IconName } from './icons'
-import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
+import { fmtCUP, fmtDate, fmtInt, havanaNow } from '../lib/utils'
 
 /* ---- Constantes literales del original (App.tsx) ---- */
 
@@ -103,7 +103,8 @@ export function OrganismMap({ parts, checkedLabel, checkedIso, flowModules, onli
   const [selectedId, setSelectedId] = useState<string | null>('corazon')
   const selected = parts.find((p) => p.id === selectedId) ?? null
   const global = globalStateOf(parts.map((p) => ({ id: p.id, area: p.biological, state: p.state, detail: p.metric })))
-  const hour = new Date().getHours()
+  /* Hora de La Habana, como el havanaHour del original (D-04). */
+  const hour = havanaNow().hour
   const isRepairNight = hour >= 23 || hour < 6
   const compensationActive = technicalErrors > 0 || failedDocuments > 0 || !online
   return (
@@ -549,19 +550,41 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
           <p>{selected.detail}</p>
         </div>
       </div>
-      <h4 style={{ margin: '16px 0 4px' }}>Línea de tiempo de mutaciones</h4>
-      <p className="small muted" style={{ margin: '0 0 6px' }}>Cada cambio versionado que el respaldo de esta copia sí trae: directivas del dueño registradas en el código, decisiones por entrada, alias y clasificaciones aprendidas, y el snapshot de evolución guardado. Lo que el original guarda en su base y no viaja (versiones de ADN con checksum) no se inventa aquí.</p>
-      {mutations.length ? (
-        <ol className="system-mirror-dna-timeline">
-          {mutations.map((m) => (
-            <li key={m.id}>
-              <i aria-hidden="true" />
-              <span><strong>{m.title}</strong><p>{m.detail} · Fuente: {m.source}</p></span>
-              <time dateTime={m.at ?? undefined}>{m.at ? fmtDate(m.at) : 'Sin fecha en el respaldo'}</time>
-            </li>
-          ))}
-        </ol>
-      ) : <p className="small muted">Sin mutaciones registradas en los datos cargados: el respaldo no trae decisiones, alias ni clasificaciones todavía.</p>}
+      {/* Panel de mutaciones con la geometría del original
+          (.dna-mutation-timeline, theme.css:7329): panel de altura
+          fija con cabecera propia y lista con scroll interno — la
+          versión anterior lo volcaba como lista abierta de miles de
+          píxeles de alto (defecto señalado por el dueño, 26-oct).
+          El contenido es el de esta copia (lo que el respaldo trae);
+          lo que el original guarda en su base y no viaja no se
+          inventa: la explicación vive tras el desplegable. */}
+      <section className="dna-mutation-timeline" aria-label="Línea de tiempo de mutaciones">
+        <header>
+          <div>
+            <strong id="dna-mutation-timeline-title">Línea de tiempo de mutaciones</strong>
+            <span>Cambios observados en la revisión actual</span>
+          </div>
+          <time>{globalLabel}</time>
+        </header>
+        {mutations.length ? (
+          <ol>
+            {mutations.map((m) => (
+              <li key={m.id}>
+                <i aria-hidden="true" />
+                <span>
+                  <strong>{m.title}</strong>
+                  <span>{m.detail} · Fuente: {m.source}</span>
+                </span>
+                <time dateTime={m.at ?? undefined}>{m.at ? fmtDate(m.at) : 'Sin fecha'}</time>
+              </li>
+            ))}
+          </ol>
+        ) : <p className="dna-mutation-empty">Sin mutaciones registradas en los datos cargados: el respaldo no trae decisiones, alias ni clasificaciones todavía.</p>}
+      </section>
+      <details className="dna-mutation-note">
+        <summary>Qué trae esta línea de tiempo</summary>
+        <p className="small muted">Cada cambio versionado que el respaldo de esta copia sí trae: directivas del dueño registradas en el código, decisiones por entrada, alias y clasificaciones aprendidas, y el snapshot de evolución guardado. Lo que el original guarda en su base y no viaja (versiones de ADN con checksum) no se inventa aquí.</p>
+      </details>
       <div className="system-dna-legend" aria-label="Leyenda de estados del ADN">
         {(['healthy', 'verifying', 'repairing', 'error'] as MirrorState[]).map((state) => <span key={state} className={`dna-state-${state}`}><i aria-hidden="true" />{DNA_STATE_COPY[state].short}</span>)}
       </div>

@@ -5,7 +5,9 @@ import { Icon } from '../components/icons'
 import { ColumnChart, RowChart, ChartCard, DayPulse, MonthHeatMap, ProgressRing, CashBars, LuminousBars, FutureCard, DeptCompareChart, BucketCompareChart, buildRiver, buildCategoryBars, type ChartDatum, type HeatDay } from '../components/charts'
 import { DayTimeline, NightCloseConsole, type CloseStep, type TimelineEvent } from '../components/homeMirror'
 import '../components/homeMirror.css'
-import { dueDate, effectiveSaldo, fmtCUP, fmtDate, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
+import { dueDate, effectiveSaldo, fmtCUP, fmtDate, fmtDateListEs, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
+import { downloadBlob, printHtml } from '../lib/download'
+import { logActivity } from '../lib/activityLog'
 
 /* Inicio (panorama) — orden de bloques del sistema original:
    selector de período · línea de cobertura · (mes) este mes vs el
@@ -99,6 +101,8 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
   const lastDay = data.days.length ? data.days[data.days.length - 1] : null
   const [ptype, setPtype] = useState<PeriodType>('mes')
   const [anchor, setAnchor] = useState<string>(() => lastDay?.date ?? today)
+  const [exportMsg, setExportMsg] = useState('')
+  const [exportBusy, setExportBusy] = useState(false)
   const [compareOn, setCompareOn] = useState(false)
   const [compareFrom, setCompareFrom] = useState<string>(() => shiftPeriodStart('mes', rangeFor('mes', lastDay?.date ?? today).from, -1))
 
@@ -144,6 +148,7 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
   for (let cur = range.from; cur <= covTo; cur = addDays(cur, 1)) covDates.push(cur)
   const haveSet = new Set(data.days.map((d) => d.date))
   const missing = covDates.filter((iso) => !haveSet.has(iso))
+  const periodExpensesCount = data.expenses.filter((e) => inRange(e.date)).length
 
   // Tramos para los gráficos de columnas.
   const buckets: ChartDatum[] = ptype === 'trimestre'
@@ -226,9 +231,13 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
   const curMonthExpenses = data.expenses.filter((e) => monthKey(e.date) === curMonth)
   const curMonthGastos = curMonthExpenses.reduce((t, e) => t + e.total, 0)
   const curMonthExtrasList = curMonthDays.flatMap((d) => d.extras)
+  // Los registrados a mano en Extras suman en la misma línea, como en
+  // Economía (monthEconomy): si no, Inicio y Economía se contradicen.
+  const curMonthRegistered = (data.extraIncomes ?? []).filter((x) => monthKey(x.date) === curMonth)
   const curMonthExtras = curMonthDays.reduce((t, d) => t + d.extras.reduce((u, x) => u + x.importe, 0), 0)
+    + curMonthRegistered.reduce((t, x) => t + x.amount, 0)
   const monthResultado = monthNetaAll - curMonthGastos + curMonthExtras
-  const mesEnRojo = monthResultado < 0 && (curMonthDays.length > 0 || curMonthExpenses.length > 0 || curMonthExtrasList.length > 0)
+  const mesEnRojo = monthResultado < 0 && (curMonthDays.length > 0 || curMonthExpenses.length > 0 || curMonthExtrasList.length > 0 || curMonthRegistered.length > 0)
 
   // Medidores de fondos (mes del ancla y su trimestre).
   const meterMonthDays = monthDays
@@ -380,18 +389,66 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
         </div>
         <div className="period-row">
           <button type="button" className="period-arrow" onClick={() => shift(-1)} aria-label="Período anterior"><Icon name="chevronL" size={19} /></button>
-          <span className="period-label">{range.label}</span>
+          <span className="period-label">
+            {range.label}
+            {range.from <= today && today <= range.to ? <span className="period-incourse">hasta la fecha</span> : null}
+            <span className="period-dates">{range.from} — {range.to}</span>
+            {!(range.from <= today && today <= range.to) ? (
+              <button type="button" className="period-current-link" onClick={goCurrent}>Ir al actual</button>
+            ) : null}
+          </span>
           <button type="button" className="period-arrow" onClick={() => shift(1)} aria-label="Período siguiente"><Icon name="chevronR" size={19} /></button>
-          <button type="button" className="btn" onClick={goCurrent}>Ir al actual</button>
         </div>
-        <p className="period-note">La quincena de aquí es la natural del mes (1–15 y 16–fin de mes) y abre la última cerrada. Los ciclos de RH son de 15 días exactos con pago el día 16 y viven en su módulo: no son lo mismo.</p>
+        <p className="period-note">Todo se recalcula con los días importados del período. Los pagos de RH siguen sus ciclos de 15 días exactos («RH»), distintos de la quincena natural.</p>
       </div>
 
-      {/* 2 · Línea de cobertura */}
-      <p className="coverage-line">
-        <strong>{fmtInt(periodDays.length)} días con IPV</strong> de {fmtInt(covDates.length)} días del período.
-        {missing.length > 0 ? <> Faltan: {missing.map((iso) => fmtDateShort(iso)).join(', ')} — un día ausente no cuenta como venta 0.</> : ' Sin huecos en lo transcurrido del período.'}
+      {/* 2 · Línea de cobertura y documentos del período (textos y
+          botones del original, D-66) */}
+      <p className="coverage-line" role="status">
+        <strong>Cobertura:</strong> {range.label}: {fmtInt(periodDays.length)} día{periodDays.length === 1 ? '' : 's'} importado{periodDays.length === 1 ? '' : 's'}
+        {missing.length > 0
+          ? <> — faltan {fmtDateListEs(missing.slice(0, 8))}{missing.length > 8 ? ` y ${missing.length - 8} más` : ''}</>
+          : periodDays.length > 0 ? ' — sin huecos en ese tramo' : ''}.
+        Un día ausente no cuenta como venta 0: los promedios son por día importado.
       </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+        <button
+          type="button" className="btn primary" disabled={exportBusy || (periodDays.length === 0 && periodExpensesCount === 0)}
+          onClick={() => {
+            setExportBusy(true)
+            void (async () => {
+              try {
+                const docs = await import('../lib/documentosCore.mjs')
+                const rep = docs.buildPeriodInformeData(data, range.from, range.to, range.label, today)
+                logActivity('exportacion', `Exportó el PDF del período (${range.label})`, { section: 'inicio' })
+                setExportMsg(printHtml(docs.informeHtml(rep))
+                  ? `PDF del período listo (${range.label}): se abrió la vista de impresión.`
+                  : 'El navegador bloqueó la ventana del PDF. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+              } finally { setExportBusy(false) }
+            })()
+          }}
+        >
+          <Icon name="doc" size={16} /> PDF del período
+        </button>
+        <button
+          type="button" className="btn" disabled={exportBusy || (periodDays.length === 0 && periodExpensesCount === 0)}
+          onClick={() => {
+            setExportBusy(true)
+            void (async () => {
+              try {
+                const docs = await import('../lib/documentosCore.mjs')
+                const rep = docs.buildPeriodInformeData(data, range.from, range.to, range.label, today)
+                downloadBlob(docs.buildPptxBlob(rep), `presentacion-periodo-${range.from}.pptx`)
+                logActivity('exportacion', `Exportó la presentación PowerPoint del período (${range.label})`, { section: 'inicio' })
+                setExportMsg(`Presentación PowerPoint descargada con las cifras de ${range.label}.`)
+              } finally { setExportBusy(false) }
+            })()
+          }}
+        >
+          <Icon name="chart" size={16} /> Presentación PowerPoint
+        </button>
+      </div>
+      {exportMsg ? <p className="small" role="status" style={{ marginTop: -6, marginBottom: 14 }}>{exportMsg}</p> : null}
 
       {/* 3 · Este mes vs el anterior (solo Mes) */}
       {ptype === 'mes' && prevMonthDays.length > 0 ? (

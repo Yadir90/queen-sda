@@ -51,7 +51,7 @@ const ORIGIN_LABEL: Record<string, string> = {
   'auto-rh': 'Nómina (automático)',
 }
 
-export default function Economia({ data, isAdmin, onChanged }: { data: StoredData; isAdmin: boolean; onChanged: () => void }) {
+export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { data: StoredData; isAdmin: boolean; onChanged: () => void; onGoCobrar?: () => void }) {
   const today = todayISO()
   const months = useMemo(() => availableMonths(data, today), [data, today])
   const [picked, setPicked] = useState<string>('')
@@ -279,6 +279,11 @@ export default function Economia({ data, isAdmin, onChanged }: { data: StoredDat
                 <p className="big-figure" style={{ margin: '8px 0 0' }}>{pctTxt(ratio(eco.cuentasPorCobrar.administrativos, eco.neta))}</p>
                 <p className="small muted" style={{ margin: '8px auto 0', maxWidth: 340 }}>Relación de las cuentas pendientes de Dayami, Jesús y Alejandro con la ganancia neta. Es una lectura económica: no se resta otra vez del resultado oficial.</p>
               </div>
+              {onGoCobrar ? (
+                <button type="button" onClick={onGoCobrar} style={{ marginTop: 12, background: 'none', border: 0, padding: 0, fontWeight: 600, fontSize: '0.85rem', color: 'var(--accent)', textDecoration: 'underline', cursor: 'pointer' }}>
+                  Ver el detalle en Cobrar →
+                </button>
+              ) : null}
             </ChartCard>
           </div>
 

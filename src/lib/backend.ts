@@ -14,6 +14,7 @@
 
 import type { Bulletin, Expense, LocalPayment, PackageReference, PayrollEmployee, Profile, Role, Session, StoredData, TransferMovement } from '../types'
 import { normalizeDay, parseBackup } from './backupCore.mjs'
+import { defaultElaborationStore } from './elaboracionCore.mjs'
 import {
   applyImportedPaidAccounts, buildWorkersRegistry, canonicalPersonKey, clientKeyOf, deriveSuppressedEntries,
   firstNameKeyOf, syncDerivedData,
@@ -105,6 +106,22 @@ export function login(email: string, password: string): LoginResult {
   return { ok: true, session, mustChange: profile.mustChange }
 }
 
+/**
+ * Crea la sesión local de un perfil SIN contraseña: la usan las
+ * vías ya autorizadas del dispositivo — el PIN del selector de
+ * acceso (verificado contra su hash con sal en quickAccess) y el
+ * «entrar como» del administrador. Con persist=false la sesión
+ * vive solo en memoria (suplantación: al recargar vuelve la
+ * sesión guardada, que sigue siendo la del administrador).
+ */
+export function startLocalSession(profileId: string, persist = true): Session | null {
+  const profile = ensureProfiles().find((p) => p.id === profileId)
+  if (!profile) return null
+  const session: Session = { profileId: profile.id, name: profile.name, email: profile.email, role: profile.role }
+  if (persist) writeJSON(K_SESSION, session)
+  return session
+}
+
 export function changePassword(profileId: string, tempPassword: string, newPassword: string): { ok: boolean; error?: string } {
   const profiles = ensureProfiles()
   const profile = profiles.find((p) => p.id === profileId)
@@ -149,10 +166,14 @@ export const EMPTY_DATA: StoredData = {
   automationRuns: [],
   queenLearning: null,
   workersExtended: [],
+  workersHistorial: [],
   queenEvolutionHistory: [],
   warehouseEntries: [],
   warehouseMeta: {},
   venueInventory: [],
+  elaboration: defaultElaborationStore(),
+  extraIncomes: [],
+  inventoryAdjustments: [],
   receivablePhotos: [],
   smsLogs: [],
   smsOutbox: [],
@@ -337,6 +358,40 @@ export function importIpvDay(rawDay: Record<string, unknown>): StoredData {
   return next
 }
 
+/**
+ * Elimina un día importado (puerto de `deleteDay` del original, D-07):
+ * sale el registro del día con todo lo que vive en su foto (ventas,
+ * departamentos, productos, entradas, foto de RH y de fondos), la foto
+ * de cuentas de ese día, las decisiones de «Cuentas» tomadas sobre ese
+ * día (overrides y supresiones con su fecha) y su abono de
+ * Transferencias derivado del IPV (los movimientos locales o de pagos
+ * de cuentas de esa fecha NO se tocan). Un boletín pendiente de ese
+ * día sale de la cola; los ya enviados quedan como historial. Todo lo
+ * derivado se recalcula sin ese día corriendo la sincronización con
+ * esa fecha «viva»: los gastos automáticos de «Cuentas» y de nómina
+ * se retiran o recalculan solos, y las cuentas PAGADAS no se borran
+ * jamás (la limpieza de la sincronización las protege, como el
+ * original). En el original la acción exige autorización reforzada
+ * (ámbito «delete-ipv», nivel explícito): aquí la impone la pantalla
+ * con confirmación expresa y la sesión de administrador.
+ */
+export function deleteDay(date: string): StoredData {
+  const current = loadData()
+  const days = current.days.filter((d) => d.date !== date)
+  const bulletins = current.bulletins.filter((b) => b.date !== date || b.status === 'enviado')
+  const receivablePhotos = current.receivablePhotos.filter((p) => p.date !== date)
+  const transferMovements = current.transferMovements.filter((m) => !(m.source === 'ipv' && m.date === date && !m.local))
+  const cuentasOverrides = Object.fromEntries(Object.entries(current.cuentasOverrides).filter(([k]) => !k.startsWith(`${date}::`)))
+  const suppressedEntries = current.suppressedEntries.filter((k) => !k.startsWith(`${date}::`))
+  const next = runSync(
+    { ...current, days, bulletins, receivablePhotos, transferMovements, cuentasOverrides, suppressedEntries },
+    [],
+    [date],
+  )
+  saveData(next)
+  return next
+}
+
 /** Registra abonos locales (Cobrar). `allocations` ya viene repartido a la cuenta más antigua primero. */
 export function addLocalPayments(allocations: Array<Omit<LocalPayment, 'id' | 'createdAt'>>): StoredData {
   const current = loadData()
@@ -381,6 +436,26 @@ export function saveRhSettings(patch: {
  * los totales se DERIVAN del historial: aquí solo se añade la fila,
  * con el importe con signo que corresponda, y nada más se toca.
  */
+/** Guarda piezas del registro de trabajadores (fichas base, estado
+ *  extendido — estrellas, turno, descanso, días fijos, ausencias,
+ *  contrato —, pagos manuales e historial) sustituyendo SOLO las
+ *  colecciones nombradas en el parche. */
+export function saveWorkersRegistry(patch: {
+  workers?: StoredData['workers']
+  workersExtended?: StoredData['workersExtended']
+  workerPayments?: StoredData['workerPayments']
+  workersHistorial?: StoredData['workersHistorial']
+}): StoredData {
+  const current = loadData()
+  const next: StoredData = { ...current }
+  if (patch.workers) next.workers = patch.workers
+  if (patch.workersExtended) next.workersExtended = patch.workersExtended
+  if (patch.workerPayments) next.workerPayments = patch.workerPayments
+  if (patch.workersHistorial) next.workersHistorial = patch.workersHistorial
+  saveData(next)
+  return next
+}
+
 export function addTransferMovement(m: Omit<TransferMovement, 'id' | 'local' | 'superseded'>): StoredData {
   const current = loadData()
   const movement: TransferMovement = {
@@ -404,6 +479,28 @@ export function setTransferMovementExcluded(id: string, excluded: boolean): Stor
   const current = loadData()
   const transferMovements = current.transferMovements.map((m) => (m.id === id ? { ...m, excluded } : m))
   const next = { ...current, transferMovements }
+  saveData(next)
+  return next
+}
+
+/** Edita un movimiento registrado (fecha, importe con signo y
+ *  detalle), como el «Editar movimiento» del original: los que
+ *  vienen del IPV no se editan aquí — se corrige el Excel. */
+export function updateTransferMovement(id: string, patch: { date: string; amount: number; detail: string }): StoredData {
+  const current = loadData()
+  const transferMovements = current.transferMovements
+    .map((m) => (m.id === id ? { ...m, date: patch.date, amount: patch.amount, detail: patch.detail } : m))
+    .sort((a, b) => a.date.localeCompare(b.date))
+  const next = { ...current, transferMovements }
+  saveData(next)
+  return next
+}
+
+/** Borra un movimiento registrado (el original lo permite para
+ *  pases, abonos manuales, pagos y abonos de cuenta/extra). */
+export function deleteTransferMovement(id: string): StoredData {
+  const current = loadData()
+  const next = { ...current, transferMovements: current.transferMovements.filter((m) => m.id !== id) }
   saveData(next)
   return next
 }
@@ -493,6 +590,45 @@ export function saveVenueInventory(items: StoredData['venueInventory']): StoredD
   return next
 }
 
+/** Sustituye la lista completa de cuentas por cobrar (editar, mover a
+ *  morosas o eliminar una cuenta desde su tarjeta, como en el
+ *  original). Los abonos locales de cuentas eliminadas quedan
+ *  huérfanos e inertes: effectiveSaldo los busca por id de cuenta. */
+export function saveReceivables(receivables: StoredData['receivables']): StoredData {
+  const current = loadData()
+  const next = { ...current, receivables }
+  saveData(next)
+  return next
+}
+
+/**
+ * Guarda el almacén COMPLETO de Elaboración (fichas, ajustes, mermas,
+ * historial) en modo local. En modo Supabase va a app_settings
+ * 'elaboracion' (sbSaveElaborationStore, con cola offline).
+ */
+export function saveElaborationStore(store: StoredData['elaboration']): StoredData {
+  const current = loadData()
+  const next = { ...current, elaboration: store }
+  saveData(next)
+  return next
+}
+
+/** Guarda los otros ingresos registrados a mano (Extras) en modo local. */
+export function saveExtraIncomes(extraIncomes: StoredData['extraIncomes']): StoredData {
+  const current = loadData()
+  const next = { ...current, extraIncomes }
+  saveData(next)
+  return next
+}
+
+/** Guarda los ajustes manuales del libro (Existencias) en modo local. */
+export function saveInventoryAdjustments(inventoryAdjustments: StoredData['inventoryAdjustments']): StoredData {
+  const current = loadData()
+  const next = { ...current, inventoryAdjustments }
+  saveData(next)
+  return next
+}
+
 export function resetLocalData(): StoredData {
   saveData({ ...EMPTY_DATA })
   return { ...EMPTY_DATA }
@@ -536,3 +672,20 @@ export function saveAutomationState(
 }
 
 export type { Role }
+
+/** Sustituye la lista completa de gastos en modo local (la usa la
+ *  reconciliación de gastos enlazados de Almacén). */
+export function replaceExpenses(expenses: StoredData['expenses']): StoredData {
+  const current = loadData()
+  const next = { ...current, expenses }
+  saveData(next)
+  return next
+}
+
+/** Guarda los resúmenes mensuales del Archivo en modo local. */
+export function saveMonthlyArchives(monthlyArchives: StoredData['monthlyArchives']): StoredData {
+  const current = loadData()
+  const next = { ...current, monthlyArchives }
+  saveData(next)
+  return next
+}

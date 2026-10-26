@@ -1,10 +1,14 @@
-import { useMemo, useState } from 'react'
-import type { Section, StoredData } from '../types'
+import { useMemo, useState, type FormEvent } from 'react'
+import type { InventoryAdjustment, Section, StoredData } from '../types'
 import { buildInventoryBook, type BookProduct } from '../lib/productosCore.mjs'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
-import { fmtDate, fmtInt } from '../lib/utils'
+import { fmtDate, fmtInt, todayISO } from '../lib/utils'
+import { saveInventoryAdjustments, supabaseConfigured } from '../lib/backend'
+import { sbSaveInventoryAdjustments } from '../lib/supabaseBackend'
 import '../components/sectionsMirror.css'
+
+const SB_MODE = supabaseConfigured()
 
 /* Existencias como destino propio (oleada 3): el MISMO libro
    encadenado de Productos (buildInventoryBook de productosCore,
@@ -13,21 +17,60 @@ import '../components/sectionsMirror.css'
    − bajas − traslados = saldo final; el saldo final de hoy es el
    saldo inicial de mañana. Descuadres primero, buscador, lista
    por departamento y el detalle por día del producto elegido.
-   DECLARADO: los ajustes manuales del libro del original
-   (rebajas, traslados y saldos iniciales fijados a mano) se
-   guardan en el servidor del original y no viajan en el
-   respaldo: esta copia muestra el libro tal como lo encadenan
-   los IPV y no ofrece registrar ajustes que no podría guardar. */
+   AJUSTES MANUALES: los del servidor original no viajan en el
+   respaldo, pero esta copia guarda los suyos (app_settings
+   'existencias-ajustes' o el StoredData local) y el libro los
+   aplica con la semántica del original: «inicial» fija el saldo
+   inicial de su fecha y reencadena desde ahí; «baja» y «traslado»
+   restan ese día como bajas/traslados manuales. */
 
 const fmtCant = (v: number) => new Intl.NumberFormat('es-CU', { maximumFractionDigits: 2 }).format(v)
 
-export default function ExistenciasTab({ data, onNavigate }: {
+const KIND_LABEL: Record<InventoryAdjustment['kind'], string> = { inicial: 'Saldo inicial fijado', baja: 'Baja manual', traslado: 'Traslado manual' }
+
+export default function ExistenciasTab({ data, isAdmin, onChanged, onNavigate }: {
   data: StoredData
+  isAdmin: boolean
+  onChanged: () => void
   onNavigate: (s: Section) => void
 }) {
-  const book = useMemo(() => buildInventoryBook(data.days), [data.days])
+  const book = useMemo(() => buildInventoryBook(data.days, data.inventoryAdjustments), [data.days, data.inventoryAdjustments])
   const [search, setSearch] = useState('')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
+  const [adjDate, setAdjDate] = useState(todayISO())
+  const [adjKind, setAdjKind] = useState<InventoryAdjustment['kind']>('baja')
+  const [adjQty, setAdjQty] = useState('')
+  const [adjNote, setAdjNote] = useState('')
+  const [adjMsg, setAdjMsg] = useState('')
+  const [adjError, setAdjError] = useState('')
+  const [adjBusy, setAdjBusy] = useState(false)
+
+  const submitAdjustment = (ev: FormEvent, product: BookProduct) => {
+    ev.preventDefault()
+    const quantity = Number(adjQty)
+    if (!Number.isFinite(quantity) || quantity < 0) { setAdjError('Escribe una cantidad válida.'); return }
+    if (adjKind !== 'inicial' && quantity <= 0) { setAdjError('La baja o el traslado necesitan una cantidad mayor que cero.'); return }
+    if (!data.days.some((d) => d.date === adjDate)) { setAdjError('Esa fecha no tiene un día importado: el ajuste se aplica sobre un día del libro.'); return }
+    const item: InventoryAdjustment = {
+      id: `adj-${Date.now()}-${Math.floor(Math.random() * 1e6)}`,
+      productKey: product.key, dept: product.dept, productName: product.name, um: product.um,
+      date: adjDate, kind: adjKind, quantity, note: adjNote.trim(),
+    }
+    setAdjQty(''); setAdjNote('')
+    void persistAdjustments([...data.inventoryAdjustments, item], `Ajuste registrado: ${KIND_LABEL[adjKind].toLowerCase()} de ${product.name} el ${fmtDate(adjDate)}. El libro ya lo aplica.`)
+  }
+
+  const persistAdjustments = async (next: InventoryAdjustment[], okMsg: string) => {
+    setAdjBusy(true); setAdjError(''); setAdjMsg('')
+    try {
+      if (SB_MODE) await sbSaveInventoryAdjustments(next)
+      else saveInventoryAdjustments(next)
+      setAdjMsg(okMsg)
+      onChanged()
+    } catch (e) {
+      setAdjError(e instanceof Error ? e.message : 'No se pudo guardar el ajuste.')
+    } finally { setAdjBusy(false) }
+  }
 
   const q = search.trim().toLowerCase()
   const filtered = useMemo(
@@ -171,12 +214,53 @@ export default function ExistenciasTab({ data, onNavigate }: {
                     </tbody>
                   </table>
                 </div>
-                <p className="small muted" style={{ marginBottom: 0 }}>
-                  Ajustes manuales del libro (rebajas, traslados o fijar un saldo inicial a mano): en el sistema
-                  original se guardan en su servidor y no viajan en el respaldo. Esta copia no los registra:
-                  el libro se encadena solo de los IPV importados, y cualquier descuadre se explica reimportando
-                  el día corregido o desde el propio IPV, nunca escribiendo sobre la cadena aquí.
-                </p>
+                <h4 className="mod-detail-h">Ajustes manuales de este producto</h4>
+                {adjMsg ? <div className="ok-box" style={{ marginBottom: 10 }}>{adjMsg}</div> : null}
+                {adjError ? <div className="error-box" style={{ marginBottom: 10 }}>{adjError}</div> : null}
+                {data.inventoryAdjustments.filter((a) => a.productKey === selected.key).length === 0 ? (
+                  <p className="small muted">Sin ajustes manuales: la cadena sale solo de los IPV importados.</p>
+                ) : (
+                  <div className="list">
+                    {data.inventoryAdjustments.filter((a) => a.productKey === selected.key).map((a) => (
+                      <div className="row" key={a.id}>
+                        <span className="mod-row-main">
+                          <span className="mod-row-title">{KIND_LABEL[a.kind]} · {fmtCant(a.quantity)}{selected.um ? ` ${selected.um}` : ''}</span>
+                          <span className="small muted">{fmtDate(a.date)}{a.note ? ` · ${a.note}` : ''}</span>
+                        </span>
+                        {isAdmin ? (
+                          <button type="button" className="btn" disabled={adjBusy} onClick={() => void persistAdjustments(data.inventoryAdjustments.filter((x) => x.id !== a.id), 'Ajuste eliminado: el libro volvió a encadenarse sin él.')}>
+                            <Icon name="trash" size={14} /> Eliminar
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {isAdmin ? (
+                  <form onSubmit={(e) => submitAdjustment(e, selected)} style={{ marginTop: 10 }}>
+                    <div className="field"><label htmlFor="adj-date">Fecha (día importado)</label>
+                      <input id="adj-date" type="date" value={adjDate} onChange={(e) => setAdjDate(e.target.value)} required /></div>
+                    <div className="field"><label htmlFor="adj-kind">Tipo de ajuste</label>
+                      <select id="adj-kind" value={adjKind} onChange={(e) => setAdjKind(e.target.value as InventoryAdjustment['kind'])}>
+                        <option value="baja">Baja (rebaja manual)</option>
+                        <option value="traslado">Traslado</option>
+                        <option value="inicial">Fijar saldo inicial</option>
+                      </select></div>
+                    <div className="field"><label htmlFor="adj-qty">Cantidad</label>
+                      <input id="adj-qty" type="number" min="0" step="any" value={adjQty} onChange={(e) => setAdjQty(e.target.value)} required /></div>
+                    <div className="field"><label htmlFor="adj-note">Nota</label>
+                      <input id="adj-note" value={adjNote} onChange={(e) => setAdjNote(e.target.value)} maxLength={300} placeholder="Por qué se ajusta (opcional)" /></div>
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
+                      <button type="submit" className="btn primary" disabled={adjBusy || adjQty === ''}>{adjBusy ? 'Guardando…' : 'Registrar ajuste'}</button>
+                    </div>
+                    <p className="small muted" style={{ marginBottom: 0 }}>
+                      El ajuste no toca el IPV: vive en el libro de esta copia y la cadena se reencadena con él,
+                      como en el sistema original. Fijar el saldo inicial manda sobre la apertura de ese día.
+                    </p>
+                  </form>
+                ) : (
+                  <p className="small muted" style={{ marginBottom: 0 }}>Solo el administrador registra ajustes del libro.</p>
+                )}
               </Card>
             ) : null}
           </div>

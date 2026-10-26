@@ -225,11 +225,47 @@ export interface Receivable {
   closeKind: string | null
   detail: string
   origin: string
+  /** Marca MANUAL de morosa del original (toggleMorosa): la cuenta está
+   *  en el Archivo de morosas aunque su plazo no haya vencido. */
+  isMorosa?: boolean
+  /** Desde cuándo está en morosas por la marca manual (ISO). */
+  morosaSince?: string | null
   /** Identidad estable de la cuenta del IPV: «fecha::persona resuelta». */
   entryKey?: string | null
   /** Persona de la casa a la que pertenece el registro aparte (jesus/dayami/alejandro), si aplica. */
   persona?: string | null
   registro?: string | null
+}
+
+/** Ajuste manual del libro de existencias (Existencias): «inicial»
+ *  fija el saldo inicial de su fecha, «baja»/«traslado» restan ese
+ *  día. Forma del inventoryAdjustment del servidor original; los del
+ *  original no viajan en el respaldo — estos son los de esta copia. */
+export interface InventoryAdjustment {
+  id: string
+  productKey: string
+  dept: string
+  productName: string
+  um: string
+  date: string
+  kind: 'inicial' | 'baja' | 'traslado'
+  quantity: number
+  note: string
+}
+
+/** Otro ingreso registrado A MANO en esta copia (Extras): el registro
+ *  manual del original vive en su servidor y no viaja en el respaldo;
+ *  aquí se guarda en app_settings 'extra-incomes' (o en el StoredData
+ *  local), como las fichas de Elaboración. Los ingresos del IPV no se
+ *  duplican aquí: viven en DayData.extras. */
+export interface ExtraIncome {
+  id: string
+  date: string
+  concept: string
+  note: string
+  amount: number
+  paymentMethod: 'efectivo' | 'transferencia'
+  origin: string
 }
 
 /** Gasto del negocio (del respaldo o automático del IPV/nómina). */
@@ -257,6 +293,13 @@ export interface Expense {
  * estrellas de evaluación, días fijos/descanso y contrato cancelado.
  * NO viaja en el respaldo: llega por su propia clave de app_settings.
  */
+/** Ausencia justificada de una ficha (no cuenta como trabajada). */
+export interface WorkerAusencia {
+  id: string
+  fecha: string
+  motivo: string
+}
+
 export interface WorkerExtended {
   /** Id numérico del trabajador en el servidor original (el de su credencial). */
   id: number
@@ -273,6 +316,21 @@ export interface WorkerExtended {
   escolaridad: string
   contratoCanceladoEl: string | null
   contratoCanceladoCiclo: string | null
+  /** Ausencias justificadas marcadas en la ficha (editor del clon). */
+  ausencias?: WorkerAusencia[]
+  /** Fecha de contratación escrita en la ficha: arranca la cuenta
+   *  atrás de las vacaciones (a los 6 meses, 1 semana). */
+  fechaContratacion?: string
+}
+
+/** Ficha pasada al historial de trabajadores («Eliminar del
+ *  registro»): no se borra nada; conserva la foto completa de la
+ *  ficha y puede restaurarse. */
+export interface WorkerHistorialEntry {
+  key: string
+  worker: Worker
+  extended: WorkerExtended | null
+  removedAt: string
 }
 
 /**
@@ -395,6 +453,8 @@ export interface StoredData {
   queenLearning: QueenLearningState | null
   /** Estado extendido de trabajadores (app_settings 'workers-extended' en Supabase; vacío en local). */
   workersExtended: WorkerExtended[]
+  /** Historial de trabajadores (fichas fuera del registro activo). */
+  workersHistorial: WorkerHistorialEntry[]
   /** Historial real de evolución de Queen del servidor (app_settings 'queen-evolution-history'). */
   queenEvolutionHistory: QueenEvolutionHistoryEntry[]
   /** Movimientos del almacén MANUAL real (app_settings 'almacen-extended'). */
@@ -403,6 +463,16 @@ export interface StoredData {
   warehouseMeta: Record<string, WarehouseProductMeta>
   /** Bienes reales del Inventario del local (app_settings 'venue-inventory'). */
   venueInventory: VenueInventoryItem[]
+  /** Elaboración: fichas de costo, ajustes globales, mermas e historial
+   *  de precios de ingredientes (app_settings 'elaboracion'). Las
+   *  fichas NO viajan en el respaldo — viven en la base del original —:
+   *  aquí nacen vacías y se crean/continúan en esta copia. */
+  elaboration: ElaborationStore
+  /** Otros ingresos registrados a mano en esta copia (Extras). */
+  extraIncomes: ExtraIncome[]
+  /** Ajustes manuales del libro de existencias de esta copia
+   *  (inicial/baja/traslado por producto y fecha, forma del original). */
+  inventoryAdjustments: InventoryAdjustment[]
   /** Cinco colecciones del respaldo que antes se descartaban al
    *  importar y salían [] al reexportar (fuga cerrada, oleada 2):
    *  viajan ÍNTEGRAS de ida y vuelta, sin tocar su contenido. */
@@ -466,6 +536,8 @@ export interface VenueInventoryItem {
   manufacturer: string
   observations: string
   source: string
+  /** Motivo opcional de la baja (diálogo «Dar de baja» del original). */
+  lowReason?: string
 }
 
 /** Foto contable diaria de las cuentas del IPV (exportData.receivablePhotos):
@@ -529,3 +601,81 @@ export interface WorkerPayment {
 }
 
 export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'inventario' | 'laboratorio' | 'documentos' | 'historial' | 'archivo' | 'entradas' | 'extras' | 'existencias' | 'cronologia' | 'ajustes'
+
+/* ===== Elaboración: fichas de costo (puerto del original) ===== */
+
+export interface ElaborationIngredient {
+  ingredient: string
+  amountUsed: number
+  unit: string
+  purchasePrice: number
+  purchasedAmount: number
+  note: string
+}
+
+export interface ElaborationRecipe {
+  id: string
+  productKey: string
+  productName: string
+  dept: string
+  manual: boolean
+  currency: string
+  servings: number
+  unitsPerServing: number
+  wastePct: number
+  salePrice: number
+  laborWorkerKey: string
+  laborWorkerName: string
+  laborDailySalarySnapshot: number
+  laborMinutes: number
+  workdayHours: number
+  cookingHours: number
+  ingredients: ElaborationIngredient[]
+  updatedAt: string
+  archived: boolean
+  restorable: boolean
+}
+
+export interface ElaborationSettings {
+  charcoalSackPrice: number
+  hoursPerSack: number
+  stovePowerKw: number
+  electricTariff: number
+  charcoalTimePct: number
+  defaultWastePct: number
+  defaultOverheadPct: number
+  defaultTargetMarginPct: number
+  defaultVariationBufferPct: number
+}
+
+export interface ElaborationWasteLog {
+  id: string
+  productKey: string
+  productName: string
+  preparedOn: string
+  preparedServings: number
+  baseAmount: number
+  actualWasteAmount: number
+  actualWastePct: number
+  estimatedWastePct: number
+  reason: string
+  note: string
+}
+
+export interface ElaborationIngredientHistoryEntry {
+  id: string
+  ingredient: string
+  unit: string
+  unitCost: number
+  productName: string
+  recordedOn: string
+}
+
+export interface ElaborationStore {
+  recipes: ElaborationRecipe[]
+  removedProducts: Array<{ productKey: string; productName: string; dept: string; manual: boolean }>
+  manualProducts: Array<{ productKey: string; name: string; dept: string }>
+  settings: ElaborationSettings
+  wasteLogs: ElaborationWasteLog[]
+  ingredientHistory: ElaborationIngredientHistoryEntry[]
+}
