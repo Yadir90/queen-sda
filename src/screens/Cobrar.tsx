@@ -529,6 +529,75 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
     return pend.sort((a, b) => a.rec.date.localeCompare(b.rec.date))
   }, [data, filter, query, ref])
 
+  /* Grupos por deudor de la vista de cuentas pendientes/morosas:
+     puerto de `gruposPendientes` del original (App.tsx:11990+). En
+     el original las pendientes NO se listan sueltas: van agrupadas
+     por persona y cada bloque lleva su cabecera con el avatar del
+     deudor (`debtorAvatar(grupo.display)`, 48 px por defecto,
+     App.tsx:12012), el nombre, «N partidas · desde el … · deuda
+     original …» y la marca del grupo (vigenciaGrupo = la vigencia
+     de la partida más envejecida). La tarjeta individual pendiente
+     del original NO lleva avatar (el de 44 px es solo de la pagada,
+     paidItem App.tsx:11669) — por eso el avatar vive aquí, en la
+     cabecera, y no dentro de AccountCard. Corrección 3f: la oleada
+     3e dejó la lista plana sin esta cabecera y la foto del deudor no
+     salía en las cuentas pendientes; Yadir lo detectó en línea. */
+  const accountGroups = useMemo(() => {
+    if (filter === 'pagadas') return []
+    const map = new Map<string, Array<{ rec: Receivable; saldo: number }>>()
+    for (const row of accountRows) {
+      const arr = map.get(row.rec.clientKey)
+      if (arr) arr.push(row)
+      else map.set(row.rec.clientKey, [row])
+    }
+    return [...map.entries()].map(([clientKey, items]) => ({
+      clientKey,
+      items,
+      display: persons.find((p) => p.clientKey === clientKey)?.name ?? items[0]!.rec.client,
+      desde: items.reduce((min, x) => (x.rec.date < min ? x.rec.date : min), items[0]!.rec.date),
+      totalOriginal: items.reduce((s, x) => s + Math.max(0, x.rec.originalAmount || x.rec.amount), 0),
+    }))
+  }, [accountRows, filter, persons])
+
+  const renderAccountGroup = (g: (typeof accountGroups)[number]) => {
+    const esCasaGrupo = g.items.every(({ rec }) => rec.category === 'administrativo' || personaOf(rec.clientKey) !== 'general' || personaOf(rec.client) !== 'general')
+    const esTrabajadorGrupo = !esCasaGrupo && g.items.every(({ rec }) => rec.category === 'trabajador')
+    let vigGrupo: Vigencia | null = null
+    for (const { rec } of g.items) {
+      const v = vigenciaCuenta(rec.date, ref, esTrabajadorGrupo ? 15 : 7)
+      if (!vigGrupo || v.progreso > vigGrupo.progreso) vigGrupo = v
+    }
+    const grupoMorosa = filter === 'morosas'
+    const grupoVencida = !esCasaGrupo && !grupoMorosa && Boolean(vigGrupo?.vencida)
+    const marcaGrupo: { color: string; colorSuave: string; colorBorde: string } = esCasaGrupo ? HOUSE_MARK : vigGrupo!
+    const colorGrupo = grupoMorosa || grupoVencida ? 'var(--danger)' : marcaGrupo.color
+    const chipText = esCasaGrupo ? HOUSE_MARK.etiqueta : grupoMorosa ? 'Morosa' : `${esTrabajadorGrupo ? 'Trabajador · ' : ''}${vigGrupo!.etiqueta}`
+    const chipDetalle = esCasaGrupo ? HOUSE_MARK.detalle : grupoMorosa ? 'en el Archivo de morosas' : `partida más urgente: ${vigGrupo!.detalle}`
+    return (
+      <section key={g.clientKey} className="account-group account-tinted-card" style={{ '--card-accent': colorGrupo, borderColor: grupoMorosa || grupoVencida ? 'var(--danger)' : marcaGrupo.colorBorde } as CSSProperties} aria-label={`Cuentas pendientes de ${g.display}`}>
+        <div className="account-group-head">
+          <ClientAvatar name={g.display} clientKey={g.clientKey} className="account-group-avatar" />
+          <div className="account-group-info">
+            <h4 className="account-group-name">{g.display}</h4>
+            <p className="account-group-sub">{g.items.length} partida{g.items.length === 1 ? '' : 's'} · desde el {fmtDate(g.desde)} · deuda original {fmtCUP(g.totalOriginal)}</p>
+            <p className="account-group-mark">
+              <span className="mark-chip" style={{ background: grupoMorosa || grupoVencida ? 'var(--danger-soft)' : marcaGrupo.colorSuave, borderColor: grupoMorosa || grupoVencida ? 'var(--danger)' : marcaGrupo.colorBorde }}>
+                <span className="mark-dot" style={{ background: colorGrupo }} />
+                {chipText}
+              </span>
+              <span className="account-group-detalle">{chipDetalle}</span>
+            </p>
+          </div>
+        </div>
+        <div className="account-list">
+          {g.items.map(({ rec, saldo }) => (
+            <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
+          ))}
+        </div>
+      </section>
+    )
+  }
+
   const receipts = useMemo<ReceiptPreview[]>(() => {
     const out: ReceiptPreview[] = []
     for (const rec of data.receivables) {
@@ -671,11 +740,15 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
             <Card><EmptyState icon="receipt" title="Sin cuentas todavía" text="Las cuentas por cobrar entran con el respaldo del SDA. Sin respaldo importado, esta vista queda vacía a propósito." /></Card>
           ) : accountRows.length === 0 ? (
             <Card><EmptyState icon="search" title="Nada en esta vista" text={query ? 'Ninguna cuenta coincide con esa búsqueda en este filtro.' : filter === 'morosas' ? 'No hay cuentas morosas: ninguna pendiente pasó su plazo.' : filter === 'pagadas' ? 'Todavía no hay cuentas pagadas en el respaldo.' : 'No hay cuentas pendientes.'} /></Card>
-          ) : (
+          ) : filter === 'pagadas' ? (
             <div className="account-list">
               {accountRows.map(({ rec, saldo }) => (
                 <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
               ))}
+            </div>
+          ) : (
+            <div className="account-groups">
+              {accountGroups.map(renderAccountGroup)}
             </div>
           )}
 

@@ -154,6 +154,10 @@ if (existsSync(assetsDir)) {
     mediaImg.includes("'default-person-avatar'") && mediaImg.includes('pickClientPhoto'))
   check('tarjeta de cuenta: vigenciaCuenta y marcas portadas del original',
     cobrar.includes('Morosa · plazo vencido') && cobrar.includes('Consumo de la casa') && cobrar.includes('hsl(${hue}, 72%') && cobrar.includes('vigenciaCuenta'))
+  check('cuentas pendientes: grupo por deudor con avatar de cabecera de 48 px (debtorAvatar del original, App.tsx:12012)',
+    cobrar.includes('renderAccountGroup') && cobrar.includes('account-group-avatar') && indexCss.includes('.account-group-avatar') && indexCss.includes('width: 48px; height: 48px'))
+  check('el avatar de las pendientes vive en la cabecera del grupo (ClientAvatar del grupo, no el «paid ?» de la tarjeta)',
+    cobrar.includes('<ClientAvatar name={g.display} clientKey={g.clientKey} className="account-group-avatar" />'))
   check('plazo de trabajador en días hábiles (utils: addBusinessDays/businessDaysElapsed)',
     utils.includes('addBusinessDaysISO') && utils.includes('businessDaysElapsed'))
   check('solar: @keyframes ipv-node-orbit dentro de @supports (width: 1cqw)',
