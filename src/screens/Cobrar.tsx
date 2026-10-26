@@ -1,11 +1,12 @@
 import { useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react'
 import type { Category, Receivable, SmsLog, StoredData } from '../types'
-import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { ActionMenu, Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
-import { addLocalPayments, supabaseConfigured } from '../lib/backend'
-import { sbAddCobrarPayments } from '../lib/supabaseBackend'
+import { addLocalPayments, saveReceivables, supabaseConfigured } from '../lib/backend'
+import { sbAddCobrarPayments, sbSaveReceivables } from '../lib/supabaseBackend'
 import { ClientAvatar } from '../components/MediaImage'
-import { addDaysISO, canonicalPersonKey, diffDays, personaOf, workerKeyForAccount } from '../lib/syncCore.mjs'
+import { deleteMedia, pickClientPhoto, saveMedia, slug, useMediaIndex } from '../lib/media'
+import { addDaysISO, canonicalPersonKey, clientKeyOf, diffDays, isBuiltinDistinctPair, personaOf, workerKeyForAccount, workerOfficialIdentity } from '../lib/syncCore.mjs'
 import '../components/sectionsMirror.css'
 import {
   CATEGORY_LABEL, CATEGORY_SINGULAR, addBusinessDaysISO, businessDaysElapsed, effectivePayments, effectiveSaldo,
@@ -117,7 +118,18 @@ function buildContacts(data: StoredData, ref: string): ContactInfo[] {
  *  igual que en el original; con teléfono, llamada y SMS abren las
  *  apps del teléfono (el original prepara el SMS dentro de la app:
  *  esa cola no existe en esta copia). */
-function ContactCard({ c, onOpen }: { c: ContactInfo; onOpen: (c: ContactInfo) => void }) {
+function ContactCard({ c, onOpen, isAdmin = false, hasPhoto = false, onRename, onPhotoFile, onRemovePhoto }: {
+  c: ContactInfo
+  onOpen: (c: ContactInfo) => void
+  isAdmin?: boolean
+  hasPhoto?: boolean
+  onRename?: (c: ContactInfo, newName: string) => void
+  onPhotoFile?: (c: ContactInfo, file: File) => void
+  onRemovePhoto?: (c: ContactInfo) => void
+}) {
+  const [renaming, setRenaming] = useState(false)
+  const [newName, setNewName] = useState('')
+  const photoRef = useRef<HTMLInputElement>(null)
   const phoneTarget = c.phone.replace(/[^+\d]/g, '')
   const hasPhone = phoneTarget.length > 0
   const catLabel = c.category === 'cliente' ? 'Cliente' : c.category === 'trabajador' ? 'Trabajador' : 'Administrativo'
@@ -160,6 +172,45 @@ function ContactCard({ c, onOpen }: { c: ContactInfo; onOpen: (c: ContactInfo) =
         <div className="contact-stat"><strong>{c.averageDaysToPay == null ? '—' : c.averageDaysToPay}</strong>Días al pagar</div>
       </div>
       {c.pendingAmount > 0 ? <p className="contact-debe">Debe ahora: <strong>{fmtInt(c.pendingAmount)} CUP</strong></p> : null}
+      {isAdmin ? (
+        <div className="contact-actions" onClick={(e) => e.stopPropagation()}>
+          <ActionMenu label={`Acciones de ${c.name}`}>
+            <button type="button" onClick={() => { setNewName(c.name); setRenaming(true) }}>
+              <Icon name="edit" size={14} /> Editar nombre
+            </button>
+            <button type="button" onClick={() => photoRef.current?.click()}>
+              <Icon name="camera" size={14} /> {hasPhoto ? 'Cambiar foto' : 'Subir foto'}
+            </button>
+            {hasPhoto ? (
+              <button type="button" onClick={() => onRemovePhoto?.(c)}>Quitar foto</button>
+            ) : null}
+          </ActionMenu>
+          <input
+            ref={photoRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            aria-label={`Subir foto de ${c.name}`}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onPhotoFile?.(c, f) }}
+          />
+        </div>
+      ) : null}
+      {renaming ? (
+        <form
+          className="acc-edit-form"
+          aria-label={`Renombrar a ${c.name}`}
+          onClick={(e) => e.stopPropagation()}
+          onSubmit={(e) => { e.preventDefault(); if (newName.trim()) { onRename?.(c, newName.trim()); setRenaming(false) } }}
+        >
+          <div className="field"><label htmlFor={`contact-rename-${c.clientKey}`}>Nombre del contacto</label>
+            <input id={`contact-rename-${c.clientKey}`} value={newName} onChange={(e) => setNewName(e.target.value)} required maxLength={160} /></div>
+          <p className="small muted">El nombre nuevo se aplica a todas sus cuentas; ningún importe cambia.</p>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+            <button type="button" className="btn" onClick={() => setRenaming(false)}>Cancelar</button>
+            <button type="submit" className="btn primary">Guardar nombre</button>
+          </div>
+        </form>
+      ) : null}
     </article>
   )
 }
@@ -309,7 +360,7 @@ function fmtSmsTime(sentAt: string): string {
    por persona (borde interior izquierdo de 3px), «Debe X de Y», marca
    de antigüedad que envejece con el plazo propio; tocar abre su
    cronología, deslizar → prepara el pago, deslizar ← detalles. */
-function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onReceipt }: {
+function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onReceipt, onEditAccount, onToggleMorosa, onDeleteAccount }: {
   rec: Receivable
   saldo: number
   payments: ReturnType<typeof effectivePayments>
@@ -317,9 +368,19 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
   isAdmin: boolean
   onPay: (rec: Receivable, saldo: number) => void
   onReceipt: (r: ReceiptPreview) => void
+  onEditAccount: (rec: Receivable, patch: { client: string; originalAmount: number; date: string; category: Category; detail: string }) => void
+  onToggleMorosa: (rec: Receivable) => void
+  onDeleteAccount: (rec: Receivable) => void
 }) {
   const [open, setOpen] = useState(false)
   const [dx, setDx] = useState(0)
+  const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editClient, setEditClient] = useState('')
+  const [editAmount, setEditAmount] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editCategory, setEditCategory] = useState<Category>('cliente')
+  const [editDetail, setEditDetail] = useState('')
   const startX = useRef<number | null>(null)
   const swiped = useRef(false)
   const ref = todayISO()
@@ -327,7 +388,8 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
   const esCasa = rec.category === 'administrativo' || personaOf(rec.clientKey) !== 'general' || personaOf(rec.client) !== 'general'
   const esTrabajador = rec.category === 'trabajador'
   const vig = vigenciaCuenta(rec.date, ref, esTrabajador ? 15 : 7)
-  const morosa = !paid && !esCasa && vig.vencida
+  const marcadaMorosa = Boolean(rec.isMorosa) && !paid && !esCasa
+  const morosa = !paid && !esCasa && (vig.vencida || marcadaMorosa)
   const marca = paid ? PAID_MARK : esCasa ? HOUSE_MARK : vig
   const colorCuenta = paid ? PAID_MARK.color : morosa ? 'var(--danger)' : marca.color
   const bordeTarjeta = paid ? PAID_MARK.colorBorde : morosa ? 'var(--danger)' : marca.colorBorde
@@ -336,10 +398,12 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
   const abonado = payments.reduce((s, p) => s + Math.max(0, p.amount), 0)
   const lastPay = payments.length ? payments[payments.length - 1]! : null
   const paidDate = rec.paidDate ?? lastPay?.paidDate ?? null
-  const chipText = paid ? PAID_MARK.etiqueta : esCasa ? HOUSE_MARK.etiqueta : morosa ? 'Morosa · plazo vencido' : `${esTrabajador ? 'Trabajador · ' : ''}${vig.etiqueta}`
+  const chipText = paid ? PAID_MARK.etiqueta : esCasa ? HOUSE_MARK.etiqueta : morosa ? (vig.vencida ? 'Morosa · plazo vencido' : 'Morosa · en el Archivo') : `${esTrabajador ? 'Trabajador · ' : ''}${vig.etiqueta}`
   const markDetalle = paid
     ? `pagó el ${paidDate ? fmtDate(paidDate) : '—'}${lastPay ? ` · por ${lastPay.paymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo'}` : ''}`
-    : esCasa ? HOUSE_MARK.detalle : vig.detalle
+    : esCasa ? HOUSE_MARK.detalle : marcadaMorosa && !vig.vencida
+      ? `en el Archivo de morosas${rec.morosaSince ? ` desde el ${fmtDate(rec.morosaSince)}` : ''} (marca manual)`
+      : vig.detalle
   const catChip = esTrabajador
     ? { text: 'Trabajador', style: { color: WORKER_MARK.color, background: WORKER_MARK.colorSuave } as CSSProperties }
     : rec.category === 'administrativo'
@@ -413,9 +477,66 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
           <p className="acc-sms-none"><Icon name="message" size={13} /> Sin SMS registrado</p>
         )
       ) : null}
-      {isAdmin && !paid ? (
+      {isAdmin ? (
         <div className="acc-actions">
-          <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button>
+          {!paid ? <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button> : null}
+          <ActionMenu label={`Acciones de la cuenta de ${rec.client}`}>
+            {!paid ? (
+              <button type="button" onClick={() => onPay(rec, saldo)}>
+                <Icon name="receipt" size={14} /> Registrar pago
+              </button>
+            ) : null}
+            <button type="button" onClick={() => { setEditClient(rec.client); setEditAmount(String(Math.max(0, rec.originalAmount || rec.amount))); setEditDate(rec.date); setEditCategory(rec.category); setEditDetail(rec.detail ?? ''); setEditing(true); setConfirmDelete(false) }}>
+              <Icon name="edit" size={14} /> Editar cuenta
+            </button>
+            {!paid && !esCasa ? (
+              <button type="button" onClick={() => onToggleMorosa(rec)}>
+                {rec.isMorosa ? 'Volver a Cobrar' : 'Mover a morosas'}
+              </button>
+            ) : null}
+            <button type="button" className="danger" onClick={() => { setConfirmDelete(true); setEditing(false) }}>
+              <Icon name="trash" size={14} /> Eliminar cuenta
+            </button>
+          </ActionMenu>
+        </div>
+      ) : null}
+      {editing ? (
+        <form
+          className="acc-edit-form"
+          aria-label={`Editar la cuenta de ${rec.client}`}
+          onSubmit={(e) => {
+            e.preventDefault()
+            const amount = Number(editAmount)
+            if (!editClient.trim() || !Number.isFinite(amount) || amount < 0 || !editDate) return
+            onEditAccount(rec, { client: editClient.trim(), originalAmount: amount, date: editDate, category: editCategory, detail: editDetail.trim() })
+            setEditing(false)
+          }}
+        >
+          <div className="field"><label htmlFor={`acc-edit-client-${rec.id}`}>Nombre</label>
+            <input id={`acc-edit-client-${rec.id}`} value={editClient} onChange={(e) => setEditClient(e.target.value)} required maxLength={160} /></div>
+          <div className="field"><label htmlFor={`acc-edit-amount-${rec.id}`}>Importe original (CUP)</label>
+            <input id={`acc-edit-amount-${rec.id}`} type="number" min="0" step="any" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} required /></div>
+          <div className="field"><label htmlFor={`acc-edit-date-${rec.id}`}>Fecha de la cuenta</label>
+            <input id={`acc-edit-date-${rec.id}`} type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} required /></div>
+          <div className="field"><label htmlFor={`acc-edit-cat-${rec.id}`}>Categoría</label>
+            <select id={`acc-edit-cat-${rec.id}`} value={editCategory} onChange={(e) => setEditCategory(e.target.value as Category)}>
+              <option value="cliente">Cliente</option><option value="trabajador">Trabajador</option><option value="administrativo">Administrativo</option>
+            </select></div>
+          <div className="field"><label htmlFor={`acc-edit-detail-${rec.id}`}>Detalle</label>
+            <input id={`acc-edit-detail-${rec.id}`} value={editDetail} onChange={(e) => setEditDetail(e.target.value)} maxLength={300} /></div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 10 }}>
+            <button type="button" className="btn" onClick={() => setEditing(false)}>Cancelar</button>
+            <button type="submit" className="btn primary">Guardar cambios</button>
+          </div>
+        </form>
+      ) : null}
+      {confirmDelete ? (
+        <div className="inventory-confirm is-danger" role="alertdialog" aria-label={`Eliminar la cuenta de ${rec.client}`}>
+          <p><strong>¿Eliminar la cuenta de {rec.client} del {fmtDate(rec.date)}?</strong> Se quitará por completo de Cobrar.</p>
+          <div className="inventory-confirm-actions">
+            <button type="button" className="btn" onClick={() => setConfirmDelete(false)}>Cancelar</button>
+            <button type="button" className="btn btn-danger-solid" onClick={() => { setConfirmDelete(false); onDeleteAccount(rec) }}>Sí, eliminar</button>
+          </div>
         </div>
       ) : null}
       {open ? (
@@ -509,6 +630,146 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
   }, [contacts, contactQuery, contactCat])
   const openContact = (c: ContactInfo) => { setQuery(c.name); setFilter('pendientes'); setView('cuentas') }
 
+  // --- Acciones de contacto (D-10): renombrar y foto, como en el
+  //  original. La ficha personal (teléfono/correo/CI/dirección/notas)
+  //  no viaja en el respaldo, así que no hay campos que editar aquí;
+  //  eliminar el contacto no se ofrece: en esta copia el contacto se
+  //  DERIVA de las cuentas (en el original, al borrarlo, el sistema
+  //  reconstruye su ficha básica desde ellas: esa es aquí su forma
+  //  permanente). ---
+  const { items: clientPhotoItems } = useMediaIndex('foto-cliente')
+  const contactHasPhoto = (c: ContactInfo) => Boolean(pickClientPhoto(clientPhotoItems, c.name))
+  const renameContact = (c: ContactInfo, newName: string) => {
+    const key = clientKeyOf(newName)
+    const next = data.receivables.map((r) => (r.clientKey === c.clientKey ? { ...r, client: newName, clientKey: key } : r))
+    void persistReceivables(next, [], `Contacto «${c.name}» ahora es «${newName}»: sus cuentas quedan bajo el nombre nuevo, sin tocar un importe.`)
+  }
+  const contactPhotoFile = async (c: ContactInfo, file: File) => {
+    setError(null)
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result))
+        reader.onerror = () => reject(new Error('No se pudo leer esa foto.'))
+        reader.readAsDataURL(file)
+      })
+      const dataBase64 = dataUrl.split(',')[1] ?? ''
+      if (!dataBase64) throw new Error('No se pudo leer esa foto. Prueba con JPG, PNG o WebP.')
+      await saveMedia({ kind: 'foto-cliente', entityKey: slug(c.name), label: `Foto de ${c.name}`, mime: file.type || 'image/jpeg', dataBase64 })
+      setMessage(`Foto de «${c.name}» guardada. Volverá a salir cuando esta persona tenga otra cuenta.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar la foto.')
+    }
+  }
+  const removeContactPhoto = async (c: ContactInfo) => {
+    const item = pickClientPhoto(clientPhotoItems, c.name)
+    if (!item) return
+    setError(null)
+    try {
+      await deleteMedia('foto-cliente', item.entity_key, item.variant)
+      setMessage(`Foto de «${c.name}» quitada: se muestra el avatar por defecto.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo quitar la foto.')
+    }
+  }
+
+  // --- Fusión de tarjetas duplicadas (original, ClientesPanel): las
+  //  cuentas de cada persona duplicada pasan a su tarjeta canónica
+  //  (en trabajadores manda la enlazada a RH) SIN tocar un importe, y
+  //  se verifica todo antes de guardar: si los totales no cuadran,
+  //  no se aplica nada. «Nelson gordo» es otra persona: los pares
+  //  distintos de fábrica nunca se fusionan. ---
+  interface MergeGroupReport { canonicalName: string; mergedFrom: string[]; accountsBefore: number; accountsAfter: number; pendingBefore: number; pendingAfter: number; matches: boolean }
+  const [mergeReport, setMergeReport] = useState<{ message: string; groups: MergeGroupReport[]; totals: { accounts: number; pending: number; paid: number; calle: number } } | null>(null)
+  const [merging, setMerging] = useState(false)
+  const totalsOf = (recs: Receivable[]) => {
+    let pending = 0
+    let paid = 0
+    let calle = 0
+    for (const r of recs) {
+      const saldo = effectiveSaldo(r, data.localPayments)
+      paid += effectivePayments(r, data.localPayments).reduce((s, p) => s + Math.max(0, p.amount), 0)
+      if (r.status !== 'pagada' && !r.closeKind && saldo > 0) {
+        pending += saldo
+        if (r.category === 'cliente') calle += saldo
+      }
+    }
+    return { accounts: recs.length, pending, paid, calle }
+  }
+  const runMergeDuplicates = async () => {
+    setMerging(true)
+    setError(null)
+    try {
+      const byCanonical = new Map<string, Receivable[]>()
+      for (const r of data.receivables) {
+        const key = canonicalPersonKey(null, r.client)
+        const arr = byCanonical.get(key) ?? []
+        arr.push(r)
+        byCanonical.set(key, arr)
+      }
+      const before = totalsOf(data.receivables)
+      const next = [...data.receivables]
+      const groups: MergeGroupReport[] = []
+      const skipped: string[] = []
+      for (const recs of byCanonical.values()) {
+        const keys = [...new Set(recs.map((r) => r.clientKey))]
+        if (keys.length < 2) continue
+        let distinctPair = false
+        for (let i = 0; i < keys.length && !distinctPair; i++) for (let j = i + 1; j < keys.length; j++) if (isBuiltinDistinctPair(keys[i]!, keys[j]!)) distinctPair = true
+        if (distinctPair) { skipped.push(recs[0]!.client); continue }
+        // Canónica: la identidad oficial de RH si alguna tarjeta es de
+        // un trabajador; si no, la tarjeta con más cuentas.
+        let canonicalKey = keys[0]!
+        let canonicalName = recs.find((r) => r.clientKey === canonicalKey)?.client ?? ''
+        for (const r of recs) {
+          const official = workerOfficialIdentity(r.client, data.workers)
+          if (official) { canonicalKey = official.key; canonicalName = official.display; break }
+        }
+        if (!workerOfficialIdentity(canonicalName, data.workers)) {
+          const counts = new Map<string, number>()
+          for (const r of recs) counts.set(r.clientKey, (counts.get(r.clientKey) ?? 0) + 1)
+          canonicalKey = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]![0]
+          canonicalName = recs.find((r) => r.clientKey === canonicalKey)?.client ?? canonicalName
+        }
+        const groupPendingBefore = recs.reduce((s, r) => s + Math.max(0, effectiveSaldo(r, data.localPayments)), 0)
+        const mergedFrom = [...new Set(recs.filter((r) => r.clientKey !== canonicalKey).map((r) => r.client))]
+        for (let i = 0; i < next.length; i++) {
+          if (recs.includes(next[i]!)) next[i] = { ...next[i]!, client: canonicalName, clientKey: canonicalKey }
+        }
+        const afterRecs = next.filter((r) => r.clientKey === canonicalKey && recs.some((o) => o.id === r.id))
+        const groupPendingAfter = afterRecs.reduce((s, r) => s + Math.max(0, effectiveSaldo(r, data.localPayments)), 0)
+        groups.push({
+          canonicalName,
+          mergedFrom,
+          accountsBefore: recs.length,
+          accountsAfter: afterRecs.length,
+          pendingBefore: groupPendingBefore,
+          pendingAfter: groupPendingAfter,
+          matches: groupPendingBefore === groupPendingAfter && recs.length === afterRecs.length,
+        })
+      }
+      if (!groups.length) {
+        setMergeReport({ message: skipped.length ? `No hay tarjetas duplicadas que fusionar. Se respetaron como personas distintas: ${skipped.join(', ')}.` : 'No hay tarjetas duplicadas que fusionar: cada persona tiene una sola tarjeta.', groups: [], totals: before })
+        return
+      }
+      const after = totalsOf(next)
+      const cuadra = groups.every((g) => g.matches) && after.accounts === before.accounts && after.pending === before.pending && after.paid === before.paid && after.calle === before.calle
+      if (!cuadra) {
+        setError('La verificación de la fusión NO cuadró: no se aplicó ningún cambio.')
+        return
+      }
+      if (SB_MODE) await sbSaveReceivables(next, [])
+      else saveReceivables(next)
+      setMergeReport({ message: `Fusión aplicada y verificada: ${groups.length} persona${groups.length === 1 ? '' : 's'} con tarjetas duplicadas quedaron en una sola tarjeta, sin tocar un importe.`, groups, totals: after })
+      setMessage('Tarjetas duplicadas fusionadas y verificadas: los totales cuadran.')
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo ejecutar la fusión de tarjetas.')
+    } finally {
+      setMerging(false)
+    }
+  }
+
   const pendingOf = (cat?: Category) =>
     data.receivables
       .map((r) => ({ rec: r, saldo: effectiveSaldo(r, data.localPayments) }))
@@ -587,11 +848,19 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
               </span>
               <span className="account-group-detalle">{chipDetalle}</span>
             </p>
+            {(() => {
+              const contacto = contacts.find((c) => c.clientKey === g.clientKey)
+              return contacto?.rhLinked ? (
+                <p className="account-group-rh">
+                  <strong>RH enlazado</strong>{contacto.occupation ? ` · ${contacto.occupation}` : ''}{contacto.phone ? ` · ${contacto.phone}` : ''}
+                </p>
+              ) : null
+            })()}
           </div>
         </div>
         <div className="account-list">
           {g.items.map(({ rec, saldo }) => (
-            <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
+            <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} onEditAccount={editAccount} onToggleMorosa={toggleMorosa} onDeleteAccount={deleteAccount} />
           ))}
         </div>
       </section>
@@ -634,6 +903,41 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
   const person = persons.find((p) => p.clientKey === personKey)
   const value = Number(amount)
   const overpays = person !== undefined && Number.isFinite(value) && value > person.total
+
+  // Acciones de la tarjeta (ActionMenu del original): editar, mover a
+  //  morosas / volver, eliminar — persisten la lista completa de
+  //  cuentas (local: saveReceivables; Supabase: sbSaveReceivables con
+  //  la cola offline; los borrados van declarados, nunca inferidos).
+  const persistReceivables = async (next: Receivable[], deletedIds: string[], okMsg: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      if (SB_MODE) await sbSaveReceivables(next, deletedIds)
+      else saveReceivables(next)
+      setMessage(okMsg)
+      onChanged()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'No se pudo guardar el cambio en la cuenta.')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const editAccount = (rec: Receivable, patch: { client: string; originalAmount: number; date: string; category: Category; detail: string }) => {
+    const next = data.receivables.map((r) => (r.id === rec.id
+      ? { ...r, client: patch.client, clientKey: clientKeyOf(patch.client), originalAmount: patch.originalAmount, amount: patch.originalAmount, date: patch.date, category: patch.category, detail: patch.detail }
+      : r))
+    void persistReceivables(next, [], `Cuenta de «${patch.client}» actualizada.`)
+  }
+  const toggleMorosa = (rec: Receivable) => {
+    const toMorosa = !rec.isMorosa
+    const next = data.receivables.map((r) => (r.id === rec.id ? { ...r, isMorosa: toMorosa, morosaSince: toMorosa ? ref : null } : r))
+    void persistReceivables(next, [], toMorosa
+      ? `«${rec.client}» movida al Archivo de morosas: sigue debiendo, no se pagó ni se olvidó.`
+      : `«${rec.client}» volvió a Cobrar.`)
+  }
+  const deleteAccount = (rec: Receivable) => {
+    void persistReceivables(data.receivables.filter((r) => r.id !== rec.id), [rec.id], `Cuenta de «${rec.client}» eliminada.`)
+  }
 
   const preparePay = (rec: Receivable, saldo: number) => {
     setPersonKey(rec.clientKey)
@@ -743,7 +1047,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           ) : filter === 'pagadas' ? (
             <div className="account-list">
               {accountRows.map(({ rec, saldo }) => (
-                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} />
+                <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} onEditAccount={editAccount} onToggleMorosa={toggleMorosa} onDeleteAccount={deleteAccount} />
               ))}
             </div>
           ) : (
@@ -877,6 +1181,34 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
               <button key={id} type="button" aria-pressed={contactCat === id} className={`view-chip${contactCat === id ? ' active' : ''}`} onClick={() => setContactCat(id)}>{label}</button>
             ))}
           </div>
+          {isAdmin ? (
+            <Card className="merge-card">
+              <p style={{ fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 6px' }}><Icon name="people" size={17} /> Tarjetas duplicadas</p>
+              <p className="small muted" style={{ margin: 0 }}>
+                Si una persona quedó con dos tarjetas (nombre corto y nombre completo de RH), se fusionan en una sola:
+                en trabajadores manda la tarjeta enlazada a RH, todas las cuentas pasan a ella sin tocar ningún importe
+                y al terminar se verifica todo — totales antes y después y el dinero en la calle. Si la verificación no
+                cuadra, no se aplica nada. <strong>«Nelson gordo» es otra persona</strong> y nunca se fusiona con Nelson/Nelsito.
+              </p>
+              <button type="button" className="btn primary" style={{ marginTop: 10 }} disabled={merging} onClick={() => void runMergeDuplicates()}>
+                {merging ? 'Fusionando y verificando…' : 'Fusionar duplicadas y verificar montos'}
+              </button>
+              {mergeReport ? (
+                <div role="status" aria-label="Resultado de la fusión y su verificación" style={{ marginTop: 10 }}>
+                  <p className="small" style={{ margin: 0 }}>{mergeReport.message}</p>
+                  {mergeReport.groups.map((g) => (
+                    <p key={g.canonicalName} className="small muted" style={{ margin: '6px 0 0' }}>
+                      <strong>{g.canonicalName}</strong> ← {g.mergedFrom.join(' + ')} · Cuentas {g.accountsBefore} → {g.accountsAfter} · Pendiente {fmtCUP(g.pendingBefore)} → {fmtCUP(g.pendingAfter)} ·{' '}
+                      <strong style={{ color: g.matches ? 'var(--paid)' : 'var(--danger)' }}>{g.matches ? 'Cuadra ✓' : 'NO cuadra'}</strong>
+                    </p>
+                  ))}
+                  <p className="small muted" style={{ margin: '6px 0 0' }}>
+                    Totales tras la fusión: {fmtInt(mergeReport.totals.accounts)} cuentas · pendiente {fmtCUP(mergeReport.totals.pending)} · abonado {fmtCUP(mergeReport.totals.paid)} · dinero en la calle {fmtCUP(mergeReport.totals.calle)}.
+                  </p>
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
           {contacts.length === 0 ? (
             <Card><EmptyState icon="people" title="Aún no hay clientes" text="Los nombres se guardan automáticamente al aparecer en Cuentas del IPV o al crear una cuenta manual." /></Card>
           ) : visibleContacts.length === 0 ? (
@@ -884,7 +1216,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           ) : (
             <div className="contact-grid">
               {visibleContacts.map((c) => (
-                <ContactCard key={c.clientKey} c={c} onOpen={openContact} />
+                <ContactCard key={c.clientKey} c={c} onOpen={openContact} isAdmin={isAdmin} hasPhoto={contactHasPhoto(c)} onRename={renameContact} onPhotoFile={(cc, f) => void contactPhotoFile(cc, f)} onRemovePhoto={(cc) => void removeContactPhoto(cc)} />
               ))}
             </div>
           )}
@@ -892,8 +1224,8 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
             La tarjeta muestra solo el total que debe hoy; si saldó todo, no aparece ningún monto. En esta copia, la ficha
             personal del sistema original (teléfono, correo, CI, dirección y notas de los clientes) no viaja en el respaldo:
             el teléfono solo aparece cuando el contacto está enlazado con un trabajador de RH, y el correo se muestra con
-            el texto de ausencia del propio original. Editar la ficha, cambiar su foto, fusionar duplicadas y eliminar el
-            contacto son acciones del servidor del original y no están en esta copia.
+            el texto de ausencia del propio original. El contacto se deriva de las cuentas: por eso no se elimina aquí —
+            en el original, al eliminarlo, el sistema reconstruye su ficha básica desde las cuentas que queden.
           </p>
         </>
       ) : null}

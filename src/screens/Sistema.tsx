@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Section, Session, StoredData } from '../types'
-import { Card } from '../components/ui'
+import { Card, TabHeader, TAB_BADGES } from '../components/ui'
 import '../components/systemMirror.css'
 import ImportBackup from '../components/ImportBackup'
 import ImportIpv from '../components/ImportIpv'
@@ -19,7 +19,7 @@ import {
 import { DiagnosticRadar, LiveClock, Sparkline, SystemRealtimeCharts, type RadarArea, type SysActivity, type SysHealthPoint } from '../components/systemCharts'
 import { listProfiles, resetLocalData, supabaseConfigured } from '../lib/backend'
 import { loadReadings, recordReading, seedHistoricalReadings, type SysReading } from '../lib/sysReadings'
-import { effectiveSaldo, fmtCUP, fmtDate, fmtInt, isMorosa, todayISO } from '../lib/utils'
+import { effectiveSaldo, fmtCUP, fmtDate, fmtInt, havanaNow, havanaNowParts, isMorosa, todayISO } from '../lib/utils'
 import { buildAutomationsStatus } from '../lib/automatizacionesCore.mjs'
 
 /* Consola de Sistema del original: 16 tarjetas reordenables (SISTEMA_CARDS).
@@ -29,8 +29,10 @@ import { buildAutomationsStatus } from '../lib/automatizacionesCore.mjs'
    keyframes y estructura) siempre que la arquitectura del clon lo
    permite; lo imposible por arquitectura queda documentado allí y en
    el informe del área.
-   SIN TabHeader en Sistema (el original abre directo con SistemaTab,
-   comentario de App.tsx del original) y SIN tarjeta de reloj fija: el
+   CON TabHeader en Sistema (badge sparkle y chip «Núcleo de Queen»,
+   como renderiza el original; la omisión anterior nació de una
+   lectura equivocada y el render lado a lado del 26-oct la corrigió)
+   y SIN tarjeta de reloj fija: el
    reloj en vivo vive SOLO dentro de «Monitor del sistema», como el
    LiveClockCard dentro del monitor del original.
    La barra de controles (buscar, organizar, modo ultraligero) queda
@@ -336,7 +338,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
   }
 
   const ringColor = model.healthPct >= 85 ? 'var(--accent)' : model.healthPct >= 70 ? '#c9a227' : model.healthPct >= 50 ? '#e07b24' : 'var(--danger)'
-  const checkedTime = new Intl.DateTimeFormat('es-CU', { hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(checkedAt))
+  const checkedTime = new Intl.DateTimeFormat('es-CU', { timeZone: 'America/Havana', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(checkedAt))
   const pesoReadings = readings.flatMap((r) => (r.pesoKb == null ? [] : [r.pesoKb]))
   const visibleOrder = order.filter((id) => id !== 'atencion' || model.attention.length > 0)
     .filter((id) => !query.trim() || CARD_LABEL[id].toLowerCase().includes(query.trim().toLowerCase()))
@@ -445,7 +447,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
               online={online}
               failedDocuments={model.failedBulletins}
               technicalErrors={model.integrity.length + model.descuadrados.length}
-              ipvMissingAfterClose={new Date().getHours() >= 23 && model.days.length > 0 && model.days[model.days.length - 1]?.date !== ref}
+              ipvMissingAfterClose={havanaNow().hour >= 23 && model.days.length > 0 && model.days[model.days.length - 1]?.date !== ref}
             />
           </Card>
         )
@@ -551,8 +553,8 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
           </Card>
         )
       case 'rutinas': {
-        const nowDate = new Date()
-        const nowTime = `${String(nowDate.getHours()).padStart(2, '0')}:${String(nowDate.getMinutes()).padStart(2, '0')}`
+        const hv = havanaNowParts(new Date())
+        const nowTime = `${String(hv.hour).padStart(2, '0')}:${String(hv.minute).padStart(2, '0')}`
         const autoStatus = buildAutomationsStatus(data, data.automationRuns, data.queenLearning, { date: todayISO(), time: nowTime })
         const rutinas: Array<{ name: string; state: string; detail: string; value?: number; tone?: SysActivity['state'] }> = [
           { name: 'Importación de respaldo', state: data.importedAt ? 'Completada' : 'Pendiente', detail: data.importedAt ? `Última: ${fmtDate(data.importedAt.slice(0, 10))}` : 'Sin ejecuciones en esta copia', value: data.importedAt ? 100 : 0, tone: 'ok' },
@@ -654,7 +656,10 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
                 ) : <p className="system-notification-empty">No hay avisos activos. Cuando Queen detecte algo concreto, aparecerá aquí y también en su chat.</p>}
                 <p className="system-notification-hint">En lenguaje llano: cada aviso de arriba es un problema real que sigue vivo ahora mismo (nada de insignias viejas: cuando el problema se resuelve, el aviso se retira solo en la siguiente comprobación).</p>
               </section>
-              <details className="system-day-history" open={data.automationRuns.length === 0}>
+              {/* Estado por defecto como el original: abierto solo si
+                  hoy no hubo actividad Y existe historial de días
+                  anteriores (antes se abría siempre sin ejecuciones). */}
+              <details className="system-day-history" open={data.automationRuns.filter((r) => r.at.slice(0, 10) === ref).length === 0 && data.automationRuns.some((r) => r.at.slice(0, 10) !== ref)}>
                 <summary><span>Historial de hoy</span><b>{fmtInt(data.automationRuns.filter((r) => r.at.slice(0, 10) === ref).length)}</b></summary>
                 {data.automationRuns.filter((r) => r.at.slice(0, 10) === ref).length ? (
                   <ol>
@@ -706,7 +711,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
           { id: 'rh', label: 'RH y nómina', shortLabel: 'RH · Nómina', icon: 'people', tab: 'rh', x: 91, y: 50, receives: 'Plantilla, asistencia, salarios del ciclo y estados de pago.', sends: 'Nómina hacia Economía y vínculos de trabajadores hacia Cobrar.', purpose: 'Une personas, jornadas y pago quincenal sin repetir sus fichas fuera de RH.', hasData: model.hasRh, metric: model.hasRh ? 'RH enlazado al último IPV' : 'Sin RH importado todavía' },
           { id: 'cobrar', label: 'Cobrar', shortLabel: 'Cobrar', icon: 'wallet', tab: 'cobrar', x: 79, y: 80, receives: 'Cuentas del IPV, altas manuales y abonos registrados.', sends: 'Pendiente y cobrado hacia Economía, boletines e informes.', purpose: 'Sigue cada saldo desde su origen y conserva la trazabilidad de los abonos.', hasData: data.receivables.length > 0, metric: data.receivables.length ? `${fmtInt(data.receivables.length)} cuenta(s) enlazada(s)` : 'Sin cuentas por enlazar' },
           { id: 'archivo', label: 'Informes y archivo', shortLabel: 'Informes', icon: 'archive', tab: 'historial', x: 50, y: 91, receives: 'Resultados integrados y documentos generados por cada módulo.', sends: 'Informes, boletines, archivos listos y respaldo verificable.', purpose: 'Es la salida documental del sistema; resume sin sustituir las fuentes.', hasData: data.bulletins.length > 0, metric: data.bulletins.length ? `${fmtInt(data.bulletins.length)} boletín(es) en Historial` : 'Disponible al importar datos' },
-          { id: 'extras', label: 'Otros ingresos', shortLabel: 'Ingresos', icon: 'money', tab: 'economia', x: 21, y: 80, receives: 'Coctelería, pizzería, entradas y mesas.', sends: 'Totales por categoría hacia Economía y el IPV de vuelta.', purpose: 'Incorpora ingresos externos al flujo principal sin mezclarlos con ventas del IPV.', hasData: model.days.some((d) => (d.extras?.length ?? 0) > 0 || d.billar != null), metric: model.days.length ? 'Extras/billar leídos de los IPV (viven en Economía en el clon)' : 'Disponible al importar datos' },
+          { id: 'extras', label: 'Otros ingresos', shortLabel: 'Ingresos', icon: 'money', tab: 'extras', x: 21, y: 80, receives: 'Coctelería, pizzería, entradas y mesas.', sends: 'Totales por categoría hacia Economía y el IPV de vuelta.', purpose: 'Incorpora ingresos externos al flujo principal sin mezclarlos con ventas del IPV.', hasData: model.days.some((d) => (d.extras?.length ?? 0) > 0 || d.billar != null), metric: model.days.length ? 'Extras/billar leídos de los IPV y registrados en Otros ingresos' : 'Disponible al importar datos' },
           { id: 'elaboracion', label: 'Elaboración', shortLabel: 'Elaboración', icon: 'star', tab: 'elaboracion', x: 9, y: 50, receives: 'Fichas de costo, precios vigentes de almacén y mermas con motivo.', sends: 'Costo, margen, pérdida y precio sugerido hacia Economía y Menú.', purpose: 'Relaciona receta, costo real y venta para advertir pérdidas antes de decidir.', hasData: data.packageReferences.length > 0 || model.productsCount > 0, metric: model.productsCount ? `${fmtInt(model.productsCount)} productos en los IPV` : 'Disponible al importar datos' },
         ]
         return (
@@ -871,7 +876,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
             {isAdmin ? (
               <>
                 <h4 className="sistema-h4">Importar IPV del día (Excel)</h4>
-                <ImportIpv onImported={onChanged} existingDays={data.days} bare />
+                <ImportIpv onImported={onChanged} existingDays={data.days} data={data} bare />
                 <h4 className="sistema-h4">Importar respaldo del SDA</h4>
                 <ImportBackup onImported={onChanged} bare />
               </>
@@ -920,9 +925,18 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
 
   return (
     <div>
-      {/* Sin TabHeader: el original abre Sistema directo con su consola
-          (la pestaña no lleva encabezado de pestaña) y sin tarjeta de
-          reloj fija — el reloj vive solo dentro de Monitor. */}
+      {/* TabHeader como en el original renderizado (badge sparkle,
+          «Sistema», desc de su lista de secciones y chip «Núcleo de
+          Queen»): una versión anterior de esta pantalla lo omitía por
+          una lectura equivocada de la fuente; el render lado a lado
+          del 26-oct lo desmintió y se restauró. Sin tarjeta de reloj
+          fija — el reloj vive solo dentro de Monitor. */}
+      <TabHeader
+        icon="sparkle"
+        title="Sistema"
+        desc="Si todo está bien y qué necesita tu atención hoy"
+        badge={TAB_BADGES.sistema}
+      />
       {/* Barra de controles: fija arriba, no se reordena. */}
       <div className="sistema-controls">
         <div className="field" style={{ margin: 0, flex: '1 1 180px' }}>

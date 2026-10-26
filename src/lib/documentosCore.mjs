@@ -903,6 +903,218 @@ export function informeHtml(rep) {
   })
 }
 
+/* Informe de un PERÍODO arbitrario (Inicio: botones «PDF del período»
+   y «Presentación PowerPoint» del original). Las cifras se agregan del
+   rango [from, to] con LAS MISMAS primitivas de monthEconomy (ventas/
+   bruta/neta de los días, gastos del rango, extras del IPV + registrados,
+   barra/cocina por los mismos departamentos, billar, inversión =
+   entriesImporte, merma = mermasCosto, cobrado = pagos con fecha en el
+   rango, fondos del último día del rango, resultado = neta − gastos +
+   extras). La foto de cuentas por cobrar es la de HOY, igual que en el
+   informe del mes, y se toma de monthEconomy para que sea idéntica por
+   construcción. La batería verify:reglas comprueba que, para el rango
+   de un mes completo, este constructor da las mismas cifras que
+   buildInformeData. */
+const PERIODO_BARRA_DEPTS = ['Bebidas alcohólicas', 'Bebidas no alcohólicas', 'Cantina']
+const PERIODO_COCINA_DEPTS = ['Elaboración', 'Pizzas']
+
+export function buildPeriodInformeData(data, from, to, label, today) {
+  const inRange = (date) => typeof date === 'string' && date >= from && date <= to
+  const days = (data?.days ?? []).filter((d) => inRange(d.date))
+  const expenses = (data?.expenses ?? []).filter((e) => inRange(e.date))
+  const sumDays = (f) => days.reduce((s, d) => s + num(f(d)), 0)
+  const ventas = sumDays((d) => d.ventasDia)
+  const bruta = sumDays((d) => d.gananciaBruta)
+  const neta = sumDays((d) => d.gananciaNeta)
+  const gastos = expenses.reduce((s, e) => s + num(e.total), 0)
+  const extrasList = days.flatMap((d) => (d.extras ?? []).map((x) => ({ date: d.date, concepto: x.concepto, importe: num(x.importe) })))
+  for (const x of data?.extraIncomes ?? []) if (inRange(x.date)) extrasList.push({ date: x.date, concepto: x.concept, importe: num(x.amount) })
+  const ingresosExtras = extrasList.reduce((s, x) => s + x.importe, 0)
+  const billarDays = days.filter((d) => d.billar)
+  const billarVenta = billarDays.reduce((s, d) => s + num(d.billar.venta), 0)
+  const billarUtilidad = billarDays.reduce((s, d) => s + num(d.billar.utilidad), 0)
+  let barra = 0
+  let cocina = 0
+  for (const d of days) {
+    for (const dep of d.departments ?? []) {
+      const v = num(dep.ventas)
+      if (PERIODO_BARRA_DEPTS.includes(dep.name)) barra += v
+      if (PERIODO_COCINA_DEPTS.includes(dep.name)) cocina += v
+    }
+  }
+  const inversion = sumDays((d) => d.entriesImporte)
+  const merma = sumDays((d) => d.mermasCosto)
+  let totalCobrado = 0
+  for (const r of data?.receivables ?? []) {
+    for (const p of r.payments ?? []) if (inRange(p.paidDate)) totalCobrado += num(p.amount)
+  }
+  for (const p of data?.localPayments ?? []) if (inRange(p.date)) totalCobrado += num(p.amount)
+  const lastDay = days.length ? days[days.length - 1] : null
+  const cuadreTotal = sumDays((d) => d.cuadre)
+  const resultado = neta - gastos + ingresosExtras
+  /* Quincenas naturales tocadas por el rango (1–15 y 16–fin de cada
+     mes), con las cifras de los días del rango en cada mitad. */
+  const quincenas = []
+  const halves = new Map()
+  for (const d of days) {
+    const mk = monthKeyOf(d.date)
+    const half = Number(d.date.slice(8, 10)) <= 15 ? 0 : 1
+    const key = `${mk}|${half}`
+    const cur = halves.get(key) ?? { from: half === 0 ? `${mk}-01` : `${mk}-16`, to: d.date, days: 0, ventas: 0, bruta: 0, neta: 0, gastos: 0 }
+    cur.days += 1; cur.ventas += num(d.ventasDia); cur.bruta += num(d.gananciaBruta); cur.neta += num(d.gananciaNeta)
+    if (d.date > cur.to) cur.to = d.date
+    halves.set(key, cur)
+  }
+  for (const e of expenses) {
+    const mk = monthKeyOf(e.date)
+    const half = Number(e.date.slice(8, 10)) <= 15 ? 0 : 1
+    const cur = halves.get(`${mk}|${half}`)
+    if (cur) cur.gastos += num(e.total)
+  }
+  for (const key of [...halves.keys()].sort()) quincenas.push(halves.get(key))
+  const snapshot = monthEconomy(data, monthKeyOf(today), today)
+  return {
+    kind: 'informe',
+    title: 'Informe de Economía',
+    monthKey: monthKeyOf(from),
+    monthLabel: label,
+    generatedAt: today,
+    eco: {
+      monthKey: monthKeyOf(from), daysCount: days.length,
+      firstDay: days.length ? days[0].date : null, lastDay: lastDay ? lastDay.date : null,
+      ventas, bruta, neta, gastos, gastosCount: expenses.length,
+      ingresosExtras, ingresosExtrasCount: extrasList.length, extrasList,
+      billar: { venta: billarVenta, utilidad: billarUtilidad, dias: billarDays.length },
+      barra, cocina, deptSeen: days.some((d) => (d.departments ?? []).length > 0), rentabilidad: [],
+      inversion, merma, totalCobrado, cobrosCount: 0,
+      efectivoCaja: lastDay ? num(lastDay.fondos?.efectivo) : null,
+      zelleCierre: lastDay ? num(lastDay.fondos?.zelle) : null,
+      divisasCierre: lastDay ? num(lastDay.fondos?.divisasCUP) : null,
+      cuentasPorCobrar: snapshot.cuentasPorCobrar,
+      consumo: snapshot.consumo,
+      resultado, resultadoEfectivo: resultado - (snapshot.consumo?.total ?? 0),
+      reservas: snapshot.reservas,
+      quincenas, gastosPorCategoria: [], gastosPorOrigen: [], expenses,
+      cuadreTotal, zelle: lastDay ? num(lastDay.fondos?.zelle) : 0, gastosTotal: gastos, extrasTotal: ingresosExtras,
+    },
+    signatures: signatureBlockFor('informe'),
+  }
+}
+
+/* Factura de otros ingresos del mes (Extras): los del IPV (hoja
+   «Entrada y mesas») y los registrados a mano en esta copia, en un
+   solo documento con el estilo premium y la firma del administrador.
+   Es el documento que el original genera para los ingresos extras. */
+export function buildExtrasInvoiceData(data, monthKey) {
+  const rows = []
+  for (const d of data.days ?? []) {
+    if (!String(d.date ?? '').startsWith(monthKey)) continue
+    for (const x of d.extras ?? []) rows.push({ date: d.date, concept: String(x.concepto ?? ''), note: '', amount: num(x.importe), method: '', source: 'Del IPV' })
+  }
+  for (const x of data.extraIncomes ?? []) {
+    if (!String(x.date ?? '').startsWith(monthKey)) continue
+    rows.push({ date: x.date, concept: String(x.concept ?? ''), note: String(x.note ?? ''), amount: num(x.amount), method: x.paymentMethod === 'transferencia' ? 'Transferencia' : 'Efectivo', source: 'Registro manual' })
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.concept.localeCompare(b.concept, 'es'))
+  return {
+    monthKey,
+    monthLabel: monthLabelEs(monthKey),
+    rows,
+    total: rows.reduce((s, r) => s + r.amount, 0),
+    signatures: signatureBlockFor('generico'),
+  }
+}
+
+export function extrasInvoiceHtml(rep) {
+  const body = `
+  <h2 class="sec">Detalle de otros ingresos · ${esc(rep.monthLabel)}</h2>
+  <table>
+    <tr><th>Fecha</th><th>Concepto</th><th>Método</th><th>Origen</th><th class="n">Importe</th></tr>
+    ${rep.rows.map((r) => `<tr><td>${esc(fmtFechaDoc(r.date))}</td><td>${esc(r.concept)}${r.note ? ` · ${esc(r.note)}` : ''}</td><td>${esc(r.method || '—')}</td><td>${esc(r.source)}</td><td class="n">${fmtDocCUP(r.amount)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="4">Total de otros ingresos</td><td class="n">${fmtDocCUP(rep.total)}</td></tr>
+  </table>
+  <p class="note">Documento generado desde los registros reales: los ingresos de la hoja «Entrada y mesas» de los IPV importados y los registrados a mano en el sistema. Ninguna cifra se ajusta.</p>`
+  return docShell({
+    title: `Factura de otros ingresos — ${rep.monthLabel}`,
+    subtitle: `${DOC_STYLE.business} · Otros ingresos`,
+    body,
+    signatures: rep.signatures,
+  })
+}
+
+/* Factura de gastos del mes (Archivo / Economía): el detalle de
+   gastos con su total, en el estilo premium y con la firma del
+   administrador — el documento «factura-gastos-<mes>» del original. */
+export function buildGastosInvoiceData(data, monthKey) {
+  const rows = (data.expenses ?? [])
+    .filter((e) => String(e.date ?? '').startsWith(monthKey))
+    .map((e) => ({ date: e.date, concept: String(e.concept ?? ''), category: String(e.category ?? ''), dept: String(e.dept ?? ''), quantity: num(e.quantity), total: num(e.total) }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.concept.localeCompare(b.concept, 'es'))
+  return {
+    monthKey,
+    monthLabel: monthLabelEs(monthKey),
+    rows,
+    total: rows.reduce((s, r) => s + r.total, 0),
+    signatures: signatureBlockFor('generico'),
+  }
+}
+
+export function gastosInvoiceHtml(rep) {
+  const body = `
+  <h2 class="sec">Detalle de gastos · ${esc(rep.monthLabel)}</h2>
+  <table>
+    <tr><th>Fecha</th><th>Concepto</th><th>Categoría</th><th>Área</th><th class="n">Cantidad</th><th class="n">Importe</th></tr>
+    ${rep.rows.map((r) => `<tr><td>${esc(fmtFechaDoc(r.date))}</td><td>${esc(r.concept)}</td><td>${esc(r.category || '—')}</td><td>${esc(r.dept || '—')}</td><td class="n">${esc(String(r.quantity))}</td><td class="n">${fmtDocCUP(r.total)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="5">Total de gastos</td><td class="n">${fmtDocCUP(rep.total)}</td></tr>
+  </table>
+  <p class="note">Documento generado desde los gastos reales registrados en el sistema. Ninguna cifra se ajusta.</p>`
+  return docShell({
+    title: `Factura de gastos — ${rep.monthLabel}`,
+    subtitle: `${DOC_STYLE.business} · Gastos`,
+    body,
+    signatures: rep.signatures,
+  })
+}
+
+/* Factura de entradas del mes (Archivo / Entradas): la mercancía que
+   entró según los IPV, a precio de compra — el documento
+   «factura-entradas-<mes>» del original. */
+export function buildEntradasInvoiceData(data, monthKey) {
+  const rows = []
+  for (const d of data.days ?? []) {
+    if (!String(d.date ?? '').startsWith(monthKey)) continue
+    for (const e of d.entriesDetail ?? []) rows.push({
+      date: d.date, dept: String(e.dept ?? ''), descripcion: String(e.descripcion ?? ''), um: String(e.um ?? ''),
+      cantidad: num(e.cantidad), precioCompra: num(e.precioCompra), importe: num(e.importe),
+    })
+  }
+  rows.sort((a, b) => a.date.localeCompare(b.date) || a.descripcion.localeCompare(b.descripcion, 'es'))
+  return {
+    monthKey,
+    monthLabel: monthLabelEs(monthKey),
+    rows,
+    total: rows.reduce((s, r) => s + r.importe, 0),
+    signatures: signatureBlockFor('generico'),
+  }
+}
+
+export function entradasInvoiceHtml(rep) {
+  const body = `
+  <h2 class="sec">Detalle de entradas · ${esc(rep.monthLabel)}</h2>
+  <table>
+    <tr><th>Fecha</th><th>Departamento</th><th>Descripción</th><th class="n">Cantidad</th><th class="n">Precio de compra</th><th class="n">Importe</th></tr>
+    ${rep.rows.map((r) => `<tr><td>${esc(fmtFechaDoc(r.date))}</td><td>${esc(r.dept)}</td><td>${esc(r.descripcion)}${r.um ? ` · ${esc(r.um)}` : ''}</td><td class="n">${esc(String(r.cantidad))}</td><td class="n">${fmtDocCUP(r.precioCompra)}</td><td class="n">${fmtDocCUP(r.importe)}</td></tr>`).join('')}
+    <tr class="total"><td colspan="5">Total de inversión en entradas</td><td class="n">${fmtDocCUP(rep.total)}</td></tr>
+  </table>
+  <p class="note">Documento generado desde las entradas reales de los IPV importados, a precio de compra. Ninguna cifra se ajusta.</p>`
+  return docShell({
+    title: `Factura de entradas — ${rep.monthLabel}`,
+    subtitle: `${DOC_STYLE.business} · Entradas`,
+    body,
+    signatures: rep.signatures,
+  })
+}
+
 export function nominaHtml(doc) {
   const emp = doc.employees.map((e) => `<tr>
     <td>${esc(e.name)}</td><td>${esc(e.position ?? '')}</td>

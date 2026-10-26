@@ -146,7 +146,14 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Pila, interlineado y tracking EXACTOS del original tal como los
+     computa su hoja base (verificado con diff de estilos computados
+     elemento a elemento, harness 26-oct): la pila larga de sistema,
+     line-height 1.5 heredado y letter-spacing de -0.006em que se
+     computa como -0.096px a 16px y se hereda como valor fijo. */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  line-height: 1.5;
+  letter-spacing: -0.006em;
   background-color: var(--bg);
   color: var(--text);
   -webkit-font-smoothing: antialiased;
@@ -173,9 +180,18 @@ body::before {
 }
 
 h1, h2, h3, .serif, .font-display { font-family: var(--font-display); }
-button { font: inherit; cursor: pointer; }
-input, select { font: inherit; color: var(--text); }
-strong, .stat .value, table.kv td:last-child { font-variant-numeric: tabular-nums; }
+/* La hoja UA fija letter-spacing: normal en los controles de
+   formulario; el original lo compensa con su preflight
+   (letter-spacing: inherit), por eso sus botones computan el
+   -0.006em del cuerpo y los del clon computaban «normal»
+   (diff de estilos computados, 26-oct). */
+button { font: inherit; letter-spacing: inherit; cursor: pointer; }
+input, select { font: inherit; letter-spacing: inherit; color: var(--text); }
+/* El original NO pone tabular-nums en todos los <strong>: su
+   computado es «normal» en el texto común y las cifras tabulares
+   viven en las clases .tabular de cada componente (diff de estilos
+   computados, 26-oct). */
+.stat .value, table.kv td:last-child { font-variant-numeric: tabular-nums; }
 
 .app-shell { min-height: 100dvh; display: flex; flex-direction: column; }
 
@@ -213,8 +229,13 @@ strong, .stat .value, table.kv td:last-child { font-variant-numeric: tabular-num
   display: flex; align-items: center; justify-content: center;
   background: var(--turquoise-soft);
 }
-.side-brand .brand-name { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; line-height: 1.15; }
-.side-brand .brand-sub { font-size: 0.7rem; color: var(--dim); line-height: 1.3; }
+/* Corrección 2026-10-26 (dueño): la marca de Queen en la barra
+   lateral NO va dentro de un cuadrado tintado — en el original el
+   icono de Queen se presenta limpio, sin marco (identidad
+   unificada de Queen). Se conserva la caja de 48px y el centrado. */
+.side-brand .brand-mark { border-radius: 0; background: transparent; }
+.side-brand .brand-name { font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.25; }
+.side-brand .brand-sub { font-size: 0.75rem; color: var(--dim); line-height: 16px; }
 .side-profile {
   display: flex; align-items: center; gap: 11px; width: 100%;
   border: 1px solid var(--border); background: var(--surface); border-radius: 20px;
@@ -228,18 +249,18 @@ strong, .stat .value, table.kv td:last-child { font-variant-numeric: tabular-num
 }
 .side-profile .p-name { font-weight: 700; font-size: 0.92rem; line-height: 1.2; }
 .side-profile .p-role { font-size: 0.75rem; color: var(--dim); }
-.side-group-label { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dim); padding: 10px 12px 5px; }
+.side-group-label { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); padding: 10px 12px 5px; }
 .side-foot { margin-top: auto; padding: 14px 12px 2px; font-size: 0.78rem; color: var(--dim); border-top: 1px solid var(--border); }
 
 .nav-btn {
   position: relative;
   display: flex; align-items: center; gap: 10px;
   border: 1px solid transparent; background: transparent; color: var(--dim);
-  padding: 0 14px; min-height: 48px; border-radius: 999px; font-weight: 600; font-size: 0.92rem;
+  padding: 0 14px; min-height: 48px; border-radius: 999px; font-weight: 400; font-size: 1rem;
   text-align: left; width: 100%;
 }
 .nav-btn .nav-label { flex: 1; min-width: 0; }
-.nav-btn.active { background: var(--turquoise-soft); color: var(--deep); font-weight: 700; }
+.nav-btn.active { background: var(--turquoise-soft); color: var(--deep); font-weight: 400; }
 @media (prefers-color-scheme: dark) { .nav-btn.active { color: var(--text); } }
 .nav-btn .nav-badge { position: static; margin-left: auto; }
 
@@ -303,7 +324,7 @@ strong, .stat .value, table.kv td:last-child { font-variant-numeric: tabular-num
 .queen-reactor-core-pulse-soft { animation: reactorCorePulseSoft 4.2s ease-in-out infinite; }
 .queen-reactor-core-pulse-vibrant { animation: reactorCorePulseVibrant 2.8s ease-in-out infinite; }
 .queen-reactor-mark { border-radius: 9999px; }
-@keyframes queenFxPulse { 0%, 100% { opacity: 1; } 50% { opacity: .55; } }
+@keyframes queenFxPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
 .queen-fx-pulse { animation: queenFxPulse 1.7s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
   .queen-reactor-ring, .queen-reactor-core-pulse-slow, .queen-reactor-core-pulse-soft,
@@ -343,7 +364,10 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
   box-shadow: 0 8px 18px color-mix(in srgb, var(--deep) 32%, transparent);
 }
 .tab-header h2 { font-size: 28px; line-height: 1.15; margin: 0; text-wrap: balance; }
-.tab-header-desc { font-size: 0.875rem; color: var(--dim); margin: 4px 0 0; }
+@media (max-width: 559px) { .tab-header h2 { font-size: 25px; } }
+@media (max-width: 380px) { .tab-header h2 { font-size: 23px; } }
+@media (min-width: 1024px) { .tab-header h2 { font-size: 30px; } }
+.tab-header-desc { font-size: 0.875rem; line-height: 20px; color: var(--dim); margin: 4px 0 0; }
 .tab-header-chip {
   display: inline-flex; align-items: center; gap: 7px; flex: none;
   min-height: 36px; padding: 7px 13px; border-radius: 999px;
@@ -405,6 +429,24 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 
 .auth-wrap { min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .auth-card { width: 100%; max-width: 400px; text-align: left; }
+.auth-forgot { display: block; margin: 14px auto 0; padding: 6px 10px; background: none; border: 0; color: var(--deep); font: inherit; font-size: .9rem; font-weight: 600; cursor: pointer; text-align: center; }
+.auth-forgot:hover { text-decoration: underline; }
+.auth-pin-input { text-align: center; font-size: 1.35rem; letter-spacing: .5em; font-variant-numeric: tabular-nums; }
+/* Selector de usuario del acceso (dueño, 2026-10-26): rejilla de
+   personas con foto/iniciales y nombre; el elegido queda marcado
+   con el acento del sistema. */
+.auth-users { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.auth-user { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 12px 8px 10px; border: 1px solid var(--line); border-radius: var(--radius, 14px); background: var(--surface, transparent); color: inherit; font: inherit; cursor: pointer; }
+.auth-user:hover { border-color: var(--deep); }
+.auth-user.selected { border-color: var(--deep); box-shadow: inset 0 0 0 1px var(--deep); }
+.auth-user .avatar { width: 44px; height: 44px; font-size: 1rem; }
+.auth-user-name { font-weight: 700; font-size: .9rem; text-align: center; line-height: 1.2; }
+.auth-user-role { font-size: .75rem; color: var(--muted); }
+/* Banda permanente de «entrar como» (dueño, 2026-10-26): visible
+   sobre todo el contenido mientras el administrador está dentro
+   de una cuenta ajena, con la salida de vuelta a su sesión. */
+.impersonation-banner { position: sticky; top: 0; z-index: 60; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 16px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 22%, var(--bg, #0c141b)), color-mix(in srgb, var(--deep) 18%, var(--bg, #0c141b))); border-bottom: 2px solid var(--accent); font-size: .9rem; }
+.impersonation-banner .btn { margin-left: auto; }
 .auth-card .auth-mark { display: flex; justify-content: center; margin-bottom: 10px; }
 .auth-card h1 { text-align: center; font-size: 1.5rem; margin: 0 0 2px; }
 .auth-card .auth-sub { text-align: center; color: var(--dim); font-size: 0.85rem; margin: 0 0 18px; }
@@ -488,7 +530,7 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .pulse-bars { display: flex; align-items: flex-end; gap: 6px; height: 96px; }
 .pulse-col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; background: none; border: 0; padding: 0; }
 .pulse-bar { display: block; width: 100%; border-radius: 999px; transition: height .5s ease; }
-.pulse-day { font-size: 9px; font-weight: 600; line-height: 1; color: var(--dim); }
+.pulse-day { font-size: 11px; font-weight: 700; line-height: 1.5; color: var(--dim); }
 .pulse-day.is-strong { color: var(--text); }
 .pulse-avg { position: absolute; left: 0; right: 0; border-top: 2px dashed var(--dim); opacity: .6; pointer-events: none; }
 .pulse-avg-chip {
@@ -501,7 +543,7 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .heat-dow { padding-bottom: 2px; text-align: center; font-size: 10px; font-weight: 700; color: var(--dim); }
 .heat-cell {
   display: flex; aspect-ratio: 1; align-items: center; justify-content: center;
-  border: 0; border-radius: 12px; font-size: 12px; font-weight: 700; color: var(--text);
+  border: 0; border-radius: 12px; font-size: 16px; font-weight: 400; color: var(--text);
 }
 .heat-cell.is-today { box-shadow: 0 0 0 2px var(--gold); }
 
@@ -509,7 +551,7 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .rings-row { display: flex; flex-wrap: wrap; justify-content: space-around; gap: 14px; padding: 6px 0 2px; }
 .progress-ring-wrap { display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 220px; }
 .progress-ring-btn { background: none; border: 0; border-radius: 50%; padding: 0; line-height: 0; }
-.progress-ring-label { margin-top: 4px; font-size: 12px; font-weight: 600; color: var(--text); }
+.progress-ring-label { margin-top: 4px; font-size: 12px; font-weight: 600; line-height: 1.333; color: var(--text); }
 .progress-ring-detail { margin: 4px 0 0; max-width: 210px; font-size: 12px; line-height: 1.5; color: var(--dim); }
 .premium-panel {
   border-radius: 28px; border: 1px solid var(--border);
@@ -546,9 +588,9 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .period-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
 .period-tab {
   border: 1px solid var(--border); background: var(--surface); color: var(--dim);
-  border-radius: 999px; padding: 8px 15px; min-height: 40px; font-weight: 600; font-size: 0.85rem;
+  border-radius: 999px; padding: 8px 15px; min-height: 40px; font-weight: 700; font-size: 13px;
 }
-.period-tab.active { background: var(--turquoise-soft); color: var(--deep); border-color: color-mix(in srgb, var(--turquoise) 45%, var(--border)); font-weight: 800; }
+.period-tab.active { background: var(--turquoise-soft); color: var(--deep); border-color: color-mix(in srgb, var(--turquoise) 45%, var(--border)); font-weight: 700; }
 .period-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .period-arrow {
   width: 42px; height: 42px; border-radius: 50%; flex: none;
@@ -556,8 +598,8 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
   display: inline-flex; align-items: center; justify-content: center;
 }
 .period-label { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; flex: 1; min-width: 140px; }
-.period-note { font-size: 0.78rem; color: var(--dim); margin: 8px 0 0; line-height: 1.5; }
-.coverage-line { font-size: 0.85rem; color: var(--dim); margin: 0 0 16px; line-height: 1.55; }
+.period-note { font-size: 12px; color: var(--dim); margin: 8px 0 0; line-height: 16px; }
+.coverage-line { font-size: 12px; color: var(--dim); margin: 0 0 16px; line-height: 16px; }
 .coverage-line strong { color: var(--text); }
 .quick-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
 .quick-action {
@@ -571,7 +613,7 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
   background: var(--turquoise-soft); color: var(--deep);
 }
 @media (prefers-color-scheme: dark) { .quick-action .qa-ico { color: #a7d7bc; } }
-.quick-action .qa-label { font-weight: 700; font-size: 0.9rem; line-height: 1.25; }
+.quick-action .qa-label { font-weight: 700; font-size: 13px; line-height: 1.15; }
 .quick-action .qa-sub { font-size: 0.75rem; color: var(--dim); }
 .smart-summary { display: flex; gap: 13px; align-items: flex-start; }
 .smart-summary .ss-ico {
@@ -618,7 +660,7 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .person-head .p-name { font-family: var(--font-display); font-size: 1.1rem; font-weight: 700; flex: 1; min-width: 0; }
 .person-head .p-total { font-family: var(--font-display); font-size: 1.15rem; font-weight: 700; color: var(--danger); white-space: nowrap; }
 .person-head .p-total.zero { color: var(--dim); font-size: 0.85rem; font-family: inherit; font-weight: 600; }
-.chip { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--surface-alt); color: var(--dim); }
+.chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 999px; background: var(--surface-alt); color: var(--dim); }
 .chip.morosa { background: var(--danger-soft); color: var(--danger); }
 .chip.pagada { background: var(--paid-soft); color: var(--paid-text); }
 .age-track { height: 8px; border-radius: 999px; background: var(--surface-tonal); overflow: hidden; margin-top: 8px; }
@@ -805,9 +847,9 @@ table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(-
 .view-chip {
   display: inline-flex; align-items: center; gap: 7px;
   border: 1px solid var(--border); background: var(--surface); color: var(--dim);
-  border-radius: 999px; padding: 8px 14px; min-height: 40px; font-weight: 600; font-size: 0.85rem; cursor: pointer;
+  border-radius: 999px; padding: 8px 14px; min-height: 40px; font-weight: 700; font-size: 13px; cursor: pointer;
 }
-.view-chip.active { background: var(--turquoise-soft); color: var(--deep); font-weight: 800; border-color: color-mix(in srgb, var(--turquoise) 45%, var(--border)); }
+.view-chip.active { background: var(--turquoise-soft); color: var(--deep); font-weight: 700; border-color: color-mix(in srgb, var(--turquoise) 45%, var(--border)); }
 @media (prefers-color-scheme: dark) { .view-chip.active { color: var(--text); } }
 .view-chip.disabled { opacity: .55; cursor: default; }
 .legend-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1099,7 +1141,10 @@ button.hist-cell { cursor: pointer; }
 .queen-details summary { cursor: pointer; font-weight: 650; font-size: 0.9rem; }
 .queen-modes { display: flex; flex-direction: column; gap: 10px; }
 .queen-mode { border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; background: var(--surface-alt); }
-button.view-chip { cursor: pointer; font: inherit; }
+/* Sin `font: inherit` aquí: el shorthand (especificidad 0,1,1)
+   pisaba el font-size/peso de .view-chip y el chip computaba
+   16px heredados en vez de los 13px/700 del original. */
+button.view-chip { cursor: pointer; }
 
 /* ===== Oleada 3d: paridad claro/oscuro contra el original =====
    La paleta oscura ya quedó alineada en :root (azul pizarra del
@@ -1112,6 +1157,13 @@ select { border-color: color-mix(in srgb, var(--turquoise) 55%, var(--border)); 
   --queen-inner-ring: rgb(255 255 255 / .68);
   --queen-orb-backdrop: radial-gradient(circle at 48% 40%, #fff 0 14%, #f4edf8 54%, #e8dff0 100%);
   background: transparent;
+  /* Corrección 2026-10-26 (dueño): el orbe de Queen es circular
+     como en el original (theme.css: border-radius 50%, overflow
+     hidden, sin borde); sin esto, el fondo oscuro de abajo se
+     pintaba como un CUADRADO tras el icono. */
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
   filter: drop-shadow(0 3px 7px color-mix(in srgb, #0b3d2e 20%, transparent));
 }
 .queen-orb img { opacity: .9; filter: none !important; }
@@ -1119,8 +1171,40 @@ select { border-color: color-mix(in srgb, var(--turquoise) 55%, var(--border)); 
   .queen-orb {
     --queen-image-filter: brightness(.78) saturate(1.32);
     --queen-inner-ring: rgb(255 255 255 / .28);
-    background: radial-gradient(circle at 42% 32%, rgb(255 255 255 / .1), rgb(9 15 27 / .34) 72%);
+    /* Corrección 2026-10-26 (dueño): sin fondo cuadrado en oscuro;
+       el orbe va transparente y circular, como el original. */
+    background: transparent;
     filter: none !important;
   }
   .queen-orb img { opacity: .78; filter: brightness(.82) saturate(.96) contrast(1.09); }
+}
+
+/* ===== AÑADIDO DEL DUEÑO (2026-10-26): voz de Queen en esta copia =====
+   Barra de interruptores de voz, estado de escucha con la
+   transcripción provisional siempre visible y el botón de micrófono
+   del composer. Nada de esto existe en el original (allí Queen es
+   100 % texto): es la capa de voz de lib/queenVoice. */
+.queen-voice-bar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.queen-voice-note { font-size: 11px; color: var(--dim); line-height: 1.4; flex: 1 1 220px; }
+.queen-voice-status {
+  display: flex; align-items: center; gap: 7px;
+  margin: 0 0 8px; padding: 9px 13px;
+  border: 1px solid var(--border); border-radius: 14px;
+  background: var(--surface-tonal); color: var(--text);
+  font-size: 13px; line-height: 1.4;
+}
+.queen-voice-interim { font-style: italic; }
+.queen-mic-btn.is-listening {
+  background: var(--accent); color: #fff;
+  animation: queen-mic-pulse 1.6s ease-in-out infinite;
+}
+@keyframes queen-mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .queen-mic-btn.is-listening { animation: none; }
 }

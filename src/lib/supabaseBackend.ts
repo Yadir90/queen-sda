@@ -25,12 +25,14 @@
 // (el admin sí puede). La app no se bloquea por eso: tras cambiarla, entra;
 // el aviso volverá a salir en su próximo ingreso hasta que el admin lo marque.
 
-import type { AutomationRun, Bulletin, DayData, Expense, LocalPayment, MonthlyArchive, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionHistoryEntry, QueenEvolutionSnapshot, QueenLearningState, Receivable, ReceivablePhoto, Role, Session, SmsLog, SmsOutboxItem, StoredData, TransferMovement, VenueInventoryItem, WarehouseEntry, WarehouseProductMeta, Worker, WorkerExtended, WorkerPayment } from '../types'
+import type { AutomationRun, Bulletin, DayData, ElaborationIngredientHistoryEntry, ElaborationRecipe, ElaborationStore, ElaborationWasteLog, Expense, ExtraIncome, InventoryAdjustment, LocalPayment, MonthlyArchive, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionHistoryEntry, QueenEvolutionSnapshot, QueenLearningState, Receivable, ReceivablePhoto, Role, Session, SmsLog, SmsOutboxItem, StoredData, TransferMovement, VenueInventoryItem, WarehouseEntry, WarehouseProductMeta, Worker, WorkerExtended, WorkerPayment } from '../types'
 import { EMPTY_DATA, type LoginResult } from './backend'
-import { getSupabase } from './supabaseClient'
+import { getSupabase, supabaseBaseUrl } from './supabaseClient'
+import { enqueueOfflineOp, registerOfflineExecutor, type QueuedOp } from './offlineQueue'
 import { normalizeDay, normalizeExpense, normalizePayroll, normalizeReceivable, normalizeWorkerRecord, parseBackup } from './backupCore.mjs'
 import { applyImportedPaidAccounts, buildWorkersRegistry, canonicalPersonKey, clientKeyOf, deriveSuppressedEntries, firstNameKeyOf, syncDerivedData } from './syncCore.mjs'
 import { venueItemFromRaw, warehouseEntryFromRaw, warehouseMetaFromRaw } from './modulosExtended'
+import { defaultElaborationStore, ELABORATION_SETTINGS_FALLBACK } from './elaboracionCore.mjs'
 
 /** Sesión remota ya resuelta: el Session de la app + si debe cambiar la contraseña. */
 export interface RemoteSession {
@@ -151,6 +153,40 @@ function sb() {
   return client
 }
 
+// ---------- Cola offline de escrituras (D-03/D-68) ----------
+// Las escrituras de las pantallas pasan por withOfflineQueue: sin red
+// (o con la red caída a mitad de la escritura) NO se pierden ni se
+// fingen guardadas: quedan en la cola durable de offlineQueue.ts y se
+// reenvían EN ORDEN al volver la conexión; la píldora ConnectionStatus
+// cuenta esos pendientes reales. Si el servidor RESPONDE y rechaza
+// (RLS, tabla ausente), el error se propaga como siempre: encolar un
+// rechazo solo lo repetiría. La sonda distingue ambos casos: cualquier
+// respuesta HTTP del proyecto = servidor alcanzado = rechazo real.
+async function supabaseReachable(): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) return false
+  const base = supabaseBaseUrl()
+  if (!base) return false
+  try {
+    await fetch(`${base}/rest/v1/`, { method: 'HEAD', signal: AbortSignal.timeout(4000) })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function withOfflineQueue(fn: string, args: unknown[], run: () => Promise<void>): Promise<void> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    await enqueueOfflineOp(fn, args)
+    return
+  }
+  try {
+    await run()
+  } catch (e) {
+    if (await supabaseReachable()) throw e
+    await enqueueOfflineOp(fn, args)
+  }
+}
+
 const num = (v: number | string | null | undefined): number => {
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : 0
@@ -213,6 +249,53 @@ export async function sbLogin(email: string, password: string): Promise<LoginRes
 
 export async function sbLogout(): Promise<void> {
   await sb().auth.signOut()
+}
+
+/**
+ * Recuperación de contraseña por la vía nativa de Supabase Auth:
+ * envía el correo con el enlace mágico de recuperación, que vuelve a
+ * ESTA misma app (redirectTo = origen + ruta actuales). Supabase no
+ * revela si el correo existe: la respuesta es la misma en ambos casos.
+ */
+export async function sbRequestPasswordReset(email: string): Promise<{ ok: boolean; error?: string }> {
+  const clean = email.trim()
+  if (!clean || !clean.includes('@')) return { ok: false, error: 'Escribe tu correo electrónico.' }
+  const redirectTo = `${window.location.origin}${window.location.pathname}`
+  const { error } = await sb().auth.resetPasswordForEmail(clean, { redirectTo })
+  if (error) return { ok: false, error: 'No se pudo enviar el correo de recuperación. Revisa tu conexión e inténtalo de nuevo.' }
+  return { ok: true }
+}
+
+/** ¿La URL actual trae un enlace de recuperación de Supabase?
+ *  El éxito llega como `#access_token=…&type=recovery` (lo consume
+ *  supabase-js al arrancar) y el enlace caducado como
+ *  `#error=access_denied&error_code=otp_expired&error_description=…`. */
+export function recoveryParamsFromUrl(): { isRecovery: boolean; error: string | null } {
+  if (typeof window === 'undefined') return { isRecovery: false, error: null }
+  const hash = window.location.hash.startsWith('#') ? window.location.hash.slice(1) : window.location.hash
+  const params = new URLSearchParams(hash)
+  if (params.get('type') === 'recovery') return { isRecovery: true, error: null }
+  const err = params.get('error')
+  if (err) {
+    const desc = params.get('error_description')?.replace(/\+/g, ' ') ?? ''
+    return {
+      isRecovery: true,
+      error: /expired|otp/i.test(`${params.get('error_code') ?? ''} ${desc}`)
+        ? 'El enlace de recuperación caducó o ya se usó. Pide uno nuevo desde «¿Olvidaste tu contraseña?».'
+        : 'El enlace de recuperación no es válido. Pide uno nuevo desde «¿Olvidaste tu contraseña?».',
+    }
+  }
+  return { isRecovery: false, error: null }
+}
+
+/** Avisa cuando Supabase confirma el evento PASSWORD_RECOVERY de la
+ *  sesión (el enlace abrió la app y la sesión de recuperación quedó
+ *  activa). Devuelve la función para cancelar la suscripción. */
+export function sbOnPasswordRecovery(callback: () => void): () => void {
+  const { data } = sb().auth.onAuthStateChange((event) => {
+    if (event === 'PASSWORD_RECOVERY') callback()
+  })
+  return () => data.subscription.unsubscribe()
 }
 
 /**
@@ -412,6 +495,8 @@ interface RawExtendedWorker {
   escolaridad?: string
   contrato_cancelado_el?: string | null
   contrato_cancelado_ciclo?: string | null
+  ausencias?: Array<{ id?: string; fecha?: string; motivo?: string }> | null
+  fecha_contratacion?: string | null
 }
 
 function parseWeekdays(raw: RawExtendedWorker['work_weekdays']): number[] {
@@ -436,6 +521,32 @@ function extendedFromRaw(r: RawExtendedWorker): WorkerExtended {
     escolaridad: String(r.escolaridad ?? ''),
     contratoCanceladoEl: r.contrato_cancelado_el ?? null,
     contratoCanceladoCiclo: r.contrato_cancelado_ciclo ?? null,
+    ausencias: Array.isArray(r.ausencias)
+      ? r.ausencias.filter((a) => a && typeof a.fecha === 'string').map((a, i) => ({ id: String(a.id ?? `aus-${i}`), fecha: String(a.fecha), motivo: String(a.motivo ?? '') }))
+      : [],
+    fechaContratacion: r.fecha_contratacion ?? '',
+  }
+}
+
+/** WorkerExtended → forma cruda de app_settings 'workers-extended'. */
+function extendedToRaw(e: WorkerExtended): RawExtendedWorker {
+  return {
+    id: e.id || undefined,
+    worker_key: e.workerKey,
+    nombre: e.nombre,
+    ocupacion: e.ocupacion,
+    rest_weekday: e.restWeekday,
+    work_weekday: e.workWeekday,
+    work_weekdays: e.workWeekdays,
+    turno_asignado: e.turnoAsignado,
+    turno_correccion: e.turnoCorreccion,
+    estrellas: e.estrellas,
+    genero: e.genero,
+    escolaridad: e.escolaridad,
+    contrato_cancelado_el: e.contratoCanceladoEl,
+    contrato_cancelado_ciclo: e.contratoCanceladoCiclo,
+    ausencias: (e.ausencias ?? []).map((a) => ({ id: a.id, fecha: a.fecha, motivo: a.motivo })),
+    fecha_contratacion: e.fechaContratacion || null,
   }
 }
 
@@ -477,12 +588,19 @@ export interface ExtendedSettings {
   smsOutbox: SmsOutboxItem[]
   monthlyArchives: MonthlyArchive[]
   workerPayments: WorkerPayment[]
+  workersHistorial: import('../types').WorkerHistorialEntry[]
+  elaboration: ElaborationStore
+  extraIncomes: ExtraIncome[]
+  inventoryAdjustments: InventoryAdjustment[]
 }
 
 const EMPTY_EXTENDED: ExtendedSettings = {
   workersExtended: [], queenEvolutionHistory: [],
   warehouseEntries: [], warehouseMeta: {}, venueInventory: [],
-  receivablePhotos: [], smsLogs: [], smsOutbox: [], monthlyArchives: [], workerPayments: [],
+  receivablePhotos: [], smsLogs: [], smsOutbox: [], monthlyArchives: [], workerPayments: [], workersHistorial: [],
+  elaboration: defaultElaborationStore(),
+  extraIncomes: [],
+  inventoryAdjustments: [],
 }
 
 async function fetchExtendedSettings(): Promise<ExtendedSettings> {
@@ -490,7 +608,7 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
   const { data, error } = await client
     .from('app_settings')
     .select('key, value')
-    .in('key', ['workers-extended', 'queen-evolution-history', 'almacen-extended', 'venue-inventory', 'backup-collections'])
+    .in('key', ['workers-extended', 'queen-evolution-history', 'almacen-extended', 'venue-inventory', 'backup-collections', 'elaboracion', 'extra-incomes', 'existencias-ajustes'])
   if (error || !data) return EMPTY_EXTENDED
   const rows = data as Array<{ key: string; value: Record<string, unknown> | null }>
   const byKey = new Map(rows.map((r) => [r.key, r.value]))
@@ -500,9 +618,12 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
   // servidor original por la coordinación (modulos-extended-import.sql).
   const almRow = byKey.get('almacen-extended') as { entries?: Array<Record<string, unknown>>; meta?: unknown } | undefined
   const venRow = byKey.get('venue-inventory') as { items?: Array<Record<string, unknown>> } | undefined
+  const elabRow = byKey.get('elaboracion') as Partial<ElaborationStore> | undefined
+  const extraRow = byKey.get('extra-incomes') as { items?: ExtraIncome[] } | undefined
+  const adjRow = byKey.get('existencias-ajustes') as { items?: InventoryAdjustment[] } | undefined
   // Las cinco colecciones del respaldo, persistidas aquí al importar
   // (sbImportBackup): no tienen tabla propia en el clon.
-  const colRow = byKey.get('backup-collections') as Partial<Pick<ExtendedSettings, 'receivablePhotos' | 'smsLogs' | 'smsOutbox' | 'monthlyArchives' | 'workerPayments'>> | undefined
+  const colRow = byKey.get('backup-collections') as Partial<Pick<ExtendedSettings, 'receivablePhotos' | 'smsLogs' | 'smsOutbox' | 'monthlyArchives' | 'workerPayments' | 'workersHistorial'>> | undefined
   const arr = <T,>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : [])
   return {
     workersExtended: Array.isArray(extRow?.workers) ? extRow.workers.map(extendedFromRaw) : [],
@@ -510,11 +631,24 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
     warehouseEntries: Array.isArray(almRow?.entries) ? almRow.entries.map(warehouseEntryFromRaw) : [],
     warehouseMeta: warehouseMetaFromRaw(almRow?.meta),
     venueInventory: Array.isArray(venRow?.items) ? venRow.items.map(venueItemFromRaw) : [],
+    elaboration: {
+      ...defaultElaborationStore(),
+      ...(elabRow ?? {}),
+      settings: { ...ELABORATION_SETTINGS_FALLBACK, ...(elabRow?.settings ?? {}) },
+      recipes: arr<ElaborationRecipe>(elabRow?.recipes),
+      removedProducts: arr<ElaborationStore['removedProducts'][number]>(elabRow?.removedProducts),
+      manualProducts: arr<ElaborationStore['manualProducts'][number]>(elabRow?.manualProducts),
+      wasteLogs: arr<ElaborationWasteLog>(elabRow?.wasteLogs),
+      ingredientHistory: arr<ElaborationIngredientHistoryEntry>(elabRow?.ingredientHistory),
+    },
     receivablePhotos: arr<ReceivablePhoto>(colRow?.receivablePhotos),
     smsLogs: arr<SmsLog>(colRow?.smsLogs),
     smsOutbox: arr<SmsOutboxItem>(colRow?.smsOutbox),
     monthlyArchives: arr<MonthlyArchive>(colRow?.monthlyArchives),
     workerPayments: arr<WorkerPayment>(colRow?.workerPayments),
+    workersHistorial: arr<import('../types').WorkerHistorialEntry>(colRow?.workersHistorial),
+    extraIncomes: arr<ExtraIncome>(extraRow?.items),
+    inventoryAdjustments: arr<InventoryAdjustment>(adjRow?.items),
   }
 }
 
@@ -531,13 +665,100 @@ async function saveAppSetting(key: string, value: unknown, errorLabel: string): 
  * Guarda el almacén manual completo (movimientos + metadatos) en
  * app_settings 'almacen-extended' — la misma clave de la que se lee.
  */
-export async function sbSaveWarehouseExtended(entries: WarehouseEntry[], meta: Record<string, WarehouseProductMeta>): Promise<void> {
+async function rawSbSaveWarehouseExtended(entries: WarehouseEntry[], meta: Record<string, WarehouseProductMeta>): Promise<void> {
   await saveAppSetting('almacen-extended', { entries, meta }, 'el almacén manual')
 }
 
+/**
+ * Guarda el almacén COMPLETO de Elaboración (fichas de costo, ajustes
+ * globales, productos manuales/eliminados, mermas e historial de
+ * precios) en app_settings 'elaboracion' — la misma clave de la que
+ * se lee. Las fichas no viajan en el respaldo: viven aquí.
+ */
+async function rawSbSaveElaborationStore(store: ElaborationStore): Promise<void> {
+  await saveAppSetting('elaboracion', store, 'las fichas de costo de Elaboración')
+}
+
+/** Guarda los otros ingresos registrados a mano (Extras) en
+ *  app_settings 'extra-incomes' — la misma clave de la que se lee. */
+async function rawSbSaveExtraIncomes(items: ExtraIncome[]): Promise<void> {
+  await saveAppSetting('extra-incomes', { items }, 'los otros ingresos registrados')
+}
+
+/** Guarda los ajustes manuales del libro (Existencias) en
+ *  app_settings 'existencias-ajustes' — la misma clave de la que se lee. */
+async function rawSbSaveInventoryAdjustments(items: InventoryAdjustment[]): Promise<void> {
+  await saveAppSetting('existencias-ajustes', { items }, 'los ajustes del libro de existencias')
+}
+
+/** Sustituye los resúmenes mensuales dentro de 'backup-collections'
+ *  (archivar un mes desde Archivo): lee la clave completa, cambia
+ *  SOLO monthlyArchives y la regraba — las demás colecciones del
+ *  respaldo quedan intactas. */
+async function rawSbSaveMonthlyArchives(archives: MonthlyArchive[]): Promise<void> {
+  const client = sb()
+  const { data, error } = await client.from('app_settings').select('value').eq('key', 'backup-collections').maybeSingle()
+  if (error) throw new Error('No se pudo leer el archivo mensual para guardarlo.')
+  const current = (data?.value ?? {}) as Record<string, unknown>
+  await saveAppSetting('backup-collections', { ...current, monthlyArchives: archives }, 'el archivo mensual')
+}
+
+/** Guarda piezas del registro de trabajadores: fichas base en la
+ *  tabla workers (upsert por key; el llamador declara los keys que
+ *  salen del registro activo y SOLO esos se borran de la tabla — su
+ *  ficha vive en el historial), estado extendido completo en
+ *  'workers-extended', y pagos manuales + historial fusionados en
+ *  'backup-collections' sin tocar sus demás colecciones. */
+async function rawSbSaveWorkersRegistry(patch: {
+  workers?: Worker[]
+  removeWorkerKeys?: string[]
+  workersExtended?: WorkerExtended[]
+  workerPayments?: WorkerPayment[]
+  workersHistorial?: import('../types').WorkerHistorialEntry[]
+}): Promise<void> {
+  const client = sb()
+  if (patch.workers?.length) {
+    const { error } = await client.from('workers').upsert(patch.workers.map(workerToRow), { onConflict: 'key' })
+    if (error) throw new Error('El servidor rechazó guardar las fichas de trabajadores.')
+  }
+  if (patch.removeWorkerKeys?.length) {
+    const { error } = await client.from('workers').delete().in('key', patch.removeWorkerKeys)
+    if (error) throw new Error('El servidor rechazó retirar las fichas del registro.')
+  }
+  if (patch.workersExtended) {
+    await saveAppSetting('workers-extended', { workers: patch.workersExtended.map(extendedToRaw) }, 'el estado extendido de trabajadores')
+  }
+  if (patch.workerPayments || patch.workersHistorial) {
+    const { data, error } = await client.from('app_settings').select('value').eq('key', 'backup-collections').maybeSingle()
+    if (error) throw new Error('No se pudieron leer las colecciones para guardar el registro.')
+    const current = (data?.value ?? {}) as Record<string, unknown>
+    await saveAppSetting('backup-collections', {
+      ...current,
+      ...(patch.workerPayments ? { workerPayments: patch.workerPayments } : {}),
+      ...(patch.workersHistorial ? { workersHistorial: patch.workersHistorial } : {}),
+    }, 'el registro de trabajadores')
+  }
+}
+
 /** Guarda el Inventario de bienes completo en 'venue-inventory'. */
-export async function sbSaveVenueInventory(items: VenueInventoryItem[]): Promise<void> {
+async function rawSbSaveVenueInventory(items: VenueInventoryItem[]): Promise<void> {
   await saveAppSetting('venue-inventory', { items }, 'el inventario de bienes')
+}
+
+/** Sustituye cuentas por cobrar (editar / mover a morosas / eliminar
+ *  desde la tarjeta, como en el original): upsert de cada fila con su
+ *  payload completo y borrado SOLO de los ids que el llamador declara
+ *  eliminados — nunca se infiere un borrado de una lista parcial. */
+async function rawSbSaveReceivables(receivables: Receivable[], deletedIds: string[]): Promise<void> {
+  const client = sb()
+  if (receivables.length) {
+    const { error } = await client.from('receivables').upsert(receivables.map(receivableToRow), { onConflict: 'id' })
+    if (error) throw new Error('El servidor rechazó guardar las cuentas. Solo el administrador puede cambiarlas, o falló la conexión.')
+  }
+  if (deletedIds.length) {
+    const { error } = await client.from('receivables').delete().in('id', deletedIds)
+    if (error) throw new Error('El servidor rechazó eliminar la cuenta. Solo el administrador puede hacerlo, o falló la conexión.')
+  }
 }
 
 async function saveCoreSettings(settings: CoreSettings): Promise<void> {
@@ -560,7 +781,31 @@ function withCounts(data: StoredData): StoredData {
  * fase de integración pueden no existir aún en el proyecto: si faltan,
  * se leen como vacías (la app sigue funcionando con lo anterior).
  */
+/**
+ * Lectura completa del servidor con CACHÉ de lecturas sin conexión
+ * (D-03): cada lectura buena se guarda en el dispositivo y, si la red
+ * falla, se sirve la última foto que cargó bien — el comportamiento
+ * del original («Tus datos están guardados: sigues viendo lo último
+ * que cargó bien») — en vez de una pantalla vacía. La píldora de la
+ * carcasa dice la verdad del estado («Sin conexión»/«Pendiente»).
+ * Sin caché previa, el error de red se propaga como antes.
+ */
+const READ_CACHE_KEY = 'queen-sda:read-cache-v1'
 export async function sbFetchStoredData(): Promise<StoredData> {
+  try {
+    const data = await rawFetchStoredData()
+    try { localStorage.setItem(READ_CACHE_KEY, JSON.stringify(data)) } catch { /* cuota llena: la app sigue sin caché */ }
+    return data
+  } catch (e) {
+    try {
+      const raw = localStorage.getItem(READ_CACHE_KEY)
+      if (raw) return JSON.parse(raw) as StoredData
+    } catch { /* caché ilegible: se propaga el error original */ }
+    throw e
+  }
+}
+
+async function rawFetchStoredData(): Promise<StoredData> {
   const client = sb()
   const [daysRes, recRes, payRes, expRes, workRes, payrollRes, movRes, pkgRes, bulRes, queenRes, autoRes] = await Promise.all([
     client.from('days').select('date, ventas_dia, ganancia_bruta, ganancia_neta, cuadre, payload, imported_at').order('date'),
@@ -680,6 +925,9 @@ export async function sbFetchStoredData(): Promise<StoredData> {
     smsOutbox: extended.smsOutbox,
     monthlyArchives: extended.monthlyArchives,
     workerPayments: extended.workerPayments,
+    workersHistorial: extended.workersHistorial,
+    extraIncomes: extended.extraIncomes,
+    inventoryAdjustments: extended.inventoryAdjustments,
     aliases: settings.aliases ?? {},
     learnedKinds: settings.learnedKinds ?? {},
     cuentasOverrides: settings.cuentasOverrides ?? {},
@@ -696,7 +944,7 @@ export async function sbFetchStoredData(): Promise<StoredData> {
  * Solo el administrador puede escribirla (RLS); la referencia completa
  * viaja en el payload y se reconstruye idéntica al releer.
  */
-export async function sbSavePackageReference(ref: PackageReference): Promise<void> {
+async function rawSbSavePackageReference(ref: PackageReference): Promise<void> {
   const client = sb()
   const { error } = await client
     .from('package_references')
@@ -705,7 +953,7 @@ export async function sbSavePackageReference(ref: PackageReference): Promise<voi
 }
 
 /** Borra una referencia de compra del servidor (solo administrador). */
-export async function sbDeletePackageReference(id: string): Promise<void> {
+async function rawSbDeletePackageReference(id: string): Promise<void> {
   const client = sb()
   const { error } = await client.from('package_references').delete().eq('id', id)
   if (error) throw new Error('El servidor rechazó borrar la referencia. Solo el administrador puede borrarla, o falló la conexión.')
@@ -781,7 +1029,7 @@ function payrollToRow(p: PayrollRecord) {
  * `paidDay`: el día recién importado cuya hoja «Cuentas pagadas» se
  * concilia en esta pasada (solo importaciones de Excel).
  */
-async function sbSyncAndApply(paidDay?: DayData): Promise<StoredData> {
+async function sbSyncAndApply(paidDay?: DayData, accountSyncDates?: string[]): Promise<StoredData> {
   const client = sb()
   const state = await sbFetchStoredData()
   const synced = syncDerivedData({
@@ -795,9 +1043,10 @@ async function sbSyncAndApply(paidDay?: DayData): Promise<StoredData> {
     cuentasOverrides: state.cuentasOverrides,
     suppressedEntries: state.suppressedEntries,
     payrollHistory: state.payrollHistory,
-    // Las cuentas solo se sincronizan para el día importado por Excel;
+    // Las cuentas solo se sincronizan para el día importado por Excel
+    // (o para la fecha dada: p. ej. la de un día eliminado, D-07);
     // en una importación de respaldo quedan exactamente como vienen.
-    accountSyncDates: paidDay ? [paidDay.date] : [],
+    accountSyncDates: accountSyncDates ?? (paidDay ? [paidDay.date] : []),
   })
   let receivables = synced.receivables
   if (paidDay) receivables = applyImportedPaidAccounts(receivables, paidDay).receivables
@@ -884,6 +1133,59 @@ export async function sbImportIpvDay(rawDay: Record<string, unknown>): Promise<{
 }
 
 /**
+ * Elimina un día importado (puerto de `deleteDay` del original, D-07).
+ * Solo admin (RLS). Orden: primero lo que cuelga de ese día y al final
+ * el día y la re-derivación sin él:
+ *  - boletines de esa fecha aún no enviados (los enviados quedan como
+ *    historial, como en el original);
+ *  - movimientos de la tarjeta derivados de ese IPV (source='ipv');
+ *  - la foto de cuentas de ese día (app_settings 'backup-collections')
+ *    y las decisiones de «Cuentas» de ese día (overrides/supresiones
+ *    con su fecha, en los ajustes centrales);
+ *  - la fila del día en `days`;
+ *  - la sincronización derivada con esa fecha «viva»: retira las
+ *    cuentas pendientes que solo ese día sostenía (las PAGADAS no se
+ *    borran jamás) y recalcula los gastos automáticos y la nómina,
+ *    igual que el syncCuentasExpenses/syncPayroll del original.
+ */
+export async function sbDeleteDay(date: string): Promise<void> {
+  const client = sb()
+  const { data: bulRows } = await client.from('bulletins').select('id, date, payload').eq('date', date)
+  const pendingIds = ((bulRows ?? []) as Array<{ id: string; payload: Bulletin | null }>)
+    .filter((r) => r.payload?.status !== 'enviado')
+    .map((r) => r.id)
+  if (pendingIds.length) {
+    const { error } = await client.from('bulletins').delete().in('id', pendingIds)
+    if (error) throw new Error('El servidor rechazó retirar los boletines de ese día.')
+  }
+  {
+    const { error } = await client.from('transfer_movements').delete().eq('source', 'ipv').eq('date', date)
+    if (error) throw new Error('El servidor rechazó retirar los movimientos del IPV de ese día.')
+  }
+  const extended = await fetchExtendedSettings().catch(() => EMPTY_EXTENDED)
+  if (extended.receivablePhotos.some((p) => p.date === date)) {
+    const { data: colRow } = await client.from('app_settings').select('value').eq('key', 'backup-collections').maybeSingle<{ value: Record<string, unknown> }>()
+    const current = (colRow?.value ?? {}) as Record<string, unknown>
+    await saveAppSetting('backup-collections', {
+      ...current,
+      receivablePhotos: extended.receivablePhotos.filter((p) => p.date !== date),
+    }, 'la foto de cuentas del día')
+  }
+  const settings = await fetchCoreSettings()
+  const cuentasOverrides = Object.fromEntries(Object.entries(settings.cuentasOverrides ?? {}).filter(([k]) => !k.startsWith(`${date}::`)))
+  const suppressedEntries = (settings.suppressedEntries ?? []).filter((k) => !k.startsWith(`${date}::`))
+  if (
+    Object.keys(cuentasOverrides).length !== Object.keys(settings.cuentasOverrides ?? {}).length
+    || suppressedEntries.length !== (settings.suppressedEntries ?? []).length
+  ) {
+    await saveCoreSettings({ ...settings, cuentasOverrides, suppressedEntries })
+  }
+  const { error } = await client.from('days').delete().eq('date', date)
+  if (error) throw new Error('El servidor rechazó eliminar el día. Solo el administrador puede hacerlo, o falló la conexión.')
+  await sbSyncAndApply(undefined, [date])
+}
+
+/**
  * Guarda ajustes de RH del admin (ancla de ciclos, interruptor
  * «No pagado», ajuste manual de nómina de un ciclo) en app_settings.
  */
@@ -911,7 +1213,7 @@ export async function sbSaveRhSettings(patch: {
  * RLS solo deja insertar al admin; el llamador debe ser admin en la interfaz
  * y el servidor impone la misma regla aunque alguien la saltara.
  */
-export async function sbAddCobrarPayments(
+async function rawSbAddCobrarPayments(
   allocations: Array<{ receivableId: string; amount: number; date: string; method: 'efectivo' | 'transferencia' }>,
 ): Promise<void> {
   const client = sb()
@@ -1000,7 +1302,9 @@ export async function sbImportBackup(raw: unknown): Promise<{ days: number; rece
     const { error: movError } = await client.from('transfer_movements').upsert(rows, { onConflict: 'id' })
     if (movError) {
       // Tabla ausente o rechazo puntual: no tumba la importación.
-      console.warn('No se pudo guardar el historial de transferencias:', movError.message)
+      // Sin console.* (D-61): el original no registra nada en consola;
+      // el fallo queda visible porque el historial simplemente no
+      // aparece al releer, y la importación principal ya quedó hecha.
     }
   }
   // Las cinco colecciones sin tabla propia se persisten ÍNTEGRAS en
@@ -1049,7 +1353,7 @@ export async function sbImportBackup(raw: unknown): Promise<{ days: number; rece
  * gasto por transferencia) en el servidor. RLS: solo admin. El saldo
  * se deriva del historial al releer; aquí solo se inserta la fila.
  */
-export async function sbAddTransferMovement(m: Omit<TransferMovement, 'id' | 'local' | 'superseded'>): Promise<void> {
+async function rawSbAddTransferMovement(m: Omit<TransferMovement, 'id' | 'local' | 'superseded'>): Promise<void> {
   const client = sb()
   const movement: TransferMovement = { ...m, id: `ts-local-${Date.now()}`, local: true, superseded: false }
   const { error } = await client.from('transfer_movements').insert(movementToRow(movement))
@@ -1061,7 +1365,7 @@ export async function sbAddTransferMovement(m: Omit<TransferMovement, 'id' | 'lo
  * excluded; el payload se actualiza en la misma fila para que ambas
  * lecturas coincidan). El importe no se toca. RLS: solo admin.
  */
-export async function sbSetTransferMovementExcluded(id: string, excluded: boolean, current: TransferMovement): Promise<void> {
+async function rawSbSetTransferMovementExcluded(id: string, excluded: boolean, current: TransferMovement): Promise<void> {
   const client = sb()
   const { error } = await client
     .from('transfer_movements')
@@ -1070,8 +1374,52 @@ export async function sbSetTransferMovementExcluded(id: string, excluded: boolea
   if (error) throw new Error('El servidor rechazó el cambio. Solo el administrador puede marcar movimientos, o falló la conexión.')
 }
 
+/** Edita un movimiento de la tarjeta (fecha, importe y detalle) en su
+ *  fila: columnas y payload se actualizan juntos. RLS: solo admin. */
+async function rawSbUpdateTransferMovement(id: string, patch: { date: string; amount: number; detail: string }, current: TransferMovement): Promise<void> {
+  const client = sb()
+  const next = { ...current, date: patch.date, amount: patch.amount, detail: patch.detail }
+  const { error } = await client
+    .from('transfer_movements')
+    .update({ date: patch.date, amount: patch.amount, detail: patch.detail, payload: next })
+    .eq('id', id)
+  if (error) throw new Error('El servidor rechazó la edición. Solo el administrador puede editar movimientos, o falló la conexión.')
+}
+
+/** Borra un movimiento de la tarjeta. RLS: solo admin. */
+async function rawSbDeleteTransferMovement(id: string): Promise<void> {
+  const client = sb()
+  const { error } = await client.from('transfer_movements').delete().eq('id', id)
+  if (error) throw new Error('El servidor rechazó el borrado. Solo el administrador puede borrar movimientos, o falló la conexión.')
+}
+
+/** Sincroniza el gasto enlazado de UNA rebaja de almacén
+ *  (origin='almacen', source_key='almacen:<id>'): lo crea o actualiza
+ *  conservando su id si ya existe; con expense=null lo borra. */
+async function rawSbSyncWarehouseExpense(expense: Expense | null, sourceKey: string): Promise<void> {
+  const client = sb()
+  const { data: existing, error: readError } = await client
+    .from('expenses')
+    .select('id')
+    .eq('origin', 'almacen')
+    .eq('source_key', sourceKey)
+  if (readError) throw new Error('No se pudo comprobar el gasto enlazado de la rebaja.')
+  const rows = (existing ?? []) as Array<{ id: string }>
+  if (!expense) {
+    for (const row of rows) {
+      const { error } = await client.from('expenses').delete().eq('id', row.id)
+      if (error) throw new Error('No se pudo eliminar el gasto enlazado de la rebaja.')
+    }
+    return
+  }
+  const keepId = rows[0]?.id ?? expense.id
+  for (const extra of rows.slice(1)) await client.from('expenses').delete().eq('id', extra.id)
+  const { error } = await client.from('expenses').upsert(expenseToRow({ ...expense, id: keepId }))
+  if (error) throw new Error('No se pudo guardar el gasto enlazado de la rebaja.')
+}
+
 /** Alta manual de un gasto por el administrador (tabla expenses). RLS: solo admin. */
-export async function sbAddExpense(input: {
+async function rawSbAddExpense(input: {
   date: string
   concept: string
   category: string
@@ -1109,7 +1457,7 @@ export async function sbAddExpense(input: {
  * tabla aún no existe en el proyecto, el error se propaga y la
  * pantalla lo declara: nunca se finge un guardado.
  */
-export async function sbSaveBulletins(list: Bulletin[]): Promise<void> {
+async function rawSbSaveBulletins(list: Bulletin[]): Promise<void> {
   if (!list.length) return
   const client = sb()
   const rows = list.map((b) => ({ id: b.id, date: b.date, payload: b, updated_at: new Date().toISOString() }))
@@ -1125,7 +1473,7 @@ export async function sbSaveBulletins(list: Bulletin[]): Promise<void> {
  * puede escribirla (RLS); si la tabla aún no existe, el error se
  * propaga y el llamante lo trata como «queda en memoria».
  */
-export async function sbSaveQueenState(snapshot: QueenEvolutionSnapshot): Promise<void> {
+async function rawSbSaveQueenState(snapshot: QueenEvolutionSnapshot): Promise<void> {
   const client = sb()
   const { error } = await client.from('queen_state').upsert(
     { id: 'evolution', payload: snapshot, updated_at: new Date().toISOString() },
@@ -1141,7 +1489,7 @@ export async function sbSaveQueenState(snapshot: QueenEvolutionSnapshot): Promis
  * escribirlas (RLS); si la tabla aún no existe, el error se propaga
  * y el llamante lo trata como «queda en memoria», sin fingir.
  */
-export async function sbSaveAutomationState(
+async function rawSbSaveAutomationState(
   patch: Partial<Pick<StoredData, 'automationRuns' | 'queenLearning'>>,
 ): Promise<void> {
   const client = sb()
@@ -1151,6 +1499,134 @@ export async function sbSaveAutomationState(
   if (!rows.length) return
   const { error } = await client.from('automation_state').upsert(rows, { onConflict: 'id' })
   if (error) throw new Error('El servidor rechazó guardar el estado de automatizaciones, o la tabla «automation_state» aún no está creada en el proyecto.')
+}
+
+// ---------- Exportaciones con cola offline (D-03/D-68) ----------
+// Cada escritura pública pasa por withOfflineQueue con su descriptor
+// serializable (nombre + argumentos JSON): el ejecutor de la cola
+// reejecuta la implementación cruda correspondiente, en orden.
+const OFFLINE_IMPLS: Record<string, (...args: never[]) => Promise<void>> = {
+  sbSaveWarehouseExtended: rawSbSaveWarehouseExtended,
+  sbSaveElaborationStore: rawSbSaveElaborationStore,
+  sbSaveExtraIncomes: rawSbSaveExtraIncomes,
+  sbSaveInventoryAdjustments: rawSbSaveInventoryAdjustments,
+  sbSaveMonthlyArchives: rawSbSaveMonthlyArchives,
+  sbSaveWorkersRegistry: rawSbSaveWorkersRegistry,
+  sbSyncWarehouseExpense: rawSbSyncWarehouseExpense,
+  sbSaveVenueInventory: rawSbSaveVenueInventory,
+  sbSaveReceivables: rawSbSaveReceivables,
+  sbSavePackageReference: rawSbSavePackageReference,
+  sbDeletePackageReference: rawSbDeletePackageReference,
+  sbAddCobrarPayments: rawSbAddCobrarPayments,
+  sbAddTransferMovement: rawSbAddTransferMovement,
+  sbSetTransferMovementExcluded: rawSbSetTransferMovementExcluded,
+  sbUpdateTransferMovement: rawSbUpdateTransferMovement,
+  sbDeleteTransferMovement: rawSbDeleteTransferMovement,
+  sbAddExpense: rawSbAddExpense,
+  sbSaveBulletins: rawSbSaveBulletins,
+  sbSaveQueenState: rawSbSaveQueenState,
+  sbSaveAutomationState: rawSbSaveAutomationState,
+}
+registerOfflineExecutor(async (op: QueuedOp) => {
+  const impl = OFFLINE_IMPLS[op.fn]
+  if (!impl) throw new Error(`Operación de la cola sin ejecutor: ${op.fn}`)
+  await impl(...(op.args as never[]))
+})
+
+export async function sbSaveWarehouseExtended(entries: WarehouseEntry[], meta: Record<string, WarehouseProductMeta>): Promise<void> {
+  return withOfflineQueue('sbSaveWarehouseExtended', [entries, meta], () => rawSbSaveWarehouseExtended(entries, meta))
+}
+export async function sbSaveElaborationStore(store: ElaborationStore): Promise<void> {
+  return withOfflineQueue('sbSaveElaborationStore', [store], () => rawSbSaveElaborationStore(store))
+}
+export async function sbSaveExtraIncomes(items: ExtraIncome[]): Promise<void> {
+  return withOfflineQueue('sbSaveExtraIncomes', [items], () => rawSbSaveExtraIncomes(items))
+}
+export async function sbSaveInventoryAdjustments(items: InventoryAdjustment[]): Promise<void> {
+  return withOfflineQueue('sbSaveInventoryAdjustments', [items], () => rawSbSaveInventoryAdjustments(items))
+}
+export async function sbSaveMonthlyArchives(archives: MonthlyArchive[]): Promise<void> {
+  return withOfflineQueue('sbSaveMonthlyArchives', [archives], () => rawSbSaveMonthlyArchives(archives))
+}
+export async function sbSaveWorkersRegistry(patch: {
+  workers?: Worker[]
+  removeWorkerKeys?: string[]
+  workersExtended?: WorkerExtended[]
+  workerPayments?: WorkerPayment[]
+  workersHistorial?: import('../types').WorkerHistorialEntry[]
+}): Promise<void> {
+  return withOfflineQueue('sbSaveWorkersRegistry', [patch], () => rawSbSaveWorkersRegistry(patch))
+}
+export async function sbSyncWarehouseExpense(expense: Expense | null, sourceKey: string): Promise<void> {
+  return withOfflineQueue('sbSyncWarehouseExpense', [expense, sourceKey], () => rawSbSyncWarehouseExpense(expense, sourceKey))
+}
+export async function sbSaveVenueInventory(items: VenueInventoryItem[]): Promise<void> {
+  return withOfflineQueue('sbSaveVenueInventory', [items], () => rawSbSaveVenueInventory(items))
+}
+export async function sbSaveReceivables(receivables: Receivable[], deletedIds: string[] = []): Promise<void> {
+  return withOfflineQueue('sbSaveReceivables', [receivables, deletedIds], () => rawSbSaveReceivables(receivables, deletedIds))
+}
+export async function sbSavePackageReference(ref: PackageReference): Promise<void> {
+  return withOfflineQueue('sbSavePackageReference', [ref], () => rawSbSavePackageReference(ref))
+}
+export async function sbDeletePackageReference(id: string): Promise<void> {
+  return withOfflineQueue('sbDeletePackageReference', [id], () => rawSbDeletePackageReference(id))
+}
+export async function sbAddCobrarPayments(
+  allocations: Array<{ receivableId: string; amount: number; date: string; method: 'efectivo' | 'transferencia' }>,
+): Promise<void> {
+  return withOfflineQueue('sbAddCobrarPayments', [allocations], () => rawSbAddCobrarPayments(allocations))
+}
+export async function sbAddTransferMovement(m: Omit<TransferMovement, 'id' | 'local' | 'superseded'>): Promise<void> {
+  return withOfflineQueue('sbAddTransferMovement', [m], () => rawSbAddTransferMovement(m))
+}
+export async function sbSetTransferMovementExcluded(id: string, excluded: boolean, current: TransferMovement): Promise<void> {
+  return withOfflineQueue('sbSetTransferMovementExcluded', [id, excluded, current], () => rawSbSetTransferMovementExcluded(id, excluded, current))
+}
+export async function sbUpdateTransferMovement(id: string, patch: { date: string; amount: number; detail: string }, current: TransferMovement): Promise<void> {
+  return withOfflineQueue('sbUpdateTransferMovement', [id, patch, current], () => rawSbUpdateTransferMovement(id, patch, current))
+}
+export async function sbDeleteTransferMovement(id: string): Promise<void> {
+  return withOfflineQueue('sbDeleteTransferMovement', [id], () => rawSbDeleteTransferMovement(id))
+}
+export async function sbAddExpense(input: {
+  date: string
+  concept: string
+  category: string
+  dept: string
+  quantity: number
+  unitValue: number
+  note: string
+}): Promise<void> {
+  return withOfflineQueue('sbAddExpense', [input], () => rawSbAddExpense(input))
+}
+export async function sbSaveBulletins(list: Bulletin[]): Promise<void> {
+  return withOfflineQueue('sbSaveBulletins', [list], () => rawSbSaveBulletins(list))
+}
+
+/* Registro de actividad por usuario (decisión del dueño 15:02):
+   vive en app_settings 'activity-log'. La lectura es abierta a
+   cualquier sesión; la escritura puede estar limitada por RLS al
+   administrador — si un rol de lectura no puede escribirla, sus
+   entradas quedan en su dispositivo (activityLog.ts lo declara). */
+export async function sbLoadActivityLog(): Promise<Array<Record<string, unknown>>> {
+  const client = sb()
+  if (!client) return []
+  const { data, error } = await client.from('app_settings').select('value').eq('key', 'activity-log').maybeSingle()
+  if (error || !data) return []
+  const value = (data as { value: unknown }).value as { items?: unknown } | null
+  return Array.isArray(value?.items) ? (value.items as Array<Record<string, unknown>>) : []
+}
+export async function sbSaveActivityLog(items: Array<Record<string, unknown>>): Promise<void> {
+  await saveAppSetting('activity-log', { items: items.slice(0, 800) }, 'el registro de actividad')
+}
+export async function sbSaveQueenState(snapshot: QueenEvolutionSnapshot): Promise<void> {
+  return withOfflineQueue('sbSaveQueenState', [snapshot], () => rawSbSaveQueenState(snapshot))
+}
+export async function sbSaveAutomationState(
+  patch: Partial<Pick<StoredData, 'automationRuns' | 'queenLearning'>>,
+): Promise<void> {
+  return withOfflineQueue('sbSaveAutomationState', [patch], () => rawSbSaveAutomationState(patch))
 }
 
 export interface QueenChatResult {

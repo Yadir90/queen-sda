@@ -3,7 +3,7 @@ import type { PayrollEmployee, StoredData, Worker, WorkerExtended } from '../typ
 import { TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { WorkerPhoto } from '../components/MediaImage'
-import WorkerFichaCompleta, { WorkerQrScanner } from '../components/WorkerFichaCompleta'
+import WorkerRegistry from './WorkerRegistry'
 import { extendedByWorker } from '../lib/workersExtended'
 import { effectiveSaldo, fmtCUP, fmtDate, fmtDateShort, fmtInt, todayISO } from '../lib/utils'
 import { saveRhSettings, supabaseConfigured } from '../lib/backend'
@@ -47,42 +47,6 @@ const SB_MODE = supabaseConfigured()
 
 type DerivedEmployee = ReturnType<typeof deriveCyclePayroll>['employees'][number]
 
-function fmtDias(n: number): string {
-  return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
-}
-
-function RhSquares({
-  marks, dates, today, showNumbers = true,
-}: {
-  marks: Record<string, number> | undefined
-  dates: string[]
-  today: string
-  showNumbers?: boolean
-}) {
-  return (
-    <div className="rh-squares" role="img" aria-label="Días trabajados">
-      {dates.map((f) => {
-        const v = marks?.[f]
-        const dayNum = Number(f.slice(8, 10))
-        let cls = 'rh-sq'
-        let label = ''
-        if (v == null) { cls += ' is-none'; label = 'aún sin foto' }
-        else if (v >= 1) { cls += ' is-full'; label = 'trabajó' }
-        else if (v > 0) { cls += ' is-half'; label = 'medio día' }
-        else { cls += ' is-rest'; label = 'descanso' }
-        if (f === today) cls += ' is-today'
-        if (f > today) cls += ' is-future'
-        return (
-          <span key={f} className={cls} title={`${fmtDate(f)} — ${label}`}>
-            {showNumbers ? dayNum : ''}
-          </span>
-        )
-      })}
-    </div>
-  )
-}
-
-const SQUARES_LEGEND = 'Cuadrados del mes: lleno trabajó · medio tono, medio día · gris descanso · punteado aún sin foto · borde dorado, hoy. (En el original la «A» en ámbar marca ausencias justificadas del registro de trabajadores; ese registro no viaja en el respaldo, así que aquí no se pinta ninguna «A».)'
 
 /* ============ Organigrama del equipo (puerto de OrganigramaEquipo,
    App.tsx del original ~5617-5750, con sus helpers areaOrganigrama
@@ -113,6 +77,10 @@ const SQUARES_LEGEND = 'Cuadrados del mes: lleno trabajó · medio tono, medio d
      'foto-trabajador' por slug del nombre); sin foto se usan las
      iniciales con su color, como en Cobrar y en Queen. */
 
+function fmtDias(n: number): string {
+  return n % 1 === 0 ? `${fmtInt(n)} días` : `${n.toLocaleString('es-ES', { maximumFractionDigits: 1 })} días`
+}
+
 function areaOrganigrama(ocupacion: string): string {
   const raw = (ocupacion ?? '').trim().replace(/\s+/g, ' ')
   if (!raw) return 'Sin cargo registrado'
@@ -121,7 +89,7 @@ function areaOrganigrama(ocupacion: string): string {
   if (/econom|contabil/.test(n)) return 'Economía y contabilidad'
   if (/camarer/.test(n)) return 'Camareras'
   if (/cajer/.test(n)) return 'Cajeras'
-  if (/cociner|ayudante de cocina|chef/.test(n)) return 'Cocina'
+  if (/cociner|ayudante de cocina|chef|jefe de cocina|jefa de cocina/.test(n)) return 'Cocina'
   if (/bartender|barman|cantina/.test(n)) return 'Bartender'
   if (/limpieza|limpiador/.test(n)) return 'Limpieza'
   if (/seguridad|vigilante|guardi/.test(n)) return 'Seguridad'
@@ -159,16 +127,16 @@ function ordenarPorNombre<T extends { nombre: string }>(rows: readonly T[]): T[]
    el Turno 2 hace siempre lo contrario. */
 const TURNO_ANCLA_FECHA = '2026-09-22'
 const PATRON_TURNO_UNO: boolean[] = [true, true, false, false, true, true, true, false, false, true, true, false, false, false]
-function esCargoDeTurno(ocupacion: string): boolean {
+export function esCargoDeTurno(ocupacion: string): boolean {
   const n = (ocupacion ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   return /(camarer|cajer|cociner)/.test(n)
 }
-function trabajaSegunTurno(iso: string, turno: 1 | 2): boolean {
+export function trabajaSegunTurno(iso: string, turno: 1 | 2): boolean {
   const idx = (((diffDays(TURNO_ANCLA_FECHA, iso) % 14) + 14) % 14)
   const base = PATRON_TURNO_UNO[idx]!
   return turno === 1 ? base : !base
 }
-function detectarTurnoAlterno(obs: Array<{ fecha: string; on: boolean }>): 1 | 2 | null {
+export function detectarTurnoAlterno(obs: Array<{ fecha: string; on: boolean }>): 1 | 2 | null {
   if (obs.length < 7) return null
   const ons = obs.filter((o) => o.on).length
   if (ons === 0 || ons === obs.length) return null
@@ -186,7 +154,7 @@ function EstrellaSvg({ llena, size }: { llena: boolean; size: number }) {
   )
 }
 
-function EstrellasValor({ value, size = 13 }: { value: number; size?: number }) {
+export function EstrellasValor({ value, size = 13 }: { value: number; size?: number }) {
   if (!value) return null
   return (
     <span className="org-stars" role="img" aria-label={`Evaluación del desempeño: ${value} de 5 estrellas`}>
@@ -238,7 +206,7 @@ interface OrgPerson {
   turnoValido: 1 | 2 | null
 }
 
-function OrganigramaEquipo({ workers, marks, today, onOpenWorker, extendedMap }: {
+export function OrganigramaEquipo({ workers, marks, today, onOpenWorker, extendedMap }: {
   workers: Worker[]
   marks: Record<string, Record<string, number>>
   today: string
@@ -381,18 +349,9 @@ function OrganigramaEquipo({ workers, marks, today, onOpenWorker, extendedMap }:
           )
         })}
       </div>
-      <p className="org-final">Cómo se lee: <strong>La Reina · Equipo</strong> arriba → cada <strong>área</strong> → sus <strong>turnos</strong> donde aplica → cada <strong>persona</strong>. En <strong>Cocina</strong> manda el jefe de cocina (el chef): su cajita va encima de los turnos y de él bajan las cocineras. Si un cargo está mal, corrígelo en su ficha del sistema original (ahí manda sobre el IPV, queda guardado y el organigrama se actualiza solo al importar el respaldo actualizado); los datos del IPV no se reescriben.</p>
+      <p className="org-final">Cómo se lee: <strong>La Reina · Equipo</strong> arriba → cada <strong>área</strong> → sus <strong>turnos</strong> donde aplica → cada <strong>persona</strong>. En <strong>Cocina</strong> manda el jefe de cocina (el chef): su cajita va encima de los turnos y de él bajan las cocineras. Si un cargo está mal, corrígelo en su ficha (ahí manda sobre el IPV, queda guardado y el organigrama se actualiza solo); los datos del IPV no se reescriben.</p>
     </div>
   )
-}
-
-function monthDates(yearMonth: string): { dates: string[]; lead: number } {
-  const [y, m] = yearMonth.split('-').map(Number)
-  const count = new Date(y, m, 0).getDate()
-  const lead = (new Date(y, m - 1, 1).getDay() + 6) % 7
-  const dates: string[] = []
-  for (let d = 1; d <= count; d++) dates.push(`${yearMonth}-${String(d).padStart(2, '0')}`)
-  return { dates, lead }
 }
 
 export default function RHScreen({
@@ -408,7 +367,6 @@ export default function RHScreen({
   const [cycleIdx, setCycleIdx] = useState<number | null>(null)
   const idx = cycleIdx ?? currentIdx
   const win = cycleWindow(anchor, idx)
-  const [selectedKey, setSelectedKey] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<PayrollEmployee[]>([])
   const [editError, setEditError] = useState<string | null>(null)
@@ -471,15 +429,6 @@ export default function RHScreen({
       }))
     : (derived.employees as DerivedEmployee[])
 
-  const cycleReceivables = (key: string) =>
-    data.receivables.filter((r) => canonicalPersonKey(r.clientKey, r.client) === key && r.date >= win.start && r.date <= win.end)
-
-  const selectedWorker: Worker | null = data.workers.find((w) => w.key === selectedKey) ?? null
-  const monthOfToday = today.slice(0, 7)
-  const { dates: monthDateList, lead } = monthDates(monthOfToday)
-  const cycleDates: string[] = []
-  for (let i = 0; i < 15; i++) cycleDates.push(addDaysISO(win.start, i))
-
   const startEdit = () => {
     setDraft(
       (derived.employees as DerivedEmployee[])
@@ -512,31 +461,6 @@ export default function RHScreen({
     <div>
       <TabHeader icon="people" title="RH · Pagos" desc="Trabajadores, ciclos de 15 días y nómina" badge={TAB_BADGES.rh} />
 
-      {/* Organigrama del equipo: AL PRINCIPIO de RH, como en el
-          original; tocar una cajita abre la ficha de esa persona
-          (la misma ficha de abajo, a la que se desplaza la vista). */}
-      <OrganigramaEquipo
-        workers={data.workers}
-        marks={marks}
-        today={today}
-        extendedMap={extMap}
-        onOpenWorker={(w) => {
-          setSelectedKey(w.key)
-          requestAnimationFrame(() => document.getElementById('rh-ficha-trabajador')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-        }}
-      />
-
-      {/* Escáner de credenciales del original: lee el QR con la
-          cámara (o el código a mano) y abre la ficha. */}
-      <WorkerQrScanner
-        workers={data.workers}
-        extendedList={data.workersExtended}
-        onOpenWorker={(w) => {
-          setSelectedKey(w.key)
-          requestAnimationFrame(() => document.getElementById('rh-ficha-trabajador')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-        }}
-      />
-
       {/* Cabecera de ciclo del original (RHTab): tarjeta verde profundo
           con Inicio / Fin (día 15) / Pago (día 16, en dorado) y el estado. */}
       <div className="rh-hero">
@@ -563,6 +487,21 @@ export default function RHScreen({
           <p className="rh-hero-back"><button type="button" className="btn" onClick={() => setCycleIdx(null)}>Volver al ciclo actual</button></p>
         ) : null}
       </div>
+
+      {/* Registro de trabajadores del original (WorkersRegistry):
+          organigrama → resumen → escáner → fichas → historial,
+          ANTES de la nómina del ciclo, como en el RHTab original. */}
+      <WorkerRegistry
+        data={data}
+        marks={marks}
+        today={today}
+        win={win}
+        derivedEmployees={derived.employees as DerivedEmployee[]}
+        recorded={recorded}
+        extMap={extMap}
+        isAdmin={isAdmin}
+        onChanged={onChanged}
+      />
 
       <section className="card">
         <table className="kv" style={{ marginTop: 0 }}>
@@ -651,7 +590,7 @@ export default function RHScreen({
                 {tableEmployees.map((e) => (
                   <tr key={e.key} className={e.direccion ? 'is-direccion' : e.noPagado ? 'is-nopagado' : ''}>
                     <td>
-                      <button type="button" className="rh-name" onClick={() => setSelectedKey(e.key)}>{e.nombre}</button>
+                      <span className="rh-name">{e.nombre}</span>
                       {e.ocupacion ? <span className="small muted"> · {e.ocupacion}</span> : null}
                       {e.direccion ? <span className="chip">Dirección · fuera de nómina</span> : null}
                       {e.noPagado ? <span className="chip">No pagado</span> : null}
@@ -796,152 +735,6 @@ export default function RHScreen({
         )}
       </section>
 
-      {/* Registro de trabajadores */}
-      <section className="card">
-        <h3 className="font-display">Trabajadores ({fmtInt(data.workers.length)})</h3>
-        <p className="small muted">Registro único: las variantes de nombre de los IPV se unifican en una sola ficha. Toca un nombre para ver su ficha, sus cuadrados y sus cuentas del ciclo.</p>
-        <div className="rh-workers">
-          {data.workers.map((w) => {
-            const worked = Object.entries(marks[w.key] ?? {})
-              .filter(([f]) => f >= win.start && f <= win.end)
-              .reduce((s, [, v]) => s + v, 0)
-            const ext = extMap.get(w.key)
-            return (
-              <button key={w.key} type="button" className={`rh-worker ${selectedKey === w.key ? 'active' : ''}`} onClick={() => setSelectedKey(w.key)}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <WorkerPhoto nombre={w.nombre} className="rh-worker-photo" avatarClassName="rh-worker-photo" colorKey={w.key} />
-                  <span>
-                    <span className="rh-worker-name">{w.nombre}</span>
-                    {ext && ext.estrellas > 0 ? <EstrellasValor value={ext.estrellas} size={11} /> : null}
-                    <span className="small muted" style={{ display: 'block' }}>{w.roleKind === 'direccion' ? 'Dirección' : w.ocupacion || 'Sin ocupación'} · {fmtDias(worked)} días en el ciclo{ext?.contratoCanceladoEl ? ' · Contrato cancelado' : ''}</span>
-                  </span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      {/* Ficha del trabajador */}
-      {selectedWorker ? (
-        <section className="card" id="rh-ficha-trabajador">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-            <WorkerPhoto nombre={selectedWorker.nombre} className="ficha-photo" avatarClassName="ficha-avatar" colorKey={selectedWorker.key} />
-            <div>
-              <h3 className="font-display" style={{ margin: 0 }}>{selectedWorker.nombre}</h3>
-              {(() => { const ext = extMap.get(selectedWorker.key); return ext && ext.estrellas > 0 ? <EstrellasValor value={ext.estrellas} size={16} /> : null })()}
-            </div>
-          </div>
-          {selectedWorker.roleKind === 'direccion' ? (
-            <p className="small muted">Dirección: ficha informativa. No entra en nómina ni en pagos.</p>
-          ) : null}
-          {(() => {
-            const ext = extMap.get(selectedWorker.key)
-            return ext?.contratoCanceladoEl ? (
-              <div className="cancelled-band" role="status">
-                CANCELADO
-                <small>Contrato cancelado el {fmtDate(ext.contratoCanceladoEl)}{ext.contratoCanceladoCiclo ? ` · ciclo de la cancelación: ${fmtDate(ext.contratoCanceladoCiclo)}` : ''}</small>
-              </div>
-            ) : null
-          })()}
-          <table className="kv">
-            <tbody>
-              <tr><td>Ocupación</td><td>{selectedWorker.ocupacion || '—'}</td></tr>
-              <tr><td>Carnet</td><td>{selectedWorker.carnet || '—'}</td></tr>
-              <tr><td>Cuenta bancaria</td><td>{selectedWorker.cuentaBancaria || '—'}</td></tr>
-              <tr><td>Móvil</td><td>{selectedWorker.movil || '—'}</td></tr>
-              {(() => {
-                const ext = extMap.get(selectedWorker.key)
-                if (!ext) return null
-                const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
-                const DIAS_PL = ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados']
-                const fijos = ext.workWeekdays.length ? ext.workWeekdays : ext.workWeekday != null ? [ext.workWeekday] : []
-                // Turno válido con la precedencia del original:
-                // corrección → detectado del IPV → puesto a mano.
-                const aplica = esCargoDeTurno(selectedWorker.ocupacion)
-                const ausSet = new Set<string>()
-                const obs = Object.entries(marks[selectedWorker.key] ?? {})
-                  .sort((a, b) => a[0].localeCompare(b[0]))
-                  .filter(([f]) => f <= today && !ausSet.has(f))
-                  .map(([fecha, v]) => ({ fecha, on: v > 0 }))
-                const detectado = aplica ? detectarTurnoAlterno(obs) : null
-                const valido = ext.turnoCorreccion ?? detectado ?? ext.turnoAsignado
-                const fuente = ext.turnoCorreccion ? 'corrección manual' : detectado ? 'detectado del IPV' : ext.turnoAsignado ? 'puesto a mano' : null
-                return (
-                  <>
-                    {ext.estrellas > 0 ? <tr><td>Evaluación</td><td>{ext.estrellas} de 5 estrellas</td></tr> : null}
-                    {ext.genero ? <tr><td>Género</td><td>{ext.genero}</td></tr> : null}
-                    {ext.escolaridad ? <tr><td>Escolaridad</td><td>{ext.escolaridad}</td></tr> : null}
-                    {aplica ? (
-                      <tr>
-                        <td>Turno válido</td>
-                        <td>{valido ? <>Turno {valido} <span className="small muted">({fuente})</span></> : 'Sin turno válido aún'}</td>
-                      </tr>
-                    ) : null}
-                    {ext.turnoAsignado ? <tr><td>Turno puesto a mano</td><td>Turno {ext.turnoAsignado}</td></tr> : null}
-                    {fijos.length ? <tr><td>Días fijos de trabajo</td><td>{fijos.map((d) => DIAS_PL[d] ?? String(d)).join(', ')}</td></tr> : null}
-                    {ext.restWeekday != null ? <tr><td>Día de descanso semanal</td><td>Descansa los {DIAS_PL[ext.restWeekday] ?? ''} ({DIAS[ext.restWeekday] ?? ''})</td></tr> : null}
-                  </>
-                )
-              })()}
-              {selectedWorker.notas ? <tr><td>Notas</td><td>{selectedWorker.notas}</td></tr> : null}
-              <tr>
-                <td>Cuentas del ciclo</td>
-                <td>{(() => {
-                  const list = cycleReceivables(selectedWorker.key)
-                  const pend = list.filter((r) => r.status !== 'pagada' && !r.closeKind)
-                    .reduce((s, r) => s + effectiveSaldo(r, data.localPayments), 0)
-                  return list.length ? `${fmtInt(list.length)} cuenta(s) · pendiente ${fmtCUP(pend)}` : 'Sin cuentas en este ciclo'
-                })()}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          {selectedWorker.roleKind !== 'direccion' ? (
-            <>
-              <h4 className="font-display" style={{ marginTop: 16 }}>Cuadrados del mes</h4>
-              <div className="rh-week-head" aria-hidden><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
-              <div className="rh-squares rh-squares-month">
-                {Array.from({ length: lead }).map((_, i) => <span key={`lead-${i}`} className="rh-sq is-blank" />)}
-                {monthDateList.map((f) => {
-                  const v = marks[selectedWorker.key]?.[f]
-                  let cls = 'rh-sq'
-                  if (v == null) cls += ' is-none'
-                  else if (v >= 1) cls += ' is-full'
-                  else if (v > 0) cls += ' is-half'
-                  else cls += ' is-rest'
-                  if (f === today) cls += ' is-today'
-                  if (f > today) cls += ' is-future'
-                  const label = v == null ? 'aún sin foto' : v >= 1 ? 'trabajó' : v > 0 ? 'medio día' : 'descanso'
-                  return <span key={f} className={cls} title={`${fmtDate(f)} — ${label}`}>{Number(f.slice(8, 10))}</span>
-                })}
-              </div>
-              <p className="small" style={{ marginTop: 8 }}>
-                <span className="chip">
-                  {fmtDias(monthDateList.reduce((s, f) => s + (marks[selectedWorker.key]?.[f] ?? 0), 0))} días trabajados
-                </span>
-              </p>
-              <p className="small muted">{SQUARES_LEGEND}</p>
-
-              <h4 className="font-display" style={{ marginTop: 16 }}>Quincena del ciclo</h4>
-              <RhSquares marks={marks[selectedWorker.key]} dates={cycleDates} today={today} />
-              <p className="small" style={{ marginTop: 8 }}>
-                <span className="chip">
-                  {fmtDias(cycleDates.reduce((s, f) => s + (marks[selectedWorker.key]?.[f] ?? 0), 0))} días trabajados en el ciclo
-                </span>
-              </p>
-            </>
-          ) : null}
-
-          {/* Ficha completa del original: documentos, firma y
-              credencial digital de esta persona. */}
-          <WorkerFichaCompleta
-            worker={selectedWorker}
-            extended={extMap.get(selectedWorker.key) ?? null}
-            isAdmin={isAdmin}
-          />
-        </section>
-      ) : null}
     </div>
   )
 }

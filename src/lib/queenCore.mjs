@@ -248,9 +248,24 @@ function plazoDias(category) {
 }
 export function esMorosaQueen(rec, saldo, refDate) {
   if (!esPendienteQueen(rec, saldo) || !rec.date) return false
+  if (rec.isMorosa) return true
   const plazo = plazoDias(rec.category)
   if (plazo === null) return false
-  return refDate > addDaysISO(rec.date, plazo)
+  /* Trabajadores: 15 días HÁBILES (addBusinessDays del original);
+     clientes: 7 naturales (D-03: este núcleo sumaba naturales). */
+  return refDate > (rec.category === 'trabajador' ? addBusinessDaysISO(rec.date, plazo) : addDaysISO(rec.date, plazo))
+}
+
+/** addBusinessDays del original (App.tsx:864) sobre fechas ISO. */
+function addBusinessDaysISO(desdeISO, amount) {
+  const d = new Date(`${desdeISO}T12:00:00Z`)
+  let added = 0
+  while (added < Math.max(0, amount)) {
+    d.setUTCDate(d.getUTCDate() + 1)
+    const weekday = d.getUTCDay()
+    if (weekday !== 0 && weekday !== 6) added++
+  }
+  return d.toISOString().slice(0, 10)
 }
 
 /** Pendientes agrupados por tarjeta (clientKey), como las tarjetas
@@ -463,7 +478,9 @@ function latestMonthKey(data) {
 }
 
 export function answerQueen(data, question, opts = {}) {
-  const refDate = opts.refDate ?? new Date().toISOString().slice(0, 10)
+  /* Fecha de referencia por defecto: HOY en America/Havana (D-03),
+     no la fecha UTC del entorno que ejecute el núcleo. */
+  const refDate = opts.refDate ?? havanaTodayISO()
   const q = normalizeQueenText(question)
   const days = [...(data?.days ?? [])].sort((a, b) => a.date.localeCompare(b.date))
   const hasData = days.length > 0 || (data?.receivables ?? []).length > 0
@@ -766,6 +783,15 @@ export function queenQuestionPattern(question) {
   if (/ipv|import|dia de hoy/.test(q)) return '¿Falta el IPV de hoy?'
   if (/venta|resultado|ganancia|como vamos/.test(q)) return '¿Cómo vamos?'
   return 'Otra consulta'
+}
+
+/** Hoy (YYYY-MM-DD) en America/Havana. */
+export function havanaTodayISO() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Havana', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date())
+  const value = (type) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${value('year')}-${value('month')}-${value('day')}`
 }
 
 function havanaNowQueen(refDate) {
