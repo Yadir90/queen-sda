@@ -14,18 +14,19 @@ import '../components/sectionsMirror.css'
    en orden alfabético en español, con los nombres, iconos y
    descripciones LITERALES de la lista `tabs` de su App.tsx
    (App.tsx:2488-2510). Existencias es Tab del original aunque su
-   lista de navegación lo omite (se abre desde Productos): por eso
-   aquí figura como sección sin destino propio en el clon, con su
-   descripción de TAB_BADGES («Libro de existencias»).
+   lista de navegación lo omite (se abre desde Productos): en esta
+   copia Existencias SÍ es destino propio desde esta rejilla, con
+   el mismo libro que se ve dentro de Productos.
    Diferencias de arquitectura del clon, declaradas en la propia
    rejilla: Gastos abre Economía (donde viven los gastos en esta
    copia), Menú abre Documentos (donde se genera el menú) e
-   Importar abre Sistema (donde se importa el respaldo/IPV); las
-   secciones que el clon aún no tiene se muestran con su estado
-   honesto de «siguiente fase», sin fingir que abren algo. La
-   pantalla «Cuentas» del clon no es una sección del original (las
-   cuentas viven dentro de Cobrar) y por eso ya no figura en esta
-   rejilla: sigue accesible desde Cobrar y la barra lateral. */
+   Importar abre Sistema (donde se importa el respaldo/IPV). Desde
+   la oleada 3 las 19 tarjetas abren una pantalla real: Ajustes,
+   Archivo, Cronología, Entradas, Existencias y Otros ingresos
+   dejaron de ser tarjetas sin destino. La pantalla «Cuentas» del
+   clon no es una sección del original (las cuentas viven dentro
+   de Cobrar) y por eso ya no figura en esta rejilla: sigue
+   accesible desde Cobrar y la barra lateral. */
 
 interface MasItem {
   name: string
@@ -35,22 +36,22 @@ interface MasItem {
 }
 
 const ITEMS: MasItem[] = [
-  { name: 'Ajustes', desc: 'Perfil, acceso y configuración', icon: 'settings' },
+  { name: 'Ajustes', desc: 'Perfil, acceso y configuración', icon: 'settings', go: 'ajustes' },
   { name: 'Almacén', desc: 'Control manual de existencias del almacén', icon: 'package', go: 'almacen' },
-  { name: 'Archivo', desc: 'Meses cerrados y morosas', icon: 'archive' },
-  { name: 'Cronología', desc: 'Registro cronológico interactivo de todo el sistema, por categorías', icon: 'list' },
+  { name: 'Archivo', desc: 'Meses cerrados y morosas', icon: 'archive', go: 'archivo' },
+  { name: 'Cronología', desc: 'Registro cronológico interactivo de todo el sistema, por categorías', icon: 'list', go: 'cronologia' },
   { name: 'Días', desc: 'Días importados y detalle diario', icon: 'calendar', go: 'dias' },
   { name: 'Economía', desc: 'Fondos, márgenes y análisis económico', icon: 'chart', go: 'economia' },
   { name: 'Elaboración', desc: 'Fichas de costo de los productos', icon: 'receipt', go: 'elaboracion' },
-  { name: 'Entradas', desc: 'Entradas e inversión del IPV', icon: 'package' },
-  { name: 'Existencias', desc: 'Libro de existencias', icon: 'archive' },
+  { name: 'Entradas', desc: 'Entradas e inversión del IPV', icon: 'package', go: 'entradas' },
+  { name: 'Existencias', desc: 'Libro de existencias', icon: 'archive', go: 'existencias' },
   { name: 'Gastos', desc: 'Gastos y salidas de caja', icon: 'receipt', go: 'economia' },
   { name: 'Historial', desc: 'Boletines generados y su estado de envío', icon: 'clock', go: 'historial' },
   { name: 'Importar', desc: 'Subir Excel diario del IPV', icon: 'upload', go: 'sistema' },
-  { name: 'Inventario', desc: 'Registro independiente de los bienes del local', icon: 'archive' },
+  { name: 'Inventario', desc: 'Registro independiente de los bienes del local', icon: 'archive', go: 'inventario' },
   { name: 'Laboratorio', desc: 'Simulación aislada e IPV de prueba que se cuadra a 0, sin tocar datos reales', icon: 'flask', go: 'laboratorio' },
   { name: 'Menú', desc: 'Menú del día desde Productos, editable y en PDF', icon: 'doc', go: 'documentos' },
-  { name: 'Otros ingresos', desc: 'Coctelería, pizzería, entrada y mesas', icon: 'plus' },
+  { name: 'Otros ingresos', desc: 'Coctelería, pizzería, entrada y mesas', icon: 'plus', go: 'extras' },
   { name: 'Productos', desc: 'Ficha maestra: existencia, precios, costo promedio y ganancia', icon: 'package', go: 'productos' },
   { name: 'RH · Pagos', desc: 'Nómina quincenal y historial', icon: 'people', go: 'rh' },
   { name: 'Transferencias', desc: 'Acumulado por pasar al banco', icon: 'transfer', go: 'transferencias' },
@@ -66,29 +67,16 @@ export function MasScreen({ onNavigate, data }: { onNavigate: (s: Section) => vo
     <div>
       <TabHeader icon="more" title="Más" desc="Todas las secciones del sistema" badge={TAB_BADGES.mas} />
       <div className="mas-grid">
-        {ITEMS.map((item) => {
-          const inner = (
-            <>
-              <span className="mas-ico"><Icon name={item.icon} size={22} /></span>
-              <span className="mas-text">
-                <span className="mas-name">{item.name}</span>
-                <span className="mas-desc">{item.desc}</span>
-              </span>
-              {item.go
-                ? <span className="mas-chev"><Icon name="chevronR" size={18} /></span>
-                : <span className="chip">Siguiente fase</span>}
-            </>
-          )
-          return item.go ? (
-            <button key={item.name} type="button" className="mas-card" onClick={() => onNavigate(item.go!)} aria-label={`Ir a ${item.name}: ${item.desc}`}>
-              {inner}
-            </button>
-          ) : (
-            <div key={item.name} className="mas-card is-future" aria-label={`${item.name}: llega en la siguiente fase`}>
-              {inner}
-            </div>
-          )
-        })}
+        {ITEMS.map((item) => (
+          <button key={item.name} type="button" className="mas-card" onClick={() => onNavigate(item.go!)} aria-label={`Ir a ${item.name}: ${item.desc}`}>
+            <span className="mas-ico"><Icon name={item.icon} size={22} /></span>
+            <span className="mas-text">
+              <span className="mas-name">{item.name}</span>
+              <span className="mas-desc">{item.desc}</span>
+            </span>
+            <span className="mas-chev"><Icon name="chevronR" size={18} /></span>
+          </button>
+        ))}
       </div>
       <p className="mas-foot">
         {fmtInt(data.days.length)} días importados · Dinero en la calle: {fmtCUP(dineroCalle)} (solo cuentas de clientes)

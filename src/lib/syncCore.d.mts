@@ -83,6 +83,8 @@ export declare function deriveSuppressedEntries(
 export declare function addDaysISO(iso: string, n: number): string
 export declare function diffDays(a: string, b: string): number
 export declare function clientKeyOf(name: string): string
+export declare function personaOf(clientKeyOrName: string | null | undefined): 'dayami' | 'alejandro' | 'jesus' | 'general'
+export declare function workerKeyForAccount(accountClient: string | null | undefined, workers: ReadonlyArray<{ key?: string | null; nombre: string }>): string | null
 export declare function firstNameKeyOf(name: string): string
 export declare function canonicalPersonKey(storedKey: string | null | undefined, fallbackName?: string): string
 export declare function isDirectionPerson(nameOrKey: string): boolean

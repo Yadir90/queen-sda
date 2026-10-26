@@ -54,10 +54,39 @@ export function plazoDias(category: Receivable['category']): number | null {
   return null
 }
 
-/** Fecha de vencimiento (ISO) o null si la categoría no tiene plazo. */
+/** Suma días HÁBILES (sin sábado ni domingo), como el original. */
+export function addBusinessDaysISO(desdeISO: string, amount: number): string {
+  const date = new Date(`${desdeISO}T12:00:00`)
+  let added = 0
+  while (added < Math.max(0, amount)) {
+    date.setDate(date.getDate() + 1)
+    const weekday = date.getDay()
+    if (weekday !== 0 && weekday !== 6) added++
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** Días hábiles transcurridos entre dos fechas (el del original). */
+export function businessDaysElapsed(desdeISO: string, hoyISO: string): number {
+  if (hoyISO <= desdeISO) return 0
+  const cursor = new Date(`${desdeISO}T12:00:00`)
+  const end = new Date(`${hoyISO}T12:00:00`)
+  let count = 0
+  while (cursor < end) {
+    cursor.setDate(cursor.getDate() + 1)
+    const weekday = cursor.getDay()
+    if (weekday !== 0 && weekday !== 6) count++
+  }
+  return count
+}
+
+/** Fecha de vencimiento (ISO) o null si la categoría no tiene plazo.
+ *  Trabajadores: 15 días HÁBILES desde la creación (regla del
+ *  original — addBusinessDays); clientes: 7 días naturales. */
 export function dueDate(rec: Receivable): string | null {
   const plazo = plazoDias(rec.category)
   if (plazo === null || !rec.date) return null
+  if (rec.category === 'trabajador') return addBusinessDaysISO(rec.date, plazo)
   const d = new Date(`${rec.date}T12:00:00`)
   d.setDate(d.getDate() + plazo)
   return d.toISOString().slice(0, 10)
@@ -70,10 +99,15 @@ export function isMorosa(rec: Receivable, saldo: number, refDate: string): boole
   return due !== null && refDate > due
 }
 
-/** 0..1 — qué tan cerca está del vencimiento (para el degradado verde→rojo). */
+/** 0..1 — qué tan cerca está del vencimiento (el progreso de
+ *  vigenciaCuenta del original: días hábiles para trabajadores,
+ *  naturales para clientes). */
 export function agingRatio(rec: Receivable, refDate: string): number {
   const plazo = plazoDias(rec.category)
   if (plazo === null || !rec.date) return 0
+  if (rec.category === 'trabajador') {
+    return Math.min(1, Math.max(0, businessDaysElapsed(rec.date, refDate) / plazo))
+  }
   const start = new Date(`${rec.date}T12:00:00`).getTime()
   const ref = new Date(`${refDate}T12:00:00`).getTime()
   const elapsed = (ref - start) / 86400000

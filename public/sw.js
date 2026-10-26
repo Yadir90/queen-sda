@@ -1,7 +1,13 @@
-/* Queen SDA — service worker conservador.
-   Solo cachea la carcasa estática (HTML, JS, CSS, iconos, manifiesto).
-   Todo lo demás va network-first: los datos NUNCA se sirven de una caché vieja. */
-const CACHE = 'queen-sda-shell-v2'
+/* Queen SDA — service worker.
+   Estrategia RED-PRIMERO para la carcasa (HTML, JS, CSS, iconos,
+   manifiesto): la red manda y actualiza la caché en cada visita, así
+   la app instalada nunca mezcla piezas de builds viejas; la caché
+   solo responde cuando no hay conexión (funcionamiento offline de
+   la carcasa). Los datos NUNCA se sirven de una caché: todo lo que
+   no sea un asset de la carcasa va directo a la red, sin interceptar.
+   v3: al activarse se borran las cachés anteriores (v2 incluida),
+   que servían primero lo cacheado para JS/CSS. */
+const CACHE = 'queen-sda-shell-v3'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/sad-192.png', '/icons/sad-512.png']
 
 self.addEventListener('install', (event) => {
@@ -21,19 +27,27 @@ self.addEventListener('fetch', (event) => {
   const isShellAsset =
     url.origin === self.location.origin &&
     (request.mode === 'navigate' || /\.(?:js|css|png|svg|webmanifest|ico)$/.test(url.pathname))
-  if (!isShellAsset) return // network-first por defecto para datos y cualquier otra cosa
+  if (!isShellAsset) return // datos y cualquier otra cosa: red directa, sin caché
   event.respondWith(
-    caches.match(request).then((cached) => {
-      const network = fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone()
-            caches.open(CACHE).then((c) => c.put(request, copy))
-          }
-          return response
-        })
-        .catch(() => cached || caches.match('/index.html'))
-      return cached || network
-    }),
+    (async () => {
+      try {
+        const response = await fetch(request)
+        if (response.ok) {
+          const copy = response.clone()
+          const cache = await caches.open(CACHE)
+          await cache.put(request, copy)
+        }
+        return response
+      } catch {
+        // Sin conexión: respaldo desde la caché (la carcasa sigue abriendo).
+        const cached = await caches.match(request)
+        if (cached) return cached
+        if (request.mode === 'navigate') {
+          const shell = await caches.match('/index.html')
+          if (shell) return shell
+        }
+        throw new Error('Sin conexión y sin copia en caché para este recurso.')
+      }
+    })(),
   )
 })

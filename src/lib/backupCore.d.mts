@@ -1,5 +1,5 @@
 // Declaraciones de tipos para el núcleo compartido backupCore.mjs
-import type { BackupSummary, DayData, Expense, PayrollRecord, Receivable, TransferMovement, Worker } from '../types'
+import type { BackupSummary, DayData, Expense, MonthlyArchive, PayrollRecord, Receivable, ReceivablePhoto, SmsLog, SmsOutboxItem, TransferMovement, Worker, WorkerPayment } from '../types'
 
 export declare function summarizeDays(days: Array<Record<string, unknown>>): BackupSummary
 export declare function normalizeDay(d: Record<string, unknown>): DayData
@@ -24,5 +24,10 @@ export declare function parseBackup(raw: unknown): {
   expensesCount: number
   payrollCount: number
   workersCount: number
+  receivablePhotos: ReceivablePhoto[]
+  smsLogs: SmsLog[]
+  smsOutbox: SmsOutboxItem[]
+  monthlyArchives: MonthlyArchive[]
+  workerPayments: WorkerPayment[]
   summary: BackupSummary
 }
