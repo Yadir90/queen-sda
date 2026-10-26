@@ -2,8 +2,9 @@
 //
 // Uso: node scripts/generate-import-sql.mjs [ruta-al-respaldo] [ruta-sql-salida]
 // Lee el respaldo real del SDA y genera supabase/import-backup-2026-10-24.sql:
-// inserts IDEMPOTENTES (on conflict do update) para public.days y
-// public.receivables. Las columnas salen del MISMO parser de la app
+// inserts IDEMPOTENTES (on conflict do update) para public.days,
+// public.receivables y public.transfer_movements (el historial de la
+// tarjeta del negocio que trae el respaldo). Las columnas salen del MISMO parser de la app
 // (src/lib/backupCore.mjs) y el payload jsonb de cada fila es el registro
 // original completo del respaldo — cero datos inventados.
 //
@@ -48,6 +49,13 @@ const checks = [
   ['ganancia neta', s.gananciaNeta, EXPECTED.gananciaNeta],
   ['cuadre total', s.cuadreTotal, EXPECTED.cuadreTotal],
   ['n.º de cuentas', parsed.receivables.length, EXPECTED.receivables],
+  ['n.º de movimientos de la tarjeta', parsed.transferMovements.length, 20],
+  [
+    'saldo derivado de la tarjeta',
+    parsed.transferMovements.filter((m) => !m.excluded && !m.superseded).reduce((s, m) => s + m.amount, 0),
+    32625,
+  ],
+  ['pasado al banco derivado', parsed.transferMovements.filter((m) => !m.excluded && !m.superseded && m.source === 'pase' && m.paseKind === 'banco').reduce((s, m) => s + Math.abs(m.amount), 0), 107625],
 ]
 let failed = 0
 for (const [label, got, want] of checks) {
@@ -94,6 +102,11 @@ const recRows = parsed.receivables.map((r) => {
   const payload = rawRecById.get(r.id) ?? r
   const status = r.status || 'pendiente'
   return `(${sqlText(r.id)}, ${sqlText(r.client)}, ${sqlText(r.clientKey)}, ${sqlText(r.category)}, ${sqlDate(r.date)}, ${sqlNum(r.originalAmount)}, ${sqlNum(r.saldoBase)}, ${sqlText(status)}, ${sqlTextOrNull(r.closeKind)}, ${sqlText(r.detail)}, ${sqlJson(payload)})`
+})
+
+const movRows = parsed.transferMovements.map((m) => {
+  const intOrNull = (v) => (v === null || v === undefined ? 'NULL' : String(Math.trunc(Number(v))))
+  return `(${sqlText(m.id)}, ${sqlDate(m.date)}, ${sqlText(m.type)}, ${sqlText(m.source)}, ${sqlNum(m.amount)}, ${sqlText(m.detail)}, ${m.excluded ? 'true' : 'false'}, ${m.superseded ? 'true' : 'false'}, ${intOrNull(m.paseId)}, ${intOrNull(m.manualId)}, ${intOrNull(m.paymentCreditId)}, ${intOrNull(m.extraId)}, ${intOrNull(m.transferExpenseId)}, ${sqlTextOrNull(m.paseKind)}, ${sqlJson(m)})`
 })
 
 // ---------- documento SQL ----------
@@ -148,6 +161,28 @@ lines.push('  detail = excluded.detail,')
 lines.push('  payload = excluded.payload,')
 lines.push('  imported_at = now();')
 lines.push('')
+lines.push(`-- ===== Movimientos de la tarjeta (${movRows.length}) =====`)
+lines.push('-- El historial viaja TAL COMO el sistema original lo registró: la')
+lines.push('-- marca «No es de La Reina» (excluded) de una fila que ya exista en el')
+lines.push('-- servidor NO se pisa con la del respaldo (es decisión del dueño).')
+lines.push('insert into public.transfer_movements (id, date, type, source, amount, detail, excluded, superseded, pase_id, manual_id, payment_credit_id, extra_id, transfer_expense_id, pase_kind, payload) values')
+lines.push(movRows.map((r, i) => r + (i < movRows.length - 1 ? ',' : '')).join('\n'))
+lines.push('on conflict (id) do update set')
+lines.push('  date = excluded.date,')
+lines.push('  type = excluded.type,')
+lines.push('  source = excluded.source,')
+lines.push('  amount = excluded.amount,')
+lines.push('  detail = excluded.detail,')
+lines.push('  superseded = excluded.superseded,')
+lines.push('  pase_id = excluded.pase_id,')
+lines.push('  manual_id = excluded.manual_id,')
+lines.push('  payment_credit_id = excluded.payment_credit_id,')
+lines.push('  extra_id = excluded.extra_id,')
+lines.push('  transfer_expense_id = excluded.transfer_expense_id,')
+lines.push('  pase_kind = excluded.pase_kind,')
+lines.push('  payload = excluded.payload,')
+lines.push('  imported_at = now();')
+lines.push('')
 lines.push('commit;')
 lines.push('')
 lines.push('-- ===== Verificación tras importar (ejecutar y contrastar con el control) =====')
@@ -157,9 +192,15 @@ lines.push('       sum(ventas_dia) as ventas, sum(ganancia_bruta) as bruta,')
 lines.push('       sum(ganancia_neta) as neta, sum(cuadre) as cuadre')
 lines.push('from public.days;')
 lines.push('select count(*) as cuentas from public.receivables;')
+lines.push("-- Control tarjeta: 20 movimientos · saldo derivado 32625 · pasado al banco 107625")
+lines.push("select count(*) as movimientos,")
+lines.push("       sum(case when not excluded and not superseded then amount else 0 end) as saldo")
+lines.push('from public.transfer_movements;')
+lines.push("select sum(abs(amount)) as pasado_al_banco from public.transfer_movements")
+lines.push("where source = 'pase' and pase_kind = 'banco' and not excluded and not superseded;")
 lines.push('')
 
 writeFileSync(outPath, lines.join('\n'), 'utf8')
 console.log(`SQL generado: ${outPath}`)
-console.log(`Días escritos: ${dayRows.length} · Cuentas escritas: ${recRows.length} · Abonos embebidos (en payload): ${embeddedPayments}`)
+console.log(`Días escritos: ${dayRows.length} · Cuentas escritas: ${recRows.length} · Movimientos de la tarjeta: ${movRows.length} · Abonos embebidos (en payload): ${embeddedPayments}`)
 console.log(`Totales de control OK: ventas ${s.ventas} · bruta ${s.gananciaBruta} · neta ${s.gananciaNeta} · cuadre ${s.cuadreTotal}`)

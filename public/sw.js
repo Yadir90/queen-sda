@@ -1,8 +1,8 @@
 /* Queen SDA — service worker conservador.
    Solo cachea la carcasa estática (HTML, JS, CSS, iconos, manifiesto).
    Todo lo demás va network-first: los datos NUNCA se sirven de una caché vieja. */
-const CACHE = 'queen-sda-shell-v1'
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/icon.svg']
+const CACHE = 'queen-sda-shell-v2'
+const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/sad-192.png', '/icons/sad-512.png']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()))

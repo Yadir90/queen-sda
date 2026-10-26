@@ -9,6 +9,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.4.0",
+    "@xmldom/xmldom": "^0.9.12",
     "typescript": "^5.8.0",
     "vite": "^6.3.0"
   },
@@ -19,7 +20,14 @@
     "dev": "vite",
     "preview": "vite preview",
     "verify:import": "node scripts/verify-import.mjs",
-    "generate:import-sql": "node scripts/generate-import-sql.mjs"
+    "verify:ipv": "node scripts/verify-ipv.mjs",
+    "verify:rh-sync": "node scripts/verify-rh-sync.mjs",
+    "verify:economia": "node scripts/verify-economia.mjs",
+    "generate:import-sql": "node scripts/generate-import-sql.mjs",
+    "verify:productos": "node scripts/verify-productos.mjs",
+    "verify:documentos": "node scripts/verify-documentos.mjs",
+    "verify:queen": "node scripts/verify-queen.mjs",
+    "verify:automatizaciones": "node scripts/verify-automatizaciones.mjs"
   },
   "type": "module",
   "version": "1.0.0"

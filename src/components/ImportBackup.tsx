@@ -20,7 +20,7 @@ interface Parsed {
  * Muestra la verificación ANTES de guardar y solo guarda tras confirmación.
  * El respaldo es la fuente de verdad: aquí no se ajusta ninguna cifra.
  */
-export default function ImportBackup({ onImported }: { onImported: () => void }) {
+export default function ImportBackup({ onImported, bare = false }: { onImported: () => void; bare?: boolean }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [parsed, setParsed] = useState<Parsed | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -62,10 +62,14 @@ export default function ImportBackup({ onImported }: { onImported: () => void })
     }
   }
 
-  return (
-    <Card>
-      <p className="eyebrow">Datos · Solo administrador</p>
-      <h2>Importar respaldo del SDA</h2>
+  const inner = (
+    <>
+      {bare ? null : (
+        <>
+          <p className="eyebrow">Datos · Solo administrador</p>
+          <h2>Importar respaldo del SDA</h2>
+        </>
+      )}
       <p className="sub">
         Sube el archivo JSON de respaldo diario del sistema original. Antes de guardar verás la verificación
         completa del archivo; nada se guarda sin tu confirmación y ninguna cifra se ajusta en silencio.
@@ -114,6 +118,7 @@ export default function ImportBackup({ onImported }: { onImported: () => void })
           </div>
         </div>
       ) : null}
-    </Card>
+    </>
   )
+  return bare ? inner : <Card>{inner}</Card>
 }

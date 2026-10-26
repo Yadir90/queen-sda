@@ -1,15 +1,38 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import type { Section, Session, StoredData } from './types'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import type { AutomationRun, Bulletin, Section, Session, StoredData } from './types'
 import {
-  EMPTY_DATA, TEMP_PASSWORD, changePassword, ensureProfiles, getSession, loadData, login, logout, profileMustChange, supabaseConfigured,
+  EMPTY_DATA, TEMP_PASSWORD, changePassword, ensureProfiles, getSession, loadData, login, logout, profileMustChange, saveAutomationState, saveBulletins, saveQueenEvolution, supabaseConfigured,
 } from './lib/backend'
-import { sbChangePassword, sbFetchStoredData, sbLogin, sbLogout, sbRestoreSession } from './lib/supabaseBackend'
+import { sbChangePassword, sbFetchStoredData, sbLogin, sbLogout, sbQueenChat, sbRestoreSession, sbSaveAutomationState, sbSaveBulletins, sbSaveQueenState } from './lib/supabaseBackend'
+import { buildQueenEvolution } from './lib/queenCore.mjs'
+import { ensureBulletinsForDays } from './lib/documentosCore.mjs'
+import { downloadText } from './lib/download'
+import { Icon, AlertDot, type IconName } from './components/icons'
+import { QueenOrb, QueenReactorMark } from './components/QueenReactor'
+import { effectiveSaldo, fmtCUP, fmtInt, isMorosa, todayISO } from './lib/utils'
 import Inicio from './screens/Inicio'
-import Dias from './screens/Dias'
-import Cuentas from './screens/Cuentas'
-import Cobrar from './screens/Cobrar'
-import Sistema from './screens/Sistema'
-import { MasScreen, QueenScreen } from './screens/Secciones'
+import { MasScreen } from './screens/Secciones'
+
+/* Carga bajo demanda por vista, como en el original («carga diferida
+   por vista»): la primera pantalla (Inicio) y la rejilla de Más van en
+   el paquete inicial; cada otra sección es un trozo propio que se
+   descarga la primera vez que se abre y queda en la caché de la PWA.
+   En un Galaxy A16 con datos contados, el arranque no debe pagar el
+   peso de las 16 pantallas enteras. */
+const Dias = lazy(() => import('./screens/Dias'))
+const Cuentas = lazy(() => import('./screens/Cuentas'))
+const Cobrar = lazy(() => import('./screens/Cobrar'))
+const Sistema = lazy(() => import('./screens/Sistema'))
+const RHScreen = lazy(() => import('./screens/RH'))
+const Economia = lazy(() => import('./screens/Economia'))
+const Transferencias = lazy(() => import('./screens/Transferencias'))
+const Productos = lazy(() => import('./screens/Productos'))
+const Elaboracion = lazy(() => import('./screens/Elaboracion'))
+const Almacen = lazy(() => import('./screens/Almacen'))
+const Laboratorio = lazy(() => import('./screens/Laboratorio'))
+const Documentos = lazy(() => import('./screens/Documentos'))
+const Historial = lazy(() => import('./screens/Historial'))
+const QueenScreen = lazy(() => import('./screens/Queen'))
 
 const SYSTEM_NAME = 'Queen SDA'
 const SYSTEM_FULL = 'Queen SDA — Sistema de Automatización de Datos V2.0'
@@ -20,16 +43,45 @@ const PLACE = 'Restaurante-bar La Reina'
 // sin ellas, la app entera funciona en modo local como hasta ahora.
 const SB_MODE = supabaseConfigured()
 
-const NAV: Array<{ id: Section; label: string; icon: string; queen?: boolean }> = [
-  { id: 'inicio', label: 'Inicio', icon: '🏠' },
-  { id: 'cobrar', label: 'Cobrar', icon: '💳' },
-  { id: 'queen', label: 'Queen', icon: '👸', queen: true },
-  { id: 'sistema', label: 'Sistema', icon: '🩺' },
-  { id: 'mas', label: 'Más', icon: '☰' },
+type NavItem = { id: Section; label: string; icon: IconName; queen?: boolean }
+
+/* Orden e iconos de la barra inferior del original:
+   Inicio dashboard · Cobrar wallet · Queen (orbe Reactor) · Sistema
+   sparkle · Más more. Sin un solo emoji: SVG propio del sistema. */
+const NAV: NavItem[] = [
+  { id: 'inicio', label: 'Inicio', icon: 'dashboard' },
+  { id: 'cobrar', label: 'Cobrar', icon: 'wallet' },
+  { id: 'queen', label: 'Queen', icon: 'sparkle', queen: true },
+  { id: 'sistema', label: 'Sistema', icon: 'sparkle' },
+  { id: 'mas', label: 'Más', icon: 'more' },
 ]
-const SIDE_EXTRA: Array<{ id: Section; label: string; icon: string }> = [
-  { id: 'dias', label: 'Días', icon: '📅' },
-  { id: 'cuentas', label: 'Cuentas', icon: '🧾' },
+/* Barra lateral de escritorio: EXACTAMENTE la del original
+   (primaryTabs de su App.tsx): grupo Principal = Cobrar, Gastos,
+   Inicio, Queen — Gastos abre Economía, donde viven los gastos en
+   esta copia — y grupo «Más secciones» con el resto en orden
+   alfabético en español, Sistema entre RH · Pagos y Transferencias.
+   La lateral NO lleva entrada «Más» (esa es solo de la barra móvil).
+   Orden corregido en la puerta de calidad final contra el código
+   original: antes Sistema estaba en Principal y sobraba «Más». */
+const SIDE_PRINCIPAL: NavItem[] = [
+  { id: 'cobrar', label: 'Cobrar', icon: 'wallet' },
+  { id: 'economia', label: 'Gastos', icon: 'receipt' },
+  { id: 'inicio', label: 'Inicio', icon: 'dashboard' },
+  { id: 'queen', label: 'Queen', icon: 'sparkle', queen: true },
+]
+const SIDE_MAS: NavItem[] = [
+  { id: 'almacen', label: 'Almacén', icon: 'package' },
+  { id: 'cuentas', label: 'Cuentas', icon: 'receipt' },
+  { id: 'dias', label: 'Días', icon: 'calendar' },
+  { id: 'documentos', label: 'Documentos', icon: 'doc' },
+  { id: 'economia', label: 'Economía', icon: 'chart' },
+  { id: 'elaboracion', label: 'Elaboración', icon: 'receipt' },
+  { id: 'historial', label: 'Historial', icon: 'receipt' },
+  { id: 'laboratorio', label: 'Laboratorio', icon: 'flask' },
+  { id: 'productos', label: 'Productos', icon: 'package' },
+  { id: 'rh', label: 'RH · Pagos', icon: 'people' },
+  { id: 'sistema', label: 'Sistema', icon: 'sparkle' },
+  { id: 'transferencias', label: 'Transferencias', icon: 'transfer' },
 ]
 
 function LoginScreen({ onLogin }: { onLogin: (s: Session, mustChange: boolean) => void }) {
@@ -58,7 +110,9 @@ function LoginScreen({ onLogin }: { onLogin: (s: Session, mustChange: boolean) =
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        <img className="logo" src="/icons/icon-192.png" alt="Icono de Queen SDA" />
+        {/* La etapa del Reactor pinta también la pantalla de acceso:
+            marca de 84px en estado thinking, como en el original. */}
+        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
         <h1>{SYSTEM_NAME}</h1>
         <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
         <h2 style={{ fontSize: '1.05rem', marginBottom: 12 }}>Iniciar sesión</h2>
@@ -113,7 +167,7 @@ function ChangePasswordScreen({ session, onDone, onLogout }: { session: Session;
   return (
     <div className="auth-wrap">
       <section className="card auth-card">
-        <img className="logo" src="/icons/icon-192.png" alt="Icono de Queen SDA" />
+        <div className="auth-mark"><QueenReactorMark stageId="juvenil" state="thinking" size={84} /></div>
         <h1>Cambiar contraseña</h1>
         <p className="auth-sub">{SYSTEM_FULL}<br />{PLACE}</p>
         <p className="small">Hola, {session.name}. Por seguridad, debes crear una contraseña nueva antes de continuar.</p>
@@ -209,19 +263,190 @@ export default function App() {
     if (SB_MODE) setData({ ...EMPTY_DATA })
   }
 
+  /* Los retornos tempranos de arranque/acceso van DESPUÉS de todos
+     los hooks (más abajo): llamarlos antes rompía la app al pasar de
+     «sin sesión» a «con sesión» (React: más hooks que en el render
+     anterior). Corregido en la puerta de calidad final. */
+  const isAdmin = session?.role === 'admin'
+
+  /* Boletines: un boletín pendiente por cada día importado que aún
+     no lo tenga (generación al importar, como el original). Se
+     derivan al leer y, si el administrador tiene días sin boletín
+     persistido, la cola se guarda sola una vez por lote nuevo. */
+  const bulletins = useMemo(
+    () => ensureBulletinsForDays(data, data.bulletins, { now: todayISO() }),
+    [data],
+  )
+  const bulletinsDirty = bulletins.length !== data.bulletins.length
+  const persistingBulletins = useRef(false)
+  useEffect(() => {
+    if (!bulletinsDirty || !isAdmin || persistingBulletins.current) return
+    persistingBulletins.current = true
+    const persist = async () => {
+      try {
+        if (SB_MODE) await sbSaveBulletins(bulletins)
+        else saveBulletins(bulletins)
+        setData((d) => ({ ...d, bulletins }))
+      } catch {
+        /* La tabla puede no existir aún en el proyecto: la cola
+           sigue visible derivada al leer; no se finge guardado. */
+      } finally {
+        persistingBulletins.current = false
+      }
+    }
+    void persist()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bulletinsDirty, isAdmin])
+
+  /* Evolución de Queen: la medición la calcula queenCore al leer
+     (determinista, mismas señales) y se guarda como dato cuando
+     cambia. La medición es estable para los mismos datos (su fecha
+     es la del respaldo), así que esto no entra en bucle. */
+  const queenSnapshot = useMemo(
+    () => buildQueenEvolution(data, todayISO()).snapshot,
+    [data],
+  )
+  const queenDirty = queenSnapshot != null
+    && (data.queenEvolution == null
+      || data.queenEvolution.stageId !== queenSnapshot.stageId
+      || data.queenEvolution.score !== queenSnapshot.score
+      || data.queenEvolution.measuredAt !== queenSnapshot.measuredAt)
+  const persistingQueen = useRef(false)
+  useEffect(() => {
+    if (!queenDirty || !isAdmin || !queenSnapshot || persistingQueen.current) return
+    persistingQueen.current = true
+    const persist = async () => {
+      try {
+        if (SB_MODE) await sbSaveQueenState(queenSnapshot)
+        else saveQueenEvolution(queenSnapshot)
+        setData((d) => ({ ...d, queenEvolution: queenSnapshot }))
+      } catch {
+        /* La tabla puede no existir aún en el proyecto: la medición
+           sigue visible calculada al leer; no se finge guardado. */
+      } finally {
+        persistingQueen.current = false
+      }
+    }
+    void persist()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queenDirty, isAdmin])
+
+  /* Automatizaciones: corridas manuales desde Sistema (solo admin)
+     sobre el MISMO núcleo que correrá en la nube. Cada corrida deja
+     su constancia en el registro persistido; la tarea programada
+     sigue declarada «pendiente de despliegue» hasta que exista. */
+  const handleRunAutomation = useCallback(async (task: string): Promise<string> => {
+    /* El núcleo de automatizaciones solo se usa al ejecutar una tarea
+       a mano (admin, desde Sistema): se descarga bajo demanda y no
+       pesa en el arranque. */
+    const {
+      buildNightlyBackup, createAutomationRun, dispatchPendingBulletins, pruneAutomationRuns, runMaintenanceDiagnosis, runNightlyLearning,
+    } = await import('./lib/automatizacionesCore.mjs')
+    const now = new Date()
+    let runs = [...data.automationRuns]
+    const record = async (run: AutomationRun) => {
+      runs = pruneAutomationRuns([...runs, run])
+      try {
+        if (SB_MODE) await sbSaveAutomationState({ automationRuns: runs })
+        else saveAutomationState({ automationRuns: runs })
+      } catch { /* la tabla puede no existir aún: la corrida queda en memoria y Sistema lo declara */ }
+      setData((d) => ({ ...d, automationRuns: runs }))
+    }
+    if (task === 'respaldo') {
+      const { backup, filename, control, verified } = buildNightlyBackup(data, now)
+      if (verified) downloadText(JSON.stringify(backup, null, 2), filename, 'application/json;charset=utf-8')
+      const detail = verified
+        ? `Respaldo ${filename} generado en este dispositivo y verificado por reimportación de control (${control.days} días, ventas ${control.ventas}, cuadre ${control.cuadreTotal}); se descargó el archivo. La copia automática en la nube queda pendiente de despliegue.`
+        : 'El respaldo generado NO pasó la verificación de reimportación: no se descargó ni se dio por bueno.'
+      await record(createAutomationRun('respaldo', verified ? 'ok' : 'error', detail, now))
+      return detail
+    }
+    if (task === 'mantenimiento') {
+      const lastBackup = runs.filter((r) => r.task === 'respaldo' && r.status === 'ok')
+        .sort((a, b) => String(b.at).localeCompare(String(a.at)))[0] ?? null
+      const result = runMaintenanceDiagnosis(data, {
+        now,
+        backupStatus: lastBackup ? { lastAt: lastBackup.at, lastVerificationOk: true } : null,
+        histories: { automationRuns: runs.length },
+      })
+      await record(createAutomationRun('mantenimiento', result.status === 'healthy' ? 'ok' : 'atencion', result.summary, now))
+      return result.summary
+    }
+    if (task === 'aprendizaje') {
+      const { state, summary } = runNightlyLearning(data, data.queenLearning, { now })
+      try {
+        if (SB_MODE) await sbSaveAutomationState({ queenLearning: state })
+        else saveAutomationState({ queenLearning: state })
+      } catch { /* sin tabla todavía: queda en memoria */ }
+      setData((d) => ({ ...d, queenLearning: state }))
+      await record(createAutomationRun('aprendizaje', 'ok', summary, now))
+      return summary
+    }
+    if (task === 'boletines') {
+      const result = await dispatchPendingBulletins(bulletins, { now })
+      await record(createAutomationRun('boletines', result.transported ? 'ok' : 'atencion', result.transported ? result.reason : `Despacho sin envío: ${result.reason}`, now))
+      return result.reason
+    }
+    return 'Tarea desconocida.'
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, bulletins])
+
+  const handleBulletinsChange = useCallback((next: Bulletin[]) => {
+    setData((d) => ({ ...d, bulletins: next }))
+    if (SB_MODE) {
+      void sbSaveBulletins(next).catch(() => { /* queda en memoria; la pantalla declara el estado real */ })
+    } else {
+      saveBulletins(next)
+    }
+  }, [])
+
+  /* Estado real para puntos ambientales y badges de la navegación
+     (como en el original: estado real, no decoración). */
+  const ref = todayISO()
+  const pending = data.receivables
+    .map((r) => ({ rec: r, saldo: effectiveSaldo(r, data.localPayments) }))
+    .filter((x) => x.rec.status !== 'pagada' && !x.rec.closeKind && x.saldo > 0)
+  const pendingCount = pending.length
+  const vencidasCount = pending.filter((x) => isMorosa(x.rec, x.saldo, ref)).length
+  const dineroCalle = pending.filter((x) => x.rec.category === 'cliente').reduce((s, x) => s + x.saldo, 0)
+  const lastDay = data.days.length ? data.days[data.days.length - 1] : null
+  const dotFor = (id: Section): 'ok' | 'warn' | 'bad' | null => {
+    if (id === 'inicio') return !lastDay ? null : lastDay.cuadre === 0 ? 'ok' : 'warn'
+    if (id === 'cobrar') return vencidasCount > 0 ? 'bad' : pendingCount > 0 ? 'warn' : 'ok'
+    if (id === 'sistema') return remoteError ? 'bad' : 'ok'
+    return null
+  }
+  const badgeFor = (id: Section): number => {
+    if (id === 'cobrar') return pendingCount
+    if (id === 'sistema') return vencidasCount
+    return 0
+  }
   if (!ready) return null
   if (!session) return <LoginScreen onLogin={(s, mc) => { setSession(s); setMustChange(mc) }} />
   if (mustChange) return <ChangePasswordScreen session={session} onDone={() => setMustChange(false)} onLogout={doLogout} />
 
-  const isAdmin = session.role === 'admin'
-  const navItems = [...NAV]
-  const sideItems = [NAV[0], SIDE_EXTRA[0], SIDE_EXTRA[1], NAV[1], NAV[2], NAV[3], NAV[4]]
+  const initials = session.name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()
+
+  const renderSideItem = (item: NavItem) => (
+    <button
+      key={item.id}
+      className={`nav-btn ${section === item.id ? 'active' : ''}`}
+      onClick={() => setSection(item.id)}
+      aria-current={section === item.id ? 'page' : undefined}
+    >
+      {item.queen
+        ? <QueenOrb size={27} stageId={queenSnapshot?.stageId ?? 'juvenil'} />
+        : <Icon name={item.icon} size={20} strokeWidth={section === item.id ? 2.55 : 1.8} />}
+      <span className="nav-label">{item.label}</span>
+      {badgeFor(item.id) > 0 ? <span className="nav-badge" style={{ position: 'static' }}>{badgeFor(item.id)}</span> : null}
+    </button>
+  )
 
   return (
     <div className="app-shell">
-      <header className="topbar">
+      <header className="topbar ambient-bar-surface">
         <div className="brand">
-          <img src="/icons/icon-192.png" alt="" />
+          <QueenOrb size={34} stageId={queenSnapshot?.stageId ?? 'juvenil'} />
           <div>
             <div className="brand-name">{SYSTEM_NAME}</div>
             <div className="brand-sub">Sistema de Automatización de Datos V2.0 · {PLACE}</div>
@@ -236,32 +461,84 @@ export default function App() {
       </header>
 
       <div className="layout">
-        <nav className="sidenav" aria-label="Navegación principal">
-          {sideItems.map((item) => (
-            <button key={item.id} className={`nav-btn ${section === item.id ? 'active' : ''} ${'queen' in item && item.queen ? 'queen-btn' : ''}`} onClick={() => setSection(item.id)}>
-              <span className="nav-ico" aria-hidden>{item.icon}</span> {item.label}
-            </button>
-          ))}
+        <nav className="sidenav ambient-bar-surface" aria-label="Navegación principal">
+          <div className="side-brand">
+            <span className="brand-mark"><QueenReactorMark stageId={queenSnapshot?.stageId ?? 'juvenil'} size={34} /></span>
+            <div>
+              <div className="brand-name">{SYSTEM_NAME}</div>
+              <div className="brand-sub">Sistema de Automatización de Datos V2.0</div>
+            </div>
+          </div>
+          <button className="side-profile" onClick={() => setSection('sistema')} aria-label="Tu perfil y acceso">
+            <span className="avatar" aria-hidden>{initials || 'Q'}</span>
+            <span>
+              <span className="p-name">{session.name}</span><br />
+              <span className="p-role">{isAdmin ? 'Administrador' : 'Solo lectura'}</span>
+            </span>
+          </button>
+          <div className="side-group-label">Principal</div>
+          {SIDE_PRINCIPAL.map(renderSideItem)}
+          <div className="side-group-label">Más secciones</div>
+          {SIDE_MAS.map(renderSideItem)}
+          <div className="side-foot">
+            {fmtInt(data.days.length)} días importados · Dinero en la calle: {fmtCUP(dineroCalle)} (solo cuentas de clientes)
+          </div>
         </nav>
 
         <main className="main">
           {remoteError ? <div className="error-box" style={{ marginBottom: 14 }}>{remoteError}</div> : null}
-          {section === 'inicio' ? <Inicio data={data} isAdmin={isAdmin} onImportClick={() => setSection('sistema')} /> : null}
+          <Suspense fallback={<section className="card"><p className="small muted" style={{ margin: 0 }}>Cargando la sección…</p></section>}>
+          {section === 'inicio' ? <Inicio data={data} isAdmin={isAdmin} onImportClick={() => setSection('sistema')} onNavigate={setSection} /> : null}
           {section === 'dias' ? <Dias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'cuentas' ? <Cuentas data={data} /> : null}
+          {section === 'cuentas' ? <Cuentas data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
           {section === 'cobrar' ? <Cobrar data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
-          {section === 'queen' ? <QueenScreen /> : null}
-          {section === 'sistema' ? <Sistema data={data} session={session} onChanged={refresh} /> : null}
-          {section === 'mas' ? <MasScreen onNavigate={setSection} /> : null}
+          {section === 'queen' ? (
+            <QueenScreen
+              data={data}
+              supabaseMode={SB_MODE}
+              onTestLanguage={SB_MODE ? sbQueenChat : undefined}
+            />
+          ) : null}
+          {section === 'sistema' ? <Sistema data={data} session={session} onChanged={refresh} onNavigate={setSection} onRunAutomation={isAdmin ? handleRunAutomation : undefined} /> : null}
+          {section === 'rh' ? <RHScreen data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'economia' ? <Economia data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'transferencias' ? <Transferencias data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'productos' ? <Productos data={data} /> : null}
+          {section === 'elaboracion' ? <Elaboracion data={data} isAdmin={isAdmin} onChanged={refresh} /> : null}
+          {section === 'almacen' ? <Almacen data={data} /> : null}
+          {section === 'laboratorio' ? <Laboratorio data={data} /> : null}
+          {section === 'documentos' ? <Documentos data={data} today={ref} /> : null}
+          {section === 'historial' ? (
+            <Historial data={data} bulletins={bulletins} today={ref} isAdmin={isAdmin} onBulletinsChange={handleBulletinsChange} />
+          ) : null}
+          {section === 'mas' ? <MasScreen onNavigate={setSection} data={data} /> : null}
+          </Suspense>
         </main>
       </div>
 
-      <nav className="bottomnav" aria-label="Navegación inferior">
-        {navItems.map((item) => (
-          <button key={item.id} className={`${section === item.id ? 'active' : ''} ${item.queen ? 'queen-btn' : ''}`} onClick={() => setSection(item.id)}>
-            <span className="nav-ico" aria-hidden>{item.icon}</span> {item.label}
-          </button>
-        ))}
+      <nav className="bottomnav ambient-bar-surface" aria-label="Navegación inferior">
+        {NAV.map((item) => {
+          const active = section === item.id
+          const dot = dotFor(item.id)
+          const badge = badgeFor(item.id)
+          return (
+            <button
+              key={item.id}
+              className={`${active ? 'active' : ''} ${item.queen ? 'queen-btn' : ''}`}
+              onClick={() => setSection(item.id)}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className="nav-capsule">
+                {item.queen
+                  ? <QueenOrb size={35} stageId={queenSnapshot?.stageId ?? 'juvenil'} />
+                  : <Icon name={item.icon} size={21} strokeWidth={active ? 2.55 : 2.15} />}
+                {dot ? <AlertDot state={dot} /> : null}
+                {badge > 0 ? <span className="nav-badge">{badge}</span> : null}
+              </span>
+              {item.label}
+            </button>
+          )
+        })}
       </nav>
     </div>
   )
