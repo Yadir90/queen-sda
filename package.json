@@ -1,10 +1,11 @@
 {
   "dependencies": {
-    "@supabase/supabase-js": "^2.118.0",
-    "jsqr": "^1.4.0",
-    "qrcode": "^1.5.4",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "@supabase/supabase-js": "2.118.0",
+    "jsqr": "1.4.0",
+    "qrcode": "1.5.4",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "recharts": "2.15.3"
   },
   "description": "Queen SDA — Sistema de Automatización de Datos V2.0 · Restaurante-bar La Reina (versión externa en código directo)",
   "devDependencies": {
@@ -32,6 +33,8 @@
     "verify:documentos": "node scripts/verify-documentos.mjs",
     "verify:queen": "node scripts/verify-queen.mjs",
     "verify:automatizaciones": "node scripts/verify-automatizaciones.mjs",
+    "verify:reglas": "node scripts/verify-reglas.mjs",
+    "verify:sync": "node scripts/verify-shared-sync.mjs",
     "verify:paridad": "node scripts/verify-paridad.mjs",
     "verify:inventario": "node scripts/verify-inventario.mjs",
     "audit:visual": "node scripts/audit-visual.mjs"

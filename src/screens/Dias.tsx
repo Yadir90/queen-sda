@@ -4,16 +4,18 @@ import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import ImportBackup from '../components/ImportBackup'
 import ImportIpv from '../components/ImportIpv'
-import { fmtCUP, fmtDate, fmtDateShort, fmtInt, todayISO } from '../lib/utils'
+import { fmtCUP, fmtDate, fmtDateShort, fmtInt, MONTH_NAMES, todayISO } from '../lib/utils'
 import { downloadText } from '../lib/download'
+import { deleteDay, supabaseConfigured } from '../lib/backend'
+import { sbDeleteDay } from '../lib/supabaseBackend'
 import IpvDownloads from '../components/IpvDownloads'
+
+const SB_MODE = supabaseConfigured()
 
 /** Días con decimales como en RH (0,5 sin redondear a 1). */
 function fmtDias(n: number): string {
   return Number.isInteger(n) ? String(n) : String(n).replace('.', ',')
 }
-
-const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
 
 /* Rejilla de cuadrados del mes (DiasMonthGrid del original): calendario
    L–D del mes ENTERO. Intensidad en 4 niveles según la venta frente a la
@@ -69,6 +71,11 @@ function DiasMonthGrid({ monthKey, days, selectedDay, onSelect }: {
           }
           const level = levelOf(s.ventasDia)
           const selected = selectedDay === date
+          /* D-39: el cuadre se anuncia «exacto» con el umbral del
+             original (|cuadre| < 0,005, no === 0) y el aria-label
+             lleva el conteo de productos del día, como el suyo. */
+          const exacto = Math.abs(s.cuadre) < 0.005
+          const productCount = s.departments.reduce((n, d) => n + d.products.length, 0)
           const style: CSSProperties = {
             background: levelColor(level),
             boxShadow: selected ? '0 0 0 2px var(--surface), 0 0 0 4px var(--deep)' : date === hoy ? '0 0 0 2px var(--gold)' : undefined,
@@ -80,8 +87,8 @@ function DiasMonthGrid({ monthKey, days, selectedDay, onSelect }: {
               type="button"
               onClick={() => onSelect(date)}
               aria-pressed={selected}
-              aria-label={`Ver el IPV del ${fmtDate(date)}: ventas ${fmtCUP(s.ventasDia)}, ganancia neta ${fmtCUP(s.gananciaNeta)}, cuadre ${s.cuadre === 0 ? 'exacto' : fmtCUP(s.cuadre)}`}
-              title={`${fmtDateShort(date)} · Ventas ${fmtCUP(s.ventasDia)} · ganancia neta ${fmtCUP(s.gananciaNeta)} · cuadre ${s.cuadre === 0 ? 'exacto' : fmtCUP(s.cuadre)}`}
+              aria-label={`Ver el IPV del ${fmtDate(date)}: ventas ${fmtCUP(s.ventasDia)}, ganancia neta ${fmtCUP(s.gananciaNeta)}, cuadre ${exacto ? 'exacto' : fmtCUP(s.cuadre)}, ${fmtInt(productCount)} productos`}
+              title={`${fmtDateShort(date)} · Ventas ${fmtCUP(s.ventasDia)} · ganancia neta ${fmtCUP(s.gananciaNeta)} · cuadre ${exacto ? 'exacto' : fmtCUP(s.cuadre)}`}
               style={style}
               className="dias-cell"
             >
@@ -106,7 +113,30 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
   const [showImport, setShowImport] = useState(false)
   const [showIpv, setShowIpv] = useState(false)
   const [showIpvEdit, setShowIpvEdit] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
   const today = todayISO()
+
+  /* Eliminar el día (D-07): acción sensible e irreversible — en el
+     original exige autorización reforzada de nivel explícito (ámbito
+     «delete-ipv»); aquí la imponen la sesión de administrador y esta
+     confirmación expresa con el resumen de lo que se retira. */
+  const doDeleteDay = async (date: string) => {
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      if (SB_MODE) await sbDeleteDay(date)
+      else deleteDay(date)
+      setConfirmDelete(false)
+      setSelected(null)
+      onChanged()
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'No se pudo eliminar el día.')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const months = useMemo(() => {
     const map = new Map<string, DayData[]>()
@@ -128,7 +158,9 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
     const cursor = new Date(`${sorted[0]}T12:00:00`)
     const end = new Date(`${sorted[sorted.length - 1]}T12:00:00`)
     while (cursor <= end) {
-      const iso = cursor.toISOString().slice(0, 10)
+      /* Sin toISOString() (UTC): la fecha sale de las partes locales
+         del mediodía, inmune a la zona del dispositivo (D-04). */
+      const iso = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
       if (!have.has(iso) && iso < today) out.push(iso)
       cursor.setDate(cursor.getDate() + 1)
     }
@@ -196,7 +228,7 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
           </div>
         ) : null}
       </div>
-      {isAdmin && showIpv ? <div style={{ marginTop: 14 }}><ImportIpv onImported={onChanged} existingDays={data.days} /></div> : null}
+      {isAdmin && showIpv ? <div style={{ marginTop: 14 }}><ImportIpv onImported={onChanged} existingDays={data.days} data={data} /></div> : null}
       {isAdmin && showImport ? <div style={{ marginTop: 14 }}><ImportBackup onImported={onChanged} /></div> : null}
     </Card>
   )
@@ -307,17 +339,35 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
             {/* IPV original/actualizado de este día desde la media
                 autenticada, cuando el archivo existe (como el
                 historial de versiones del original). */}
-            <IpvDownloads date={day.date} />
-            {/* Eliminar el día: FUERA a propósito. El backend del clon
-                (local y Supabase) no expone ninguna acción de borrado de
-                días equivalente a deleteDay del original (que además
-                exige autorización reforzada); simularlo tocaría datos
-                sin respaldo. Declarado en el informe del área. */}
+            <IpvDownloads date={day.date} data={data} />
+            {isAdmin ? (
+              <button className="btn danger" disabled={deleting} onClick={() => { setConfirmDelete((v) => !v); setDeleteError(null) }}>
+                Eliminar el día
+              </button>
+            ) : null}
           </div>
+          {isAdmin && confirmDelete ? (
+            <div className="error-box" style={{ marginTop: 12 }} role="alert">
+              <p style={{ margin: '0 0 6px' }}><strong>Eliminar el IPV del {fmtDate(day.date)} es irreversible.</strong></p>
+              <p className="small" style={{ margin: '0 0 10px' }}>
+                Se retira el día completo (ventas {fmtCUP(day.ventasDia)}, departamentos, productos, entradas y foto de RH),
+                su foto de cuentas, las decisiones de «Cuentas» de ese día y su boletín si aún no se envió.
+                Todo lo derivado se recalcula sin ese día; las cuentas ya pagadas no se borran jamás.
+                Si el IPV estaba mal, la vía segura es «Editar este IPV» con el archivo corregido.
+              </p>
+              {deleteError ? <p className="small" style={{ margin: '0 0 10px' }}>{deleteError}</p> : null}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn danger" disabled={deleting} onClick={() => void doDeleteDay(day.date)}>
+                  {deleting ? 'Eliminando…' : 'Sí, eliminar el día definitivamente'}
+                </button>
+                <button className="btn" disabled={deleting} onClick={() => setConfirmDelete(false)}>Cancelar</button>
+              </div>
+            </div>
+          ) : null}
           {isAdmin ? (
             <>
               <button className="btn" onClick={() => setShowIpvEdit((v) => !v)}>Editar este IPV</button>
-              {showIpvEdit ? <div style={{ marginTop: 14 }}><ImportIpv onImported={onChanged} existingDays={data.days} /></div> : null}
+              {showIpvEdit ? <div style={{ marginTop: 14 }}><ImportIpv onImported={onChanged} existingDays={data.days} data={data} /></div> : null}
             </>
           ) : null}
         </Card>

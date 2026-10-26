@@ -20,6 +20,11 @@ export interface BookHistoryRow {
   ipvDisponible: number | null
   bajas: number
   traslados: number
+  bajasIpv: number
+  trasladosIpv: number
+  bajasManual: number
+  trasladosManual: number
+  adjustments: InventoryAdjustment[]
   aLaVenta: number
   ipvALaVenta: number | null
   ventas: number
@@ -41,7 +46,21 @@ export interface BookProduct {
   lastIpvSaldoFinal: number | null
   lastDiferencia: number | null
   hasDescuadre: boolean
+  hasInitialSet: boolean
   faltaSaldoInicial: boolean
+}
+
+/** Ajuste manual del libro (forma del servidor original). */
+export interface InventoryAdjustment {
+  id: string
+  productKey: string
+  dept: string
+  productName: string
+  um: string
+  date: string
+  kind: 'inicial' | 'baja' | 'traslado'
+  quantity: number
+  note: string
 }
 
 export interface InventoryDescuadre {
@@ -64,7 +83,7 @@ export interface InventoryBook {
   conExistencia: number
 }
 
-export declare function buildInventoryBook(days: DayData[]): InventoryBook
+export declare function buildInventoryBook(days: DayData[], adjustments?: InventoryAdjustment[]): InventoryBook
 
 export interface EntryHistoryRow {
   date: string

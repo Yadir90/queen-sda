@@ -19,6 +19,12 @@ export function supabaseConfigured(): boolean {
   return Boolean(url && anonKey)
 }
 
+/** URL base del proyecto (sin clave): la usa la sonda de alcance de la
+ *  cola offline para distinguir «sin red» de «el servidor rechazó». */
+export function supabaseBaseUrl(): string | null {
+  return url ?? null
+}
+
 let client: SupabaseClient | null = null
 
 /** Cliente único de Supabase, o null si no está configurado (modo local). */

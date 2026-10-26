@@ -23,7 +23,7 @@
 }
 @media (min-width: 640px) { .hm-future-card { padding: 20px; } }
 .hm-future-title { font-family: var(--font-display); font-size: 18px; font-weight: 700; line-height: 1.25; color: var(--text); margin: 0; }
-.hm-future-sub { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.hm-future-sub { margin: 2px 0 0; font-size: 13px; line-height: 1.375; color: var(--dim); }
 .hm-future-body { margin-top: 12px; }
 .hm-future-nota { margin: 12px 0 0; font-size: 12px; line-height: 1.6; color: var(--dim); }
 .hm-future-nota strong { color: var(--text); }
@@ -68,14 +68,14 @@
 .hm-nc-badge {
   margin-top: 2px; display: flex; width: 24px; height: 24px; flex: none;
   align-items: center; justify-content: center; border-radius: 50%;
-  font-size: 12px; font-weight: 700; color: #fff;
+  font-size: 12px; font-weight: 700; line-height: 16px; color: #fff;
 }
-.hm-nc-text { flex: 1; min-width: 0; }
+.hm-nc-text { flex: 1; min-width: 0; line-height: 20px; }
 .hm-nc-text strong { color: var(--text); }
-.hm-nc-text span { display: block; font-size: 13px; line-height: 1.4; color: var(--dim); }
+.hm-nc-text span { display: block; font-size: 13px; line-height: 1.375; color: var(--dim); }
 .hm-nc-action {
   flex: none; border-radius: 999px; border: 1px solid var(--accent);
-  padding: 6px 12px; font-size: 12px; font-weight: 700; color: var(--accent);
+  padding: 6px 12px; font-size: 14px; font-weight: 400; line-height: 20px; color: var(--accent);
   background: var(--surface); cursor: pointer; min-height: 32px;
 }
 
@@ -105,3 +105,12 @@ html[data-queen-motion="paused"] .fx-vital-alert { animation-play-state: paused 
 @media (prefers-reduced-motion: reduce) {
   .fx-vital-serene, .fx-vital-alert, .hm-nc-fill { animation: none !important; transition: none !important; }
 }
+
+/* D-66: piezas del PeriodNav del original dentro de la etiqueta del
+   período — pastilla «hasta la fecha» (#0B7285) cuando el período está
+   en curso, sublínea con el rango ISO y «Ir al actual» como enlace
+   subrayado del mismo color, solo fuera de curso. */
+.period-label { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.period-incourse { display: inline-block; margin-top: 2px; font-size: 11px; font-weight: 700; line-height: 1.25; font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; border-radius: 9999px; background: #0B7285; color: #fff; padding: 2px 8px; white-space: nowrap; }
+.period-dates { display: block; font-size: 12px; font-weight: 400; line-height: 16px; font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; color: var(--dim); }
+.period-current-link { display: block; margin: 2px auto 0; padding: 4px 6px; min-height: 32px; background: none; border: 0; color: #0B7285; font-size: 12px; font-weight: 600; text-decoration: underline; cursor: pointer; }

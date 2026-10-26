@@ -203,6 +203,9 @@ export function normalizeReceivable(r) {
     entryKey: r.entryKey ? String(r.entryKey) : null,
     persona: r.persona ? String(r.persona) : null,
     registro: r.registro ? String(r.registro) : null,
+    // Marca manual de morosa del original (toggleMorosa), si viaja.
+    isMorosa: r.isMorosa === true,
+    morosaSince: r.morosaSince ? String(r.morosaSince) : null,
   }
 }
 
@@ -375,12 +378,14 @@ export function parseBackup(raw) {
   const smsOutbox = Array.isArray(data.smsOutbox) ? data.smsOutbox : []
   const monthlyArchives = Array.isArray(data.monthlyArchives) ? data.monthlyArchives : []
   const workerPayments = Array.isArray(data.workerPayments) ? data.workerPayments : []
+  const workersHistorial = Array.isArray(data.workersHistorial) ? data.workersHistorial : []
   return {
     receivablePhotos,
     smsLogs,
     smsOutbox,
     monthlyArchives,
     workerPayments,
+    workersHistorial,
     meta: {
       backupOf: String(raw.backupOf ?? ''),
       exportedAt: String(raw.exportedAt ?? ''),

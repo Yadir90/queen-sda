@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { DayEntryDetail, StoredData } from '../types'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
+import { Icon } from '../components/icons'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
+import { printHtml } from '../lib/download'
 import '../components/sectionsMirror.css'
 
 /* Entradas de productos (oleada 3): espejo del EntradasTab del
@@ -12,12 +14,12 @@ import '../components/sectionsMirror.css'
    detalle agrupado por fecha, del más reciente al más antiguo.
    La «ganancia de lo entrado» se deriva como en el original:
    cantidad × precio de venta − importe a precio de compra.
-   LO QUE NO VIAJA, declarado y no fingido: las fotos de factura
-   de entradas del original viven como blob en su servidor y no
-   vienen en el respaldo (esta copia no tiene ninguna foto que
-   mostrar), y el PDF de la factura de entradas lo genera el
-   constructor de documentos del original, que no se portó: aquí
-   las entradas se consultan, no se documentan. */
+   La factura de entradas del mes se genera con el constructor
+   de documentos de esta copia (documentosCore.entradasInvoiceHtml)
+   y se abre como vista de impresión/PDF. LO QUE NO VIAJA,
+   declarado y no fingido: las fotos de factura de entradas del
+   original viven como blob en su servidor y no vienen en el
+   respaldo (esta copia no tiene ninguna foto que mostrar). */
 
 interface EntryRow extends DayEntryDetail {
   date: string
@@ -83,6 +85,14 @@ export default function EntradasTab({ data }: { data: StoredData }) {
   }, [detalle])
 
   const deptSubtotal = deptFilter === 'Todos' ? null : porDepto.find((d) => d.name === deptFilter) ?? null
+  const [invoiceError, setInvoiceError] = useState('')
+  const openInvoice = async () => {
+    const docs = await import('../lib/documentosCore.mjs')
+    const rep = docs.buildEntradasInvoiceData(data, activeMonth)
+    if (!rep.rows.length) { setInvoiceError('Este mes no tiene entradas que facturar.'); return }
+    setInvoiceError('')
+    if (!printHtml(docs.entradasInvoiceHtml(rep))) setInvoiceError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+  }
 
   return (
     <div>
@@ -92,6 +102,14 @@ export default function EntradasTab({ data }: { data: StoredData }) {
         desc="Entradas de productos: salen solas de la columna «Entrada» de cada IPV que importas; aquí solo se consultan. Al reimportar un día, sus entradas se reemplazan con él."
         badge={TAB_BADGES.entradas}
       />
+      {invoiceError ? <div className="error-box" style={{ marginBottom: 14 }}>{invoiceError}</div> : null}
+      {allRows.length > 0 ? (
+        <div style={{ marginBottom: 14 }}>
+          <button type="button" className="btn" onClick={() => void openInvoice()}>
+            <Icon name="doc" size={16} /> Factura de entradas del mes (PDF)
+          </button>
+        </div>
+      ) : null}
 
       {months.length > 1 ? (
         <div className="view-chips" role="group" aria-label="Mes de las entradas">

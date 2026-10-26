@@ -65,8 +65,8 @@ function QueenStageIcon({ stageId, current = false }: { stageId: ReactorStageId;
 function QueenOrganism({ stageId, stageName, health }: { stageId: ReactorStageId; stageName: string; health: QueenHealthState }) {
   return (
     <figure className={`queen-organism queen-organism-${stageId} queen-organism-health-${health}`} aria-label={`Queen en etapa ${stageName}, ${QUEEN_HEALTH_COPY[health].label.toLocaleLowerCase('es')}`}>
-      <span className="queen-organism-picture" style={{ display: 'grid', placeItems: 'center' }}>
-        <QueenReactorMark stageId={stageId} health={health as ReactorHealth} size={124} />
+      <span className="queen-organism-picture">
+        <QueenReactorMark stageId={stageId} health={health as ReactorHealth} size={180} />
       </span>
       {/* Sin luciérnagas ni partículas alrededor del icono
           (corrección del dueño, 2026-10-18): el reactor va solo y

@@ -3,7 +3,9 @@
      - Batería de preguntas deterministas con respuesta comprobada
        contra las cifras conocidas del dueño (ventas 2.662.090 ·
        bruta 667.141 · neta 645.576 · cuadre total 0 · mayor tarjeta
-       Jesús 124.320 en 21 cuentas · morosas 14 por 57.420 · dinero
+       Jesús 124.320 en 21 cuentas · morosas 13 por 56.620 (plazo
+       hábil de trabajadores corregido el 26-oct, ver la nota en la
+       comprobación de totales) · dinero
        en la calle 67.920 · nómina 82.000 del ciclo 8–22 oct ·
        Tequila Corrales Gold 10.000 → 12.000 el 22-oct · sugerencia
        real de productosCore para el Pargo asado).
@@ -129,8 +131,13 @@ check('sin observación de huecos (rango completo)', !obs.some((o) => o.kind ===
 
 console.log('— Batería de preguntas deterministas —')
 const totals = pendingTotals(data, REF)
-check('totales de control: pendiente 291.690 · morosas 14/57.420 · calle 67.920',
-  totals.total === 291690 && totals.morosasCount === 14 && totals.morosasTotal === 57420 && totals.dineroEnLaCalle === 67920,
+/* Corrección 26-oct (D-03): las morosas de trabajadores salen del
+   plazo de 15 días HÁBILES del original (addBusinessDays; servidor
+   _addBusinessDaysQ). La cifra anterior (14/57.420) venía del núcleo
+   con días naturales: Nelson (trabajador, nacido el 8-oct, 800) vence
+   el 29-oct hábil, no el 23 natural — no es moroso el 24-oct. */
+check('totales de control: pendiente 291.690 · morosas 13/56.620 · calle 67.920',
+  totals.total === 291690 && totals.morosasCount === 13 && totals.morosasTotal === 56620 && totals.dineroEnLaCalle === 67920,
   `=> ${totals.total}/${totals.morosasCount}/${totals.morosasTotal}/${totals.dineroEnLaCalle}`)
 
 const aVentas = answerQueen(data, '¿Cuánto se vendió en octubre?', { refDate: REF })
@@ -151,7 +158,7 @@ check('saldo por primer nombre (Ismael): en el respaldo consta sin pendiente',
   `=> ${aPersona.intent}`)
 
 const aMorosas = answerQueen(data, '¿Qué cuentas están morosas?', { refDate: REF })
-check('morosas: 14 por 57.420', aMorosas.intent === 'morosas' && fig(aMorosas, 'Cuentas morosas') === 14 && fig(aMorosas, 'Importe moroso') === 57420)
+check('morosas: 13 por 56.620', aMorosas.intent === 'morosas' && fig(aMorosas, 'Cuentas morosas') === 13 && fig(aMorosas, 'Importe moroso') === 56620)
 
 const aCalle = answerQueen(data, '¿Cuánto hay en la calle?', { refDate: REF })
 check('dinero en la calle: 67.920 (solo clientes)', aCalle.intent === 'dinero-calle' && fig(aCalle, 'Dinero en la calle (clientes)') === 67920)

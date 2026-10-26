@@ -2,7 +2,55 @@
 
 import type { LocalPayment, Receivable } from '../types'
 
-const fmtNum = new Intl.NumberFormat('es-CU', { maximumFractionDigits: 0 })
+/* Formato numérico centralizado es-ES, como el periods.ts del original
+   (antes las pantallas usaban es-CU y los núcleos es-ES: D-35). */
+const fmtNum = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 })
+
+/* ===== Zona horaria gobernante: America/Havana (D-04) =====
+   Puerto literal de los helpers del original (havanaNow de su App.tsx y
+   havanaNowParts de su servidor): «hoy» y la hora de los cálculos salen
+   SIEMPRE de La Habana, nunca del reloj local del dispositivo. */
+export const HAVANA_TZ = 'America/Havana'
+
+export function havanaNow(): { date: string; hour: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: HAVANA_TZ,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date())
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? ''
+    return { date: `${value('year')}-${value('month')}-${value('day')}`, hour: Number(value('hour')) || 0 }
+  } catch {
+    const now = new Date()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const day = String(now.getDate()).padStart(2, '0')
+    return { date: `${now.getFullYear()}-${m}-${day}`, hour: now.getHours() }
+  }
+}
+
+export function havanaNowParts(now: Date): { iso: string; hour: number; minute: number } {
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: HAVANA_TZ, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]))
+  return { iso: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour ?? 0), minute: Number(parts.minute ?? 0) }
+}
+
+/** fmtSmsTimestamp del original: fecha y hora legibles en hora de La Habana. */
+export function fmtSmsTimestamp(value: string): string {
+  const date = new Date(value)
+  if (!Number.isFinite(date.getTime())) return value
+  return date.toLocaleString('es-CU', {
+    timeZone: HAVANA_TZ,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
 
 export function fmtCUP(value: number): string {
   return `${fmtNum.format(Math.round(value))} CUP`
@@ -12,13 +60,16 @@ export function fmtInt(value: number): string {
   return fmtNum.format(Math.round(value))
 }
 
-/** Fecha ISO (yyyy-mm-dd) de hoy en hora local. */
+/** Fecha ISO (yyyy-mm-dd) de hoy en America/Havana (helper gobernante
+ *  del original): todas las pantallas heredan La Habana por esta vía. */
 export function todayISO(): string {
-  const d = new Date()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${d.getFullYear()}-${m}-${day}`
+  return havanaNow().date
 }
+
+/** Nombres de mes compartidos (D-39): una sola fuente para rejillas,
+ *  selectores y rótulos, como el original — no una copia por pantalla. */
+export const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+export const MONTH_NAMES_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 
 export function fmtDate(iso: string | null | undefined): string {
   if (!iso) return '—'
@@ -26,6 +77,23 @@ export function fmtDate(iso: string | null | undefined): string {
   if (!y || !m || !d) return iso
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
   return `${d} de ${months[m - 1]} de ${y}`
+}
+
+const MONTHS_ES_LIST = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre']
+
+/** fmtDateListEs del original (App.tsx:1335): lista de fechas con fecha
+ *  exacta — «2, 3, 4 y 5 de octubre» si comparten mes y año; si no,
+ *  fechas cortas separadas por comas. */
+export function fmtDateListEs(dates: string[]): string {
+  if (!dates.length) return ''
+  const sorted = [...dates].sort()
+  const sameMonth = sorted.every((d) => d.slice(0, 7) === sorted[0]!.slice(0, 7))
+  if (sameMonth) {
+    const nums = sorted.map((d) => String(parseInt(d.slice(8, 10), 10)))
+    const list = nums.length > 1 ? `${nums.slice(0, -1).join(', ')} y ${nums[nums.length - 1]}` : nums[0]!
+    return `${list} de ${MONTHS_ES_LIST[parseInt(sorted[0]!.slice(5, 7), 10) - 1] ?? ''}`
+  }
+  return sorted.map((d) => fmtDateShort(d)).join(', ')
 }
 
 export function fmtDateShort(iso: string): string {
@@ -89,12 +157,17 @@ export function dueDate(rec: Receivable): string | null {
   if (rec.category === 'trabajador') return addBusinessDaysISO(rec.date, plazo)
   const d = new Date(`${rec.date}T12:00:00`)
   d.setDate(d.getDate() + plazo)
-  return d.toISOString().slice(0, 10)
+  /* Sin toISOString(): es UTC y podía desplazar el día según la zona
+     del dispositivo; se compone con las partes locales del mediodía. */
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
-/** Morosa = pendiente y pasada de su plazo (a la fecha de referencia). */
+/** Morosa = pendiente y pasada de su plazo (a la fecha de referencia),
+ *  o marcada a mano (toggleMorosa del original: en el Archivo de
+ *  morosas aunque el plazo no haya vencido). */
 export function isMorosa(rec: Receivable, saldo: number, refDate: string): boolean {
   if (rec.status === 'pagada' || rec.closeKind || saldo <= 0) return false
+  if (rec.isMorosa) return true
   const due = dueDate(rec)
   return due !== null && refDate > due
 }

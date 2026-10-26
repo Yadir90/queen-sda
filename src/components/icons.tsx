@@ -13,6 +13,10 @@ export type IconName =
   | 'x' | 'package' | 'search' | 'transfer' | 'send' | 'eye' | 'eyeOff'
   | 'archive' | 'more' | 'info' | 'star' | 'phone' | 'message' | 'camera'
   | 'grid' | 'list' | 'flask'
+  /* Añadidos del dueño (2026-10-26): voz de Queen y biometría WebAuthn
+     de esta copia. No existen en el original; se dibujan en el mismo
+     lenguaje de trazo (24×24, stroke 1.8, extremos redondos). */
+  | 'mic' | 'volume' | 'volumeOff' | 'fingerprint'
 
 export const ICON_PATHS: Record<IconName, ReactNode> = {
   dashboard: (<><rect x="3.5" y="3.5" width="7" height="9" rx="2" /><rect x="13.5" y="3.5" width="7" height="5" rx="2" /><rect x="13.5" y="11.5" width="7" height="9" rx="2" /><rect x="3.5" y="15.5" width="7" height="5" rx="2" /></>),
@@ -52,6 +56,10 @@ export const ICON_PATHS: Record<IconName, ReactNode> = {
   grid: (<><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" /></>),
   list: (<><path d="M9 6h11M9 12h11M9 18h11" /><circle cx="4.5" cy="6" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="4.5" cy="18" r="1" fill="currentColor" stroke="none" /></>),
   flask: (<><path d="M10 3.5h4M10.5 3.5v5.2L5.6 18a2 2 0 0 0 1.8 3h9.2a2 2 0 0 0 1.8-3L13.5 8.7V3.5" /><path d="M8 15h8" /></>),
+  mic: (<><rect x="9" y="2.8" width="6" height="11" rx="3" /><path d="M5.8 11.2a6.2 6.2 0 0 0 12.4 0M12 17.4V21M8.6 21h6.8" /></>),
+  volume: (<><path d="M4 9.3v5.4h3.4L12 18.6V5.4L7.4 9.3H4z" /><path d="M15.6 9.6a3.6 3.6 0 0 1 0 4.8M18.2 7a7.4 7.4 0 0 1 0 10" /></>),
+  volumeOff: (<><path d="M4 9.3v5.4h3.4L12 18.6V5.4L7.4 9.3H4z" /><path d="M16.2 9.6l4.8 4.8M21 9.6l-4.8 4.8" /></>),
+  fingerprint: (<><path d="M6.6 5.9A8.2 8.2 0 0 1 20.2 12c0 2.4-.3 4.7-.9 6.9" /><path d="M3.9 9.9a8.2 8.2 0 0 1 1-3.6" /><path d="M8.6 8.7A5.6 5.6 0 0 1 17.2 12c0 2.7-.3 5.2-1 7.5" /><path d="M11.9 10.4a2.9 2.9 0 0 1 2.9 2.9c0 2.3-.2 4.5-.8 6.5" /><path d="M9.3 12.1c.1 2.8-.2 5.3-1 7.7" /></>),
 }
 
 export function Icon({ name, size = 20, className = '', strokeWidth = 1.8 }: { name: IconName; size?: number; className?: string; strokeWidth?: number }) {

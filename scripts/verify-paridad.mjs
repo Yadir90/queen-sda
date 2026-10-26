@@ -41,7 +41,10 @@ for (const piece of ['OrganismMap', 'DnaHelix', 'QueenBrain', 'IpvNeuralMap', 'I
   check(`${piece} usada en Sistema`, sistema.includes(piece))
 }
 check('Sistema importa systemMirror.css', sistema.includes('systemMirror.css'))
-check('Sistema SIN TabHeader renderizado', !sistema.includes('<TabHeader'))
+// Corrección 26-oct: el original SÍ renderiza TabHeader en Sistema
+// (badge sparkle, chip «Núcleo de Queen») — probado en el render lado
+// a lado; la comprobación anterior fijaba la lectura equivocada.
+check('Sistema CON TabHeader renderizado (badge sistema)', sistema.includes('<TabHeader') && sistema.includes('TAB_BADGES.sistema'))
 check('Sistema sin tarjeta de reloj siempre primera (clock-card)', !sistema.includes('clock-card'))
 check('actividad y notificaciones reales en Sistema', sistema.includes('system-activity-board') && sistema.includes('system-notification-feed'))
 check('organizador declara guardado SOLO en este dispositivo', sistema.includes('localStorage') && /servidor/i.test(sistema))
@@ -113,17 +116,29 @@ for (const s of ['archivo', 'entradas', 'extras', 'existencias', 'cronologia', '
 }
 check('Más: ninguna tarjeta «Siguiente fase»', !secciones.includes('Siguiente fase'))
 check('Archivo: resúmenes monthlyArchives + «Lo que NO se archiva»', archivo.includes('monthlyArchives') && archivo.includes('Lo que NO se archiva'))
-check('Archivo: archivar mes declarado como acción del servidor, no fingido', archivo.includes('no lo cambia desde aquí'))
+check('Archivo: archivar mes implementado en esta copia (D-16)', archivo.includes('archiveDerived') && archivo.includes('sbSaveMonthlyArchives') && archivo.includes('Informe del mes (PDF)'))
 check('Entradas: detalle entriesDetail del IPV (EntradasTab)', entradas.includes('entriesDetail') && entradas.includes('EntradasTab'))
 check('Entradas: fotos de factura declaradas como no viajeras', entradas.includes('no viajan en el respaldo'))
 check('Extras: pantalla ExtrasTab desde los extras del día', extras.includes('ExtrasTab') && extras.includes('d.extras'))
 check('Extras: categorías del original (Coctelería/Pizzería/Entrada/Mesas)', extras.includes('Coctelería') && extras.includes('Pizzería') && extras.includes('Mesas'))
 check('Existencias: destino propio con el libro de Productos (buildInventoryBook)', existencias.includes('buildInventoryBook') && existencias.includes('ExistenciasTab'))
-check('Existencias: ajustes manuales declarados sin puerto', existencias.includes('no los registra'))
+check('Existencias: ajustes manuales implementados con el libro (D-16)', existencias.includes('buildInventoryBook(data.days, data.inventoryAdjustments)') && existencias.includes('sbSaveInventoryAdjustments'))
 check('Cronología: CRONO_CATS con las 6 categorías', cronologia.includes('CRONO_CATS') && cronologia.includes("'boletines'"))
 check('Cronología: eventos derivados de registros reales (catálogo, nóminas, boletines)', cronologia.includes('buildProductsCatalog') && cronologia.includes('payrollHistory') && cronologia.includes('workerPayments'))
 check('Ajustes: pantalla AjustesTab con ancla real y destinatarios', ajustes.includes('AjustesTab') && ajustes.includes('saveRhSettings') && ajustes.includes('BULLETIN_RECIPIENTS'))
-check('Ajustes: PIN/biometría declarados sustituidos por la capa de acceso', ajustes.includes('no tiene PIN ni biometría'))
+/* Actualizada con la decisión del dueño del 2026-10-26 (12:14): la
+   biometría dejó de estar «sustituida» porque el dueño la ACTIVÓ
+   como añadido de esta copia (WebAuthn). La puerta no se debilita:
+   ahora exige AMBAS declaraciones honestas — el PIN sigue sin
+   existir (lo sustituye la capa de acceso) y la biometría se
+   declara presente como añadido del dueño.
+   Actualizada de nuevo con la decisión del dueño del 2026-10-26
+   (14:33): existe un PIN NUEVO, el de acceso rápido por dispositivo
+   (desbloqueo de la sesión guardada), que NO es el PIN-candado del
+   original. La puerta se endurece: exige declarar que el
+   PIN-candado no existe, que la biometría está, y que el bloque de
+   acceso rápido está presente con su nombre. */
+check('Ajustes: PIN-candado inexistente, biometría presente y acceso rápido por dispositivo declarado', ajustes.includes('PIN-candado') && ajustes.includes('no existe') && ajustes.includes('biometría sí está en esta copia') && ajustes.includes('Acceso rápido en este dispositivo'))
 
 console.log('— CSS construido (dist) —')
 const assetsDir = new URL('dist/assets/', root)

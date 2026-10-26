@@ -57,7 +57,10 @@ const ITEMS: MasItem[] = [
   { name: 'Transferencias', desc: 'Acumulado por pasar al banco', icon: 'transfer', go: 'transferencias' },
 ]
 
-export function MasScreen({ onNavigate, data }: { onNavigate: (s: Section) => void; data: StoredData }) {
+export function MasScreen({ onNavigate, data, hidden = [] }: { onNavigate: (s: Section) => void; data: StoredData; hidden?: Section[] }) {
+  /* Las tarjetas cuyo destino no tiene acceso esta sesión no se
+     muestran (regla general del dueño: las pestañas de administrador
+     no aparecen a ningún otro usuario; matriz de Yan). */
   const dineroCalle = data.receivables
     .map((r) => ({ rec: r, saldo: effectiveSaldo(r, data.localPayments) }))
     .filter((x) => x.rec.status !== 'pagada' && !x.rec.closeKind && x.saldo > 0 && x.rec.category === 'cliente')
@@ -67,7 +70,7 @@ export function MasScreen({ onNavigate, data }: { onNavigate: (s: Section) => vo
     <div>
       <TabHeader icon="more" title="Más" desc="Todas las secciones del sistema" badge={TAB_BADGES.mas} />
       <div className="mas-grid">
-        {ITEMS.map((item) => (
+        {ITEMS.filter((item) => !item.go || !hidden.includes(item.go)).map((item) => (
           <button key={item.name} type="button" className="mas-card" onClick={() => onNavigate(item.go!)} aria-label={`Ir a ${item.name}: ${item.desc}`}>
             <span className="mas-ico"><Icon name={item.icon} size={22} /></span>
             <span className="mas-text">

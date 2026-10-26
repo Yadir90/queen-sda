@@ -152,13 +152,39 @@ function esPendiente(rec, saldo) {
   return rec.status !== 'pagada' && !rec.closeKind && saldo > 0
 }
 
+/** Suma días naturales componiendo con partes locales (mediodía). */
+function addDaysISO(desdeISO, amount) {
+  const date = new Date(`${desdeISO}T12:00:00`)
+  date.setDate(date.getDate() + amount)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+/** addBusinessDays del original (App.tsx:864): suma días saltando
+ *  sábado y domingo, componiendo la fecha con las partes locales del
+ *  mediodía (nunca toISOString, que es UTC y puede saltar el día). */
+function addBusinessDaysISO(desdeISO, amount) {
+  const date = new Date(`${desdeISO}T12:00:00`)
+  let added = 0
+  while (added < Math.max(0, amount)) {
+    date.setDate(date.getDate() + 1)
+    const weekday = date.getDay()
+    if (weekday !== 0 && weekday !== 6) added++
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function esMorosa(rec, saldo, refDate) {
   if (!esPendiente(rec, saldo)) return false
+  if (rec.isMorosa) return true
   const plazo = plazoDias(rec.category)
   if (plazo === null || !rec.date) return false
-  const d = new Date(`${rec.date}T12:00:00`)
-  d.setDate(d.getDate() + plazo)
-  return refDate > d.toISOString().slice(0, 10)
+  /* Trabajadores: 15 días HÁBILES (regla del dueño, como el original);
+     clientes: 7 naturales. Antes este núcleo sumaba naturales para
+     todos y su foto de morosas divergía de las pantallas (D-03). */
+  const due = rec.category === 'trabajador'
+    ? addBusinessDaysISO(rec.date, plazo)
+    : addDaysISO(rec.date, plazo)
+  return refDate > due
 }
 
 /**
@@ -177,6 +203,11 @@ export function monthEconomy(data, monthKey, today) {
   const gastos = expenses.reduce((s, e) => s + num(e.total), 0)
 
   const extrasList = days.flatMap((d) => (d.extras ?? []).map((x) => ({ date: d.date, concepto: x.concepto, importe: num(x.importe) })))
+  // Otros ingresos registrados a mano (registro de Extras): en el
+  // original alimentan la misma cifra de «ingresos extras» (su tabla
+  // extra_incomes es la fuente de esta línea); no duplican a los del
+  // IPV porque esos viven solo dentro de los días.
+  for (const x of data.extraIncomes ?? []) if (monthKeyOf(x.date) === monthKey) extrasList.push({ date: x.date, concepto: x.concept, importe: num(x.amount) })
   const ingresosExtras = extrasList.reduce((s, x) => s + x.importe, 0)
 
   const billarDays = days.filter((d) => d.billar)

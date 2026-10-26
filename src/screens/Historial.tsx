@@ -233,7 +233,7 @@ export default function Historial({ data, bulletins, today, isAdmin, onBulletins
               <button className="btn" onClick={() => downloadText(b.html, `boletin-${b.date}.html`, 'text/html;charset=utf-8')}>Descargar correo (.html)</button>
               <button className="btn" onClick={() => downloadText(b.text, `boletin-${b.date}.txt`)}>Descargar texto (.txt)</button>
               {/* IPV original/actualizado de ese día desde la media, cuando existe. */}
-              <IpvDownloads date={b.date} />
+              <IpvDownloads date={b.date} data={data} />
               {isAdmin ? <button className="btn" onClick={() => doRegenerate(b)}>Regenerar</button> : null}
               {isAdmin && b.status !== 'enviado' ? (
                 <button className="btn primary" onClick={() => void doSendAttempt(b)}>Enviar por correo</button>

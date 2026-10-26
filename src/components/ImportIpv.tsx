@@ -2,7 +2,8 @@ import { useRef, useState, type CSSProperties } from 'react'
 import type { IpvDayPayload } from '../lib/ipvCore.mjs'
 import { importIpvDay, supabaseConfigured } from '../lib/backend'
 import { sbImportIpvDay } from '../lib/supabaseBackend'
-import type { DayData } from '../types'
+import { downloadBlob } from '../lib/download'
+import type { DayData, StoredData } from '../types'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
 import { Card } from './ui'
 
@@ -21,6 +22,7 @@ interface Parsed {
   payload: IpvDayPayload
   rawDay: Record<string, unknown>
   existing: DayData | null
+  file: File
 }
 
 /**
@@ -35,10 +37,12 @@ interface Parsed {
  * que ese día ya está importado y reemplazo con confirmación expresa
  * (misma fecha, sin duplicar).
  */
-export default function ImportIpv({ onImported, existingDays, bare = false }: {
+export default function ImportIpv({ onImported, existingDays, bare = false, data }: {
   onImported: () => void
   existingDays: DayData[]
   bare?: boolean
+  /** Datos del sistema para la reconciliación del IPV de vuelta. */
+  data?: StoredData
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [parsed, setParsed] = useState<Parsed | null>(null)
@@ -46,11 +50,39 @@ export default function ImportIpv({ onImported, existingDays, bare = false }: {
   const [done, setDone] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [reading, setReading] = useState(false)
+  const [returnTrip, setReturnTrip] = useState<{ file: File; rawDay: Record<string, unknown>; date: string } | null>(null)
+  const [buildingReturn, setBuildingReturn] = useState(false)
+  const [returnMsg, setReturnMsg] = useState<string | null>(null)
+
+  const downloadUpdated = async () => {
+    if (!returnTrip || !data) return
+    setBuildingReturn(true)
+    setReturnMsg(null)
+    try {
+      const [{ buildIpvReconciliation }, { buildUpdatedIpv }] = await Promise.all([
+        import('../lib/ipvReconciliation'),
+        import('../lib/ipvRoundTrip'),
+      ])
+      const reconciliation = buildIpvReconciliation(data, returnTrip.date, returnTrip.rawDay as never, data.extraIncomes.map((x) => ({ date: x.date, concept: x.concept, note: x.note, amount: x.amount, paymentMethod: x.paymentMethod, origin: x.origin })))
+      const blob = await buildUpdatedIpv(returnTrip.file, returnTrip.date, reconciliation.additions, reconciliation.productBarcodes, reconciliation.nameCorrections, reconciliation.templateFingerprint)
+      downloadBlob(blob, `IPV ${returnTrip.date} actualizado.xlsx`)
+      const total = reconciliation.additions.length
+      setReturnMsg(total
+        ? `IPV actualizado descargado: ${fmtInt(total)} fila${total === 1 ? '' : 's'} agregada${total === 1 ? '' : 's'} por el sistema (RH ${reconciliation.counts.rh} · Gastos ${reconciliation.counts.gastos} · Almacén ${reconciliation.counts.almacen} · Cuentas pagadas ${reconciliation.counts.cuentasPagadas}), sin tocar las cifras del archivo.`
+        : 'IPV actualizado descargado: el sistema no tenía nada que agregarle a este día.')
+    } catch (e) {
+      setReturnMsg(e instanceof Error ? e.message : 'No se pudo construir el IPV actualizado.')
+    } finally {
+      setBuildingReturn(false)
+    }
+  }
 
   const onFile = async (file: File) => {
     setError(null)
     setDone(null)
     setParsed(null)
+    setReturnTrip(null)
+    setReturnMsg(null)
     if (!/\.xlsx$/i.test(file.name)) {
       setError('Selecciona un archivo .xlsx de la plantilla IPV mejorada.')
       return
@@ -63,7 +95,7 @@ export default function ImportIpv({ onImported, existingDays, bare = false }: {
       const payload = await parseDayFile(file)
       const rawDay = ipvPayloadToRawDay(payload)
       const existing = existingDays.find((d) => d.date === payload.date) ?? null
-      setParsed({ payload, rawDay, existing })
+      setParsed({ payload, rawDay, existing, file })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'No se pudo leer el archivo.')
     } finally {
@@ -84,6 +116,11 @@ export default function ImportIpv({ onImported, existingDays, bare = false }: {
       setDone(existing
         ? `IPV del ${fmtDate(payload.date)} reemplazado: esta es ahora la versión vigente · venta ${fmtCUP(payload.ventasDia)} · ${fmtInt(payload.productCount)} productos · ganancia neta ${fmtCUP(payload.gananciaNeta)}.`
         : `IPV del ${fmtDate(payload.date)} registrado · venta ${fmtCUP(payload.ventasDia)} · ${fmtInt(payload.productCount)} productos · ganancia neta ${fmtCUP(payload.gananciaNeta)}.`)
+      // El IPV de vuelta queda disponible: el mismo archivo, con lo que
+      // el sistema le agrega (RH, gastos, almacén, cuentas pagadas) y
+      // SIN tocar una cifra suya (reconciliación del original).
+      setReturnTrip({ file: parsed.file, rawDay: parsed.rawDay, date: payload.date })
+      setReturnMsg(null)
       setParsed(null)
       onImported()
     } catch (e) {
@@ -131,6 +168,18 @@ export default function ImportIpv({ onImported, existingDays, bare = false }: {
 
       {error ? <div className="error-box" style={{ marginTop: 14 }}>{error}</div> : null}
       {done ? <div className="ok-box" style={{ marginTop: 14 }}>{done}</div> : null}
+      {returnTrip && data ? (
+        <div style={{ marginTop: 12 }}>
+          <button className="btn primary" disabled={buildingReturn} onClick={() => void downloadUpdated()}>
+            {buildingReturn ? 'Construyendo el IPV actualizado…' : 'Descargar IPV actualizado'}
+          </button>
+          <p className="small muted" style={{ marginTop: 6 }}>
+            El mismo libro que subiste, con lo que el sistema le agrega (RH, gastos, existencias y
+            cuentas pagadas) en sus hojas — listo para enviar. El archivo original no se modifica.
+          </p>
+          {returnMsg ? <p className="small" role="status" style={{ marginTop: 6 }}>{returnMsg}</p> : null}
+        </div>
+      ) : null}
 
       {parsed && p ? (
         <div style={{ marginTop: 16 }}>

@@ -43,6 +43,7 @@ export interface InformeData {
   signatures: SignatureBlock | null
 }
 export function buildInformeData(data: DocumentsData, monthKey: string, today: string): InformeData
+export function buildPeriodInformeData(data: DocumentsData, from: string, to: string, label: string, today: string): InformeData
 
 export interface NominaEmployeeDoc {
   name: string
@@ -140,6 +141,18 @@ export interface BulletinTransport { send: (b: Bulletin) => Promise<void> }
 export function attemptBulletinSend(queue: Bulletin[], bulletinId: string, transport: BulletinTransport | null, now?: string | null): Promise<{ queue: Bulletin[]; sent: boolean; reason: string }>
 
 export function informeHtml(rep: InformeData): string
+export interface ExtrasInvoiceRow { date: string; concept: string; note: string; amount: number; method: string; source: string }
+export interface ExtrasInvoiceData { monthKey: string; monthLabel: string; rows: ExtrasInvoiceRow[]; total: number; signatures: SignatureBlock | null }
+export function buildExtrasInvoiceData(data: DocumentsData, monthKey: string): ExtrasInvoiceData
+export function extrasInvoiceHtml(rep: ExtrasInvoiceData): string
+export interface GastosInvoiceRow { date: string; concept: string; category: string; dept: string; quantity: number; total: number }
+export interface GastosInvoiceData { monthKey: string; monthLabel: string; rows: GastosInvoiceRow[]; total: number; signatures: SignatureBlock | null }
+export function buildGastosInvoiceData(data: DocumentsData, monthKey: string): GastosInvoiceData
+export function gastosInvoiceHtml(rep: GastosInvoiceData): string
+export interface EntradasInvoiceRow { date: string; dept: string; descripcion: string; um: string; cantidad: number; precioCompra: number; importe: number }
+export interface EntradasInvoiceData { monthKey: string; monthLabel: string; rows: EntradasInvoiceRow[]; total: number; signatures: SignatureBlock | null }
+export function buildEntradasInvoiceData(data: DocumentsData, monthKey: string): EntradasInvoiceData
+export function entradasInvoiceHtml(rep: EntradasInvoiceData): string
 export function nominaHtml(doc: NominaDocumento): string
 export function menuHtml(menu: MenuData): string
 export function buildPptxBlob(rep: InformeData): Blob

@@ -4,6 +4,7 @@ import { buildProductsCatalog } from '../lib/productosCore.mjs'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon, type IconName } from '../components/icons'
 import { effectiveSaldo, fmtCUP, fmtDate, todayISO } from '../lib/utils'
+import type { ActivityEntry } from '../lib/activityLog'
 import '../components/sectionsMirror.css'
 
 /* Cronología global (oleada 3): espejo del CronologiaTab del
@@ -27,7 +28,7 @@ import '../components/sectionsMirror.css'
    trabajador del registro de RH del original no viaja en el
    respaldo y no se reconstruye aquí. */
 
-export type CronoCat = 'ipv' | 'rh' | 'cuentas' | 'gastos' | 'productos' | 'boletines'
+export type CronoCat = 'ipv' | 'rh' | 'cuentas' | 'gastos' | 'productos' | 'boletines' | 'actividad'
 export interface CronoEvent {
   id: string
   cat: CronoCat
@@ -46,12 +47,25 @@ export const CRONO_CATS: { id: CronoCat; label: string; icon: IconName }[] = [
   { id: 'gastos', label: 'Gastos', icon: 'receipt' },
   { id: 'productos', label: 'Productos', icon: 'package' },
   { id: 'boletines', label: 'Boletines', icon: 'send' },
+  { id: 'actividad', label: 'Actividad', icon: 'people' },
 ]
-const CRONO_CAT_LABEL: Record<CronoCat, string> = { ipv: 'IPV', rh: 'RH', cuentas: 'Cuentas', gastos: 'Gastos', productos: 'Productos', boletines: 'Boletines' }
+const CRONO_CAT_LABEL: Record<CronoCat, string> = { ipv: 'IPV', rh: 'RH', cuentas: 'Cuentas', gastos: 'Gastos', productos: 'Productos', boletines: 'Boletines', actividad: 'Actividad' }
+
+const ACTIVITY_KIND_LABEL: Record<ActivityEntry['kind'], string> = {
+  sesion: 'Inicio de sesión',
+  edicion: 'Edición',
+  borrado: 'Borrado',
+  importacion: 'Importación',
+  exportacion: 'Exportación',
+  queen: 'Conversación con Queen',
+  fallido: 'Intento fallido o denegado',
+}
+const havanaDayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Havana', year: 'numeric', month: '2-digit', day: '2-digit' })
+const havanaTimeFmt = new Intl.DateTimeFormat('es-ES', { timeZone: 'America/Havana', hour: '2-digit', minute: '2-digit', hour12: false })
 
 const CAT_LABEL: Record<string, string> = { cliente: 'cliente', trabajador: 'trabajador', administrativo: 'administrativa' }
 
-function buildEvents(data: StoredData, bulletins: Bulletin[]): CronoEvent[] {
+function buildEvents(data: StoredData, bulletins: Bulletin[], activity: ActivityEntry[] = []): CronoEvent[] {
   const out: CronoEvent[] = []
   const tsOf = (date: string) => Date.parse(`${date}T12:00:00`) || 0
   for (const d of data.days) {
@@ -170,12 +184,28 @@ function buildEvents(data: StoredData, bulletins: Bulletin[]): CronoEvent[] {
       go: 'historial', goLabel: 'Ver en Historial',
     })
   }
+  /* Actividad de usuarios no administradores (decisión del dueño,
+     2026-10-26): sesiones, ediciones, importaciones, exportaciones
+     y uso de Queen, con quién, qué y cuándo. El registro empieza
+     cuando la función existe; no hay eventos inventados. */
+  for (const a of activity) {
+    const when = new Date(a.ts)
+    if (Number.isNaN(when.getTime())) continue
+    const date = havanaDayFmt.format(when)
+    out.push({
+      id: `act-${a.id}`, cat: 'actividad', date, ts: when.getTime(), icon: a.kind === 'queen' ? 'sparkle' : a.kind === 'exportacion' ? 'send' : 'people',
+      title: `${ACTIVITY_KIND_LABEL[a.kind]} · ${a.userName}`,
+      detail: `${a.viaAdmin ? `Hecho por el administrador (${a.viaAdmin}) dentro de esta cuenta · ` : ''}${a.detail} · ${havanaTimeFmt.format(when)}`,
+      go: a.section ?? null, goLabel: 'Ver la sección',
+    })
+  }
   return out.sort((a, b) => b.ts - a.ts || b.date.localeCompare(a.date) || a.title.localeCompare(b.title, 'es'))
 }
 
-export default function CronologiaScreen({ data, bulletins, onNavigate }: {
+export default function CronologiaScreen({ data, bulletins, activity, onNavigate }: {
   data: StoredData
   bulletins: Bulletin[]
+  activity?: ActivityEntry[]
   onNavigate: (s: Section) => void
 }) {
   const [cat, setCat] = useState<CronoCat | 'todos'>('todos')
@@ -183,7 +213,7 @@ export default function CronologiaScreen({ data, bulletins, onNavigate }: {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [limit, setLimit] = useState(80)
 
-  const events = useMemo(() => buildEvents(data, bulletins), [data, bulletins])
+  const events = useMemo(() => buildEvents(data, bulletins, activity), [data, bulletins, activity])
   const counts = useMemo(() => {
     const map = new Map<CronoCat, number>()
     for (const e of events) map.set(e.cat, (map.get(e.cat) ?? 0) + 1)
@@ -209,7 +239,7 @@ export default function CronologiaScreen({ data, bulletins, onNavigate }: {
       <TabHeader
         icon="list"
         title="Cronología"
-        desc="Todos los registros históricos del sistema en una sola línea de tiempo, del más reciente al más antiguo: IPV importados, pagos y movimientos de RH, cuentas y abonos, gastos, cambios de precio y de costo de los productos y boletines. Nada se guarda duplicado: cada evento se lee de su sección de origen."
+        desc="Todos los registros históricos del sistema en una sola línea de tiempo, del más reciente al más antiguo: IPV importados, pagos y movimientos de RH, cuentas y abonos, gastos, cambios de precio y de costo de los productos, boletines y la actividad de los usuarios del equipo (sesiones, ediciones, importaciones, exportaciones y uso de Queen, con quién, qué y cuándo). Nada se guarda duplicado: cada evento se lee de su sección de origen."
         badge={TAB_BADGES.cronologia}
       />
 
