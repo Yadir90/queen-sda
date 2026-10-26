@@ -148,6 +148,16 @@ export const EMPTY_DATA: StoredData = {
   queenEvolution: null,
   automationRuns: [],
   queenLearning: null,
+  workersExtended: [],
+  queenEvolutionHistory: [],
+  warehouseEntries: [],
+  warehouseMeta: {},
+  venueInventory: [],
+  receivablePhotos: [],
+  smsLogs: [],
+  smsOutbox: [],
+  monthlyArchives: [],
+  workerPayments: [],
   expensesCount: 0,
   payrollCount: 0,
   workersCount: 0,
@@ -288,6 +298,13 @@ export function importBackup(raw: unknown): StoredData {
     payrollHistory: [...payrollByCycle.values()],
     anchorDate: parsed.anchorDate ?? current.anchorDate,
     transferMovements,
+    // Las cinco colecciones del respaldo mandan tal como vienen
+    // (oleada 2): antes se descartaban y al reexportar salían [].
+    receivablePhotos: parsed.receivablePhotos,
+    smsLogs: parsed.smsLogs,
+    smsOutbox: parsed.smsOutbox,
+    monthlyArchives: parsed.monthlyArchives,
+    workerPayments: parsed.workerPayments,
     learnedKinds,
     cuentasOverrides,
     suppressedEntries: [...new Set([...current.suppressedEntries, ...derivedSuppressed])],
@@ -443,6 +460,35 @@ export function savePackageReference(ref: PackageReference): StoredData {
 export function deletePackageReference(id: string): StoredData {
   const current = loadData()
   const next = { ...current, packageReferences: current.packageReferences.filter((r) => r.id !== id) }
+  saveData(next)
+  return next
+}
+
+/**
+ * Guarda los movimientos del almacén MANUAL y/o sus metadatos
+ * (modo local). En modo Supabase la misma estructura se guarda en
+ * app_settings 'almacen-extended' (sbSaveWarehouseExtended).
+ */
+export function saveWarehouseExtended(patch: {
+  entries?: StoredData['warehouseEntries']
+  meta?: StoredData['warehouseMeta']
+}): StoredData {
+  const current = loadData()
+  const next: StoredData = { ...current }
+  if (patch.entries) next.warehouseEntries = patch.entries
+  if (patch.meta) next.warehouseMeta = patch.meta
+  saveData(next)
+  return next
+}
+
+/**
+ * Guarda la lista completa de bienes del Inventario (modo local).
+ * En modo Supabase va a app_settings 'venue-inventory'
+ * (sbSaveVenueInventory).
+ */
+export function saveVenueInventory(items: StoredData['venueInventory']): StoredData {
+  const current = loadData()
+  const next = { ...current, venueInventory: items }
   saveData(next)
   return next
 }

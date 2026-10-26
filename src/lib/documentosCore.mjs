@@ -364,13 +364,16 @@ export function buildBackupExport(data, exportedAt) {
       expenses: data?.expenses ?? [],
       exportedAt: String(exportedAt ?? '').slice(0, 10),
       ipvReceivableAccounts: [],
-      monthlyArchives: [],
+      // Las cinco colecciones viajan ÍNTEGRAS desde el StoredData
+      // (oleada 2: antes salían [] y se perdían al reexportar —
+      // fuga cerrada; parseBackup las conserva sin tocarlas).
+      monthlyArchives: data?.monthlyArchives ?? [],
       payrollHistory: data?.payrollHistory ?? [],
       queenLearning: [],
-      receivablePhotos: [],
+      receivablePhotos: data?.receivablePhotos ?? [],
       receivables: data?.receivables ?? [],
-      smsLogs: [],
-      smsOutbox: [],
+      smsLogs: data?.smsLogs ?? [],
+      smsOutbox: data?.smsOutbox ?? [],
       transferExpenses,
       transferState: {
         balance: sum.balance,
@@ -387,7 +390,7 @@ export function buildBackupExport(data, exportedAt) {
         totalReceived: sum.totalReceived,
         totalToBank: sum.totalPases,
       },
-      workerPayments: [],
+      workerPayments: data?.workerPayments ?? [],
       workers: data?.workers ?? [],
     },
   }

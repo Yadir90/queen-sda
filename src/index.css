@@ -34,7 +34,17 @@
   --radius: 24px;
   --card-radius: 26px;
   --card-radius-compact: 22px;
-  --card-shadow: 0 1px 2px rgb(11 61 46 / 0.05), 0 10px 28px rgb(11 61 46 / 0.045);
+  --card-shadow: 0 1px 2px rgb(10 42 31 / .045), 0 8px 24px rgb(10 42 31 / .055);
+  --button-shadow: 0 1px 2px rgb(10 42 31 / .08), 0 5px 14px rgb(10 42 31 / .06);
+  --motion-fast: 80ms;
+  --motion-base: 120ms;
+  --queen-chat-assistant-text: #ffffff;
+  --queen-chat-user-text: #ffffff;
+  --space-accent: var(--accent);
+  --space-border: var(--border);
+  --space-muted: var(--dim);
+  --space-surface: var(--surface);
+  --space-surface-alt: var(--surface-alt);
   --chart-green: #0e9f6e;
   --chart-deep: #0b5d46;
   --chart-turquoise: #0e9db3;
@@ -43,7 +53,9 @@
   --chart-mint: #42c596;
   --chart-slate: #73877b;
   --chart-forest: #287c5c;
-  --chart-grid: var(--border);
+  --chart-sky: #5ab8c8;
+  --chart-cursor: rgb(14 159 110 / 0.08);
+  --chart-grid: #dce8e1;
   --font-display: Georgia, "Times New Roman", serif;
   /* Fondo ambiental tipo aurora, fundido con la paleta PROPIA del
      sistema (esmeralda #0e9f6e y turquesa #0ea5bd, con los toques azul
@@ -70,18 +82,26 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    --bg: #0a1411;
-    --surface: #15241e;
-    --surface-alt: #1c2f27;
-    --surface-tonal: #1c2f27;
+    /* Paleta oscura del original (theme.css): azul pizarra, no verde.
+       La del clon era una variante verde (#0a1411/#15241e/#273f33…)
+       que el original no tiene: de ahí «muchos desajustes entre
+       claro y oscuro». Alineada token a token en la oleada 3d. */
+    --bg: #0c141b;
+    --surface: #14222c;
+    --surface-alt: #1b2d39;
+    --surface-tonal: #182832;
     --turquoise: #2dd4ee;
-    --turquoise-soft: #14383b;
-    --text: #eaf5f0;
-    --dim: #9dbcae;
-    --border: #273f33;
+    --turquoise-soft: #17343b;
+    --text: #edf5f8;
+    --dim: #a7bac5;
+    --border: #29404d;
     --accent: #22c55e;
-    --deep: #0b3d2e;
-    --deep-2: #11543f;
+    --deep: #102b27;
+    --deep-2: #143d35;
+    /* Texto de las burbujas de Queen: blanco en ambos esquemas,
+       como en el original (redefinido aquí a propósito). */
+    --queen-chat-assistant-text: #ffffff;
+    --queen-chat-user-text: #ffffff;
     --danger: #ff8a80;
     --danger-soft: #3a1d1d;
     --warn-soft: #3a3117;
@@ -91,7 +111,22 @@
     --paid-text: #bfdbfe;
     --queen-chat-user-bg: #0e7c93;
     --queen-chat-assistant-bg: #0f7d58;
-    --card-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 30px rgb(0 0 0 / 0.16);
+    /* Series de gráficos en oscuro: valores del bloque oscuro del
+       theme.css original (auditoría visual 2026-10-26: faltaban y
+       los gráficos heredaban los tonos de día sobre fondo oscuro). */
+    --chart-green: #42d392;
+    --chart-deep: #a7d7bc;
+    --chart-turquoise: #42cfe3;
+    --chart-gray: #81968a;
+    --chart-sage: #78b898;
+    --chart-mint: #62ddb0;
+    --chart-slate: #a1b5a9;
+    --chart-forest: #3fb582;
+    --chart-sky: #65c9d8;
+    --chart-cursor: rgb(66 211 146 / 0.1);
+    --chart-grid: #294238;
+    --button-shadow: 0 1px 1px rgb(0 0 0 / .24), 0 6px 16px rgb(0 0 0 / .14);
+    --card-shadow: 0 1px 1px rgb(0 0 0 / .22), 0 10px 28px rgb(0 0 0 / .18);
     --ambient-bg:
       radial-gradient(58rem 34rem at 88% -10%, rgb(45 212 238 / 0.08), transparent 62%),
       radial-gradient(46rem 30rem at -12% 4%, rgb(34 197 94 / 0.09), transparent 60%),
@@ -104,7 +139,7 @@
   /* En oscuro, --deep como TEXTO pasa a menta claro legible (el fondo
      --deep con texto blanco se mantiene oscuro a propósito, como en
      el original). */
-  .tab-header-chip { color: #a7d7bc; }
+  .tab-header-chip { color: #edf5f8; }
   .period-tab.active { color: #a7d7bc; }
 }
 
@@ -791,7 +826,32 @@ table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(-
   box-shadow: var(--card-shadow); padding: 12px 14px; touch-action: pan-y;
   transition: transform .15s ease;
 }
-@media (min-width: 720px) { .account-card { border-radius: 24px; } }
+@media (min-width: 640px) { .account-card { border-radius: 24px; } }
+/* Tarjeta de cuenta del original (account-swipe-card): nombre
+   semibold 14px con insignias, importe en display a la derecha y
+   bloque de marca (chip + detalle + barra de vigencia). */
+.account-main { align-items: flex-start; }
+.acc-name-row { display: block; }
+.acc-name { font-weight: 600; font-size: 0.875rem; line-height: 1.35; overflow-wrap: anywhere; }
+.acc-badge { margin-left: 4px; display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; vertical-align: middle; }
+.acc-badge.ipv { background: var(--turquoise-soft); color: var(--deep); }
+.acc-badge.manual { background: var(--surface-tonal); color: var(--dim); }
+.acc-cat-chip { margin-left: 4px; display: inline-flex; border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; vertical-align: middle; }
+.acc-amount { text-align: right; flex: none; display: flex; flex-direction: column; align-items: flex-end; }
+.acc-amount-big { font-family: var(--font-display); font-size: 1.125rem; font-weight: 700; line-height: 1; }
+.acc-amount-big small { font-size: 11px; font-weight: 600; color: var(--dim); }
+.acc-amount-sub { font-size: 11px; color: var(--dim); margin-top: 4px; }
+.mark-block { margin-top: 10px; }
+.mark-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.mark-chip { display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid var(--border); padding: 2px 8px; font-size: 11px; font-weight: 700; color: var(--text); }
+.mark-dot { width: 8px; height: 8px; border-radius: 999px; flex: none; }
+.mark-detalle { font-size: 11px; color: var(--dim); line-height: 1.3; }
+.mark-bar { height: 6px; border-radius: 999px; background: var(--surface-tonal); margin-top: 6px; overflow: hidden; }
+.mark-fill { display: block; height: 100%; border-radius: 999px; }
+.acc-sms-line { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; background: var(--surface-tonal); padding: 4px 10px; font-size: 11px; font-weight: 600; color: var(--text); }
+.acc-sms-none { margin-top: 8px; font-size: 11px; font-weight: 500; color: var(--dim); }
+.acc-sms-none svg { vertical-align: -2px; margin-right: 4px; }
+.acc-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
 .account-card.is-morosa { border-color: var(--danger); }
 .account-card.is-paid { border-color: var(--paid-border); }
 .account-main { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: var(--text); text-align: left; padding: 0; cursor: pointer; font: inherit; }
@@ -802,7 +862,7 @@ table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(-
 }
 .account-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .account-name { font-family: var(--font-display); font-weight: 700; font-size: 1.02rem; overflow-wrap: break-word; }
-.account-sub { font-size: 0.76rem; color: var(--dim); overflow-wrap: break-word; }
+.account-sub { font-size: 11px; color: var(--dim); overflow-wrap: break-word; margin-top: 2px; }
 .account-amount { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 0; flex: none; }
 .account-amount small { font-size: 0.66rem; color: var(--dim); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .account-amount strong { font-family: var(--font-display); font-size: 1.12rem; line-height: 1.15; }
@@ -1020,3 +1080,27 @@ button.hist-cell { cursor: pointer; }
 .queen-modes { display: flex; flex-direction: column; gap: 10px; }
 .queen-mode { border: 1px solid var(--border); border-radius: 16px; padding: 10px 12px; background: var(--surface-alt); }
 button.view-chip { cursor: pointer; font: inherit; }
+
+/* ===== Oleada 3d: paridad claro/oscuro contra el original =====
+   La paleta oscura ya quedó alineada en :root (azul pizarra del
+   original). Aquí van los componentes de esta hoja que el original
+   adapta por esquema y el clon tenía fijos o distintos. */
+.chip { background: var(--surface); border: 1px solid var(--border); }
+select { border-color: color-mix(in srgb, var(--turquoise) 55%, var(--border)); }
+.queen-orb {
+  --queen-image-filter: brightness(.92) saturate(1.22);
+  --queen-inner-ring: rgb(255 255 255 / .68);
+  --queen-orb-backdrop: radial-gradient(circle at 48% 40%, #fff 0 14%, #f4edf8 54%, #e8dff0 100%);
+  background: transparent;
+  filter: drop-shadow(0 3px 7px color-mix(in srgb, #0b3d2e 20%, transparent));
+}
+.queen-orb img { opacity: .9; filter: none !important; }
+@media (prefers-color-scheme: dark) {
+  .queen-orb {
+    --queen-image-filter: brightness(.78) saturate(1.32);
+    --queen-inner-ring: rgb(255 255 255 / .28);
+    background: radial-gradient(circle at 42% 32%, rgb(255 255 255 / .1), rgb(9 15 27 / .34) 72%);
+    filter: none !important;
+  }
+  .queen-orb img { opacity: .78; filter: brightness(.82) saturate(.96) contrast(1.09); }
+}

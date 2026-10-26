@@ -6,7 +6,9 @@ import ImportBackup from '../components/ImportBackup'
 import ImportIpv from '../components/ImportIpv'
 import { Icon } from '../components/icons'
 import { QueenOrb, QueenReactorMark } from '../components/QueenReactor'
-import { buildQueenEvolution, buildQueenErrorBank, QUEEN_OWNER_DIRECTIVES } from '../lib/queenCore.mjs'
+import QueenEvolutionPanel from '../components/QueenEvolutionPanel'
+import { buildQueenEvolution, buildQueenErrorBank, buildQueenHealth, QUEEN_OWNER_DIRECTIVES } from '../lib/queenCore.mjs'
+import ImmuneLiveField, { buildImmuneBankView } from '../components/ImmuneLiveField'
 import { listCloneIntegrityIssues, runMaintenanceDiagnosis } from '../lib/automatizacionesCore.mjs'
 import {
   CriticalSimulationPanel, DnaHelix, IntegrationMap, IpvNeuralMap, OrganismMap, QueenBrain,
@@ -187,6 +189,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
     const integrity = listCloneIntegrityIssues(data)
     const maintenance = runMaintenanceDiagnosis(data)
     const evo = buildQueenEvolution(data, ref)
+    const queenHealth = buildQueenHealth(data, ref)
     const errorBank = buildQueenErrorBank(data)
     const pendingBulletins = data.bulletins.filter((b) => b.status !== 'enviado').length
     const failedBulletins = data.bulletins.filter((b) => b.status === 'error').length
@@ -293,7 +296,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
       { id: 'rinones', biological: 'Riñones', component: 'Limpieza', fn: 'Depura únicamente archivos fantasmas después de comprobar que no tengan referencias; nunca toca datos ni documentos activos.', state: segments.find((x) => x.id === 'limpieza')!.state, metric: maintenance.summary },
       { id: 'sueno', biological: 'Sueño', component: 'Mantenimiento profundo', fn: 'En la ventana de sueño revisa módulo por módulo el ADN operativo disponible, contrasta centinelas, rendimiento e integridad, consolida lo aprendido y solo da una reparación por hecha después de verificarla.', state: (data.queenLearning ? 'healthy' : 'verifying') as MirrorSegment['state'], metric: data.queenLearning?.lastRunAt ? `Última consolidación ${data.queenLearning.lastRunAt.slice(0, 10)}` : 'Próximo ciclo nocturno' },
     ]
-    return { days, descuadrados, pending, morosas, checks, segments, organismParts, healthPct, attention, radarAreas, activities, events, huecos, gaps, integrity, maintenance, evo, errorBank, pendingBulletins, failedBulletins, hasRh, productsCount, autoStatusEarly }
+    return { days, descuadrados, pending, morosas, checks, segments, organismParts, healthPct, attention, radarAreas, activities, events, huecos, gaps, integrity, maintenance, evo, queenHealth, errorBank, pendingBulletins, failedBulletins, hasRh, productsCount, autoStatusEarly }
   }, [data, session, isAdmin, sbMode, ref, online])
 
   const profiles = sbMode
@@ -342,8 +345,6 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
     switch (id) {
       case 'evolucion': {
         const evo = model.evo
-        const stageState = model.attention.some((a) => a.severity === 'error') ? 'alert' : 'idle'
-        const stageId = (evo.stage.id === 'celula' ? 'celula' : evo.stage.id) as 'celula' | 'infante' | 'juvenil' | 'adulto' | 'maduro'
         const globalState = globalStateOf(model.segments)
         return (
           <section className="system-evolution system-evolution-featured" aria-labelledby="system-evolution-title">
@@ -360,29 +361,14 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
               <div><strong>{DNA_STATE_COPY[globalState].short}</strong><span>{model.attention.length ? `${model.attention.length} cosa(s) necesitan tu atención hoy` : 'Todos los componentes observados responden correctamente.'}</span></div>
               <small>{model.healthPct}%</small>
             </div>
-            <div className="evo-wrap">
-              <QueenReactorMark stageId={stageId} state={stageState} size={76} />
-              <div style={{ minWidth: 0 }}>
-                <p className="eyebrow">Etapa calculada (queenCore.buildQueenEvolution)</p>
-                <h3 className="evo-stage">{evo.score !== null ? `Etapa ${evo.stage.name}` : 'Sin medición todavía'}</h3>
-                <p className="sub" style={{ margin: 0 }}>{evo.score !== null ? `Índice ${evo.score} · progreso a la siguiente etapa: ${evo.progressToNext} %${evo.nextStage ? ` (siguiente: ${evo.nextStage.name})` : ''}` : evo.note}</p>
-              </div>
-            </div>
-            <div className="queen-evolution-progress">
-              <div className="queen-evolution-progress-head"><span>{evo.nextStage ? `Hacia ${evo.nextStage.name}` : 'Etapa máxima medida'}</span><b>{evo.progressToNext} %</b></div>
-              <div className="queen-evolution-track"><span style={{ width: `${evo.progressToNext}%` }} /></div>
-              <p>{evo.note}</p>
-            </div>
-            <div className="queen-evolution-section">
-              {evo.metrics.map((m) => (
-                <div className="rt-health-row" key={m.key}>
-                  <i style={{ background: m.measured ? 'var(--accent)' : '#d4a72c' }} />
-                  <span className="grow">{m.label}<span className="muted">{m.detail}</span></span>
-                  <span className="chip">{m.measured ? `${fmtInt(m.value ?? 0)}/${fmtInt(m.target)}` : 'No viaja en el respaldo'}</span>
-                </div>
-              ))}
-            </div>
-            <p className="small muted">La etapa NO es fija: sale de buildQueenEvolution con las señales que viajan en el respaldo (directivas, conceptos, correcciones y días de operación). Las señales que viven solo en el original se declaran no medidas y no castigan ni regalan puntos (renormalización documentada en queenCore).</p>
+            {/* Panel COMPLETO de evolución (puerto de QueenEvolutionPanel
+                del original): en el original se monta aquí, dentro de
+                esta misma tarjeta de Sistema — héroe con el Reactor por
+                etapa y salud en vivo, progreso, las 7 métricas vivas,
+                los umbrales de las 5 etapas y el historial. No es otro
+                resumen: la consola de Queen conserva solo su línea de
+                cabecera, como el original. */}
+            <QueenEvolutionPanel evo={evo} health={model.queenHealth.state} serverHistory={data.queenEvolutionHistory} />
           </section>
         )
       }
@@ -788,6 +774,12 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
           <Card>
             <h3>Banco de errores · Sistema inmune</h3>
             <p className="sub">Células de queenCore.buildQueenErrorBank (una por error VERIFICADO en los datos cargados), problemas de integridad de automatizacionesCore.listCloneIntegrityIssues y el historial de jornadas con fallos reales (cuadre/merma). Sin errores verificados, el banco queda vacío: no se siembran células de ejemplo.</p>
+            {/* Sistema inmune en vivo (portado del original): DENTRO de
+                esta misma tarjeta, encima de la lista de células como
+                en el original, alimentado de ESTE banco del clon
+                (model.errorBank, de buildQueenErrorBank) vía
+                buildImmuneBankView — sin datos fijos. */}
+            <ImmuneLiveField bank={buildImmuneBankView(model.errorBank)} />
             {cells.length ? cells.map((c) => (
               <div className="immune-cell" key={c.cellKey}>
                 <div className="immune-head"><strong>{c.topic}</strong><span className="chip morosa">{c.status}</span></div>

@@ -23,7 +23,7 @@
  *    anticuerpo (qué hacer en el sistema principal) y nada más.
  * Nada aquí inventa un dato: cada componente pinta lo que recibe. */
 
-import { useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Section } from '../types'
 import { Icon, type IconName } from './icons'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
@@ -329,6 +329,38 @@ export function buildIpvOrbitNodes(days: IpvOrbitDay[]) {
 
 export function IpvNeuralMap({ days }: { days: IpvOrbitDay[] }) {
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
+  // Pausa fuera de pantalla del original: la constelación solo anima
+  // cuando se ve (IntersectionObserver + visibilitychange); fuera de
+  // pantalla lleva is-paused y sus animaciones se detienen.
+  const constellationRef = useRef<HTMLDivElement | null>(null)
+  const [constellationVisible, setConstellationVisible] = useState(false)
+  useEffect(() => {
+    const element = constellationRef.current
+    if (!element) { setConstellationVisible(false); return }
+    const updateDocumentVisibility = () => {
+      if (document.hidden) setConstellationVisible(false)
+    }
+    if (!('IntersectionObserver' in window)) {
+      setConstellationVisible(!document.hidden)
+      document.addEventListener('visibilitychange', updateDocumentVisibility)
+      return () => document.removeEventListener('visibilitychange', updateDocumentVisibility)
+    }
+    const observer = new IntersectionObserver(([entry]) => {
+      setConstellationVisible(Boolean(entry?.isIntersecting) && !document.hidden)
+    }, { rootMargin: '80px 0px', threshold: 0.02 })
+    observer.observe(element)
+    const resumeWhenVisible = () => {
+      if (!document.hidden) {
+        const rect = element.getBoundingClientRect()
+        setConstellationVisible(rect.bottom >= -80 && rect.top <= window.innerHeight + 80)
+      } else setConstellationVisible(false)
+    }
+    document.addEventListener('visibilitychange', resumeWhenVisible)
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', resumeWhenVisible)
+    }
+  }, [])
   const orbitNodes = useMemo(() => buildIpvOrbitNodes(days), [days])
   const selected = days.find((d) => d.date === selectedDay) ?? null
   return (
@@ -339,7 +371,7 @@ export function IpvNeuralMap({ days }: { days: IpvOrbitDay[] }) {
         </div>
       </header>
       {days.length ? (
-        <div className="ipv-neural-constellation is-visible" role="list" aria-label="Constelación espacial de IPV alrededor del sol, corazón del sistema">
+        <div ref={constellationRef} className={`ipv-neural-constellation${constellationVisible ? ' is-visible' : ' is-paused'}`} role="list" aria-label="Constelación espacial de IPV alrededor del sol, corazón del sistema">
           <span className="ipv-starfield ipv-starfield-a" aria-hidden="true" />
           <span className="ipv-starfield ipv-starfield-b" aria-hidden="true" />
           <svg className="ipv-constellation-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
