@@ -97,7 +97,7 @@ export interface MonthEconomy {
     trimestreDiasTotal: number
     trimestreMeses: string[]
   }
-  quincenas: Array<{ from: string; to: string; days: number; ventas: number; bruta: number; neta: number; gastos: number }>
+  quincenas: Array<{ from: string; to: string; days: number; ventas: number; bruta: number; neta: number; gastos: number; ingresosExtras: number; resultado: number }>
   gastosPorCategoria: Array<{ name: string; total: number }>
   gastosPorOrigen: Array<{ name: string; total: number }>
   expenses: Expense[]

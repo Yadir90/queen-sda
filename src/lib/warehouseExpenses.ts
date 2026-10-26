@@ -41,7 +41,7 @@ export function deptForCuentasConcept(concept: string, rawName: string): string 
  *  sistema no lo conoce de forma inequívoca (buildWarehouseCostIndex +
  *  warehouseCostPriceFor del original, sobre el catálogo del clon). */
 export function warehouseCostFor(data: StoredData, productName: string): number | null {
-  const catalog = buildProductsCatalog(data.days)
+  const catalog = buildProductsCatalog(data.days, data.inventoryAdjustments)
   const costsByName = new Map<string, Set<number>>()
   const addName = (name: string, cost: number | null) => {
     if (cost == null || !(cost > 0)) return

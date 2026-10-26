@@ -238,7 +238,7 @@ export function buildIpvReconciliation(data: StoredData, date: string, rawDay: R
   }
 
   const count = (section: IpvAddition['section']) => additions.filter((row) => row.section === section).length
-  const catalog = buildProductsCatalog(data.days)
+  const catalog = buildProductsCatalog(data.days, data.inventoryAdjustments)
   return {
     date,
     sourcePreserved: true,

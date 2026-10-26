@@ -210,7 +210,14 @@ export function monthEconomy(data, monthKey, today) {
   for (const x of data.extraIncomes ?? []) if (monthKeyOf(x.date) === monthKey) extrasList.push({ date: x.date, concepto: x.concept, importe: num(x.amount) })
   const ingresosExtras = extrasList.reduce((s, x) => s + x.importe, 0)
 
-  const billarDays = days.filter((d) => d.billar)
+  /* Billar: el parser (billarFromJuegos) ya devuelve null en los
+     días sin la tabla por turnos guardada — en los IPV viejos la
+     «venta» de juegos era la fila TOTAL acumulada (26.900 en
+     octubre) y sumarla inflaba el mes casi al triple del real.
+     Y como en el original, solo cuentan los días CON horas: un día
+     con la tabla guardada pero sin horas no aporta venta (y su
+     posible pago al encargado no resta una utilidad que no existió). */
+  const billarDays = days.filter((d) => d.billar && d.billar.estado === 'con-horas')
   const billarVenta = billarDays.reduce((s, d) => s + num(d.billar.venta), 0)
   const billarUtilidad = billarDays.reduce((s, d) => s + num(d.billar.utilidad), 0)
 
@@ -243,15 +250,18 @@ export function monthEconomy(data, monthKey, today) {
   const inversion = sumDays((d) => d.entriesImporte)
   const merma = sumDays((d) => d.mermasCosto)
 
-  // Total cobrado del mes: pagos de cuentas con fecha de pago en el mes.
+  // Total cobrado del mes: pagos de cuentas con fecha de pago en el
+  // mes Y hasta la fecha de referencia — sin el corte, un boletín
+  // regenerado días después sumaba también los pagos posteriores
+  // a su fecha (en el boletín del 18 se colaban 60.120 de más).
   const pagosMes = []
   for (const r of data?.receivables ?? []) {
     for (const p of r.payments ?? []) {
-      if (monthKeyOf(p.paidDate) === monthKey) pagosMes.push({ ...p, client: r.client })
+      if (monthKeyOf(p.paidDate) === monthKey && p.paidDate <= today) pagosMes.push({ ...p, client: r.client })
     }
   }
   for (const p of data?.localPayments ?? []) {
-    if (monthKeyOf(p.date) === monthKey) {
+    if (monthKeyOf(p.date) === monthKey && p.date <= today) {
       const rec = (data?.receivables ?? []).find((r) => r.id === p.receivableId)
       pagosMes.push({ id: p.id, amount: num(p.amount), paidDate: p.date, paymentMethod: p.method, client: rec?.client ?? '' })
     }
@@ -311,14 +321,23 @@ export function monthEconomy(data, monthKey, today) {
   const period = (from, to) => {
     const pd = days.filter((d) => d.date >= from && d.date <= to)
     const pe = expenses.filter((e) => e.date >= from && e.date <= to)
+    const px = extrasList.filter((x) => x.date >= from && x.date <= to)
+    const neta = pd.reduce((s, d) => s + num(d.gananciaNeta), 0)
+    const gastos = pe.reduce((s, e) => s + num(e.total), 0)
+    const ingresosExtras = px.reduce((s, x) => s + x.importe, 0)
     return {
       from,
       to,
       days: pd.length,
       ventas: pd.reduce((s, d) => s + num(d.ventasDia), 0),
       bruta: pd.reduce((s, d) => s + num(d.gananciaBruta), 0),
-      neta: pd.reduce((s, d) => s + num(d.gananciaNeta), 0),
-      gastos: pe.reduce((s, e) => s + num(e.total), 0),
+      neta,
+      gastos,
+      ingresosExtras,
+      /* Misma fórmula del mes y del original: el resultado de
+         cada quincena incluye sus extras, y las dos quincenas
+         suman exactamente el resultado del mes. */
+      resultado: neta - gastos + ingresosExtras,
     }
   }
   const lastDate = `${monthKey}-${String(totalDaysInMonth).padStart(2, '0')}`

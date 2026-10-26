@@ -6,6 +6,7 @@ import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
 import { saveExtraIncomes, supabaseConfigured } from '../lib/backend'
 import { sbSaveExtraIncomes } from '../lib/supabaseBackend'
 import { printHtml } from '../lib/download'
+import { BRAND_CUNO_URL } from '../lib/brandAssets'
 import '../components/sectionsMirror.css'
 
 const SB_MODE = supabaseConfigured()
@@ -119,11 +120,11 @@ export default function ExtrasTab({ data, isAdmin, onChanged }: { data: StoredDa
   }
 
   const openInvoice = async () => {
-    const { buildExtrasInvoiceData, extrasInvoiceHtml } = await import('../lib/documentosCore.mjs')
+    const { buildExtrasInvoiceData, extrasInvoiceHtml, withStampImage } = await import('../lib/documentosCore.mjs')
     const rep = buildExtrasInvoiceData(data, activeMonth)
     if (!rep.rows.length) { setError('Este mes no tiene otros ingresos que facturar.'); return }
     setError('')
-    if (!printHtml(extrasInvoiceHtml(rep))) setError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+    if (!printHtml(withStampImage(extrasInvoiceHtml(rep), BRAND_CUNO_URL))) setError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
   }
 
   return (

@@ -290,9 +290,13 @@ export function buildInventoryBook(daysIn, adjustments = []) {
    cambios manuales ni excepciones (no viajan en el respaldo): la
    historia de precios sale solo de los puntos del IPV. */
 
-export function buildProductsCatalog(daysIn) {
+export function buildProductsCatalog(daysIn, adjustments = []) {
   const days = [...(daysIn ?? [])].filter((d) => d && d.date).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
-  const book = buildInventoryBook(days)
+  /* Con los ajustes manuales de existencia de esta copia (los
+     mismos que aplica Existencias al construir su libro): sin
+     ellos, el catálogo — y el menú, que nace de él — contradecía
+     al almacén tras cualquier baja, traslado o alta a mano. */
+  const book = buildInventoryBook(days, adjustments)
   const bookByKey = new Map(book.products.map((p) => [p.key, p]))
   // Ventas por fecha y producto; entradas por fecha y producto.
   const saleByKey = new Map()

@@ -29,30 +29,60 @@
 
 import { readFileSync } from 'node:fs'
 import { parseBackup } from '../src/lib/backupCore.mjs'
-import { syncDerivedData } from '../src/lib/syncCore.mjs'
+import {
+  syncDerivedData, deriveSuppressedEntries, buildWorkersRegistry,
+  canonicalPersonKey, clientKeyOf, firstNameKeyOf,
+} from '../src/lib/syncCore.mjs'
 import {
   buildInformeData, buildNominaDocumento, buildMenuData, buildBackupExport,
   buildDailyBulletin, ensureBulletinsForDays, regenerateBulletin,
   attemptBulletinSend, signatureBlockFor, informeHtml, nominaHtml, menuHtml,
-  buildPptxBlob, bulletinSubject, BULLETIN_RECIPIENTS,
+  buildPptxBlob, bulletinSubject, BULLETIN_RECIPIENTS, withStampImage,
 } from '../src/lib/documentosCore.mjs'
+import { buildInventoryBook, buildProductsCatalog } from '../src/lib/productosCore.mjs'
 
 const PATH = '../../goals/panorama-mensual-la-reina/hidden_files/backups/backup-sda-2026-10-24.json'
 const raw = JSON.parse(readFileSync(new URL(PATH, import.meta.url), 'utf8'))
 const parsed = parseBackup(raw)
 
-/* El StoredData que la app construye: tras parsear el respaldo
-   corre la sincronización derivada (cuentas, gastos, nóminas). */
+/* El StoredData que la app construye DE VERDAD (auditoría de
+   documentos del 2026-10-26): el montaje canónico de los dos
+   cargadores (local y Supabase) — registro de trabajadores
+   construido, supresiones de entradas DERIVADAS de los días y,
+   decisivo, los mapas aprendidos DEL RESPALDO (learnedKinds y
+   cuentasOverrides). El montaje anterior los pasaba VACÍOS a la
+   vez: con ambos en blanco, la sincronización descarta los
+   gastos que el IPV trae en sus entradas ya cuajadas (origen
+   «ipv-cuentas»: SAZON 160 + MANTENIMIENTO MALECON 1.250) y esta
+   batería bendecía unas cifras de gastos y resultado que la app
+   en producción no produce (con cualquiera de los dos mapas
+   presente, la sync da la cifra buena: aislado el 2026-10-26). */
+const registry = buildWorkersRegistry(parsed.workers, parsed.days, parsed.payrollHistory, parsed.anchorDate ?? undefined)
+const knownPersons = new Set()
+for (const r of parsed.receivables) {
+  knownPersons.add(canonicalPersonKey(r.clientKey, r.client))
+  if (r.origin === 'ipv') knownPersons.add(clientKeyOf(r.client))
+}
+for (const w of parsed.workers) {
+  knownPersons.add(canonicalPersonKey(w.key, w.nombre))
+  const first = firstNameKeyOf(w.nombre)
+  if (first) knownPersons.add(first)
+}
+const suppressedEntries = deriveSuppressedEntries(parsed.days, parsed.entrySourceKeys, {
+  learnedKinds: parsed.learnedKinds ?? {},
+  overrides: parsed.cuentasOverrides ?? {},
+  knownPersons,
+})
 const synced = syncDerivedData({
   days: parsed.days,
   receivables: parsed.receivables,
   localPayments: [],
   expenses: parsed.expenses,
-  workers: parsed.workers,
+  workers: registry,
   aliases: {},
-  learnedKinds: {},
-  cuentasOverrides: {},
-  suppressedEntries: [],
+  learnedKinds: parsed.learnedKinds ?? {},
+  cuentasOverrides: parsed.cuentasOverrides ?? {},
+  suppressedEntries,
   payrollHistory: parsed.payrollHistory,
   accountSyncDates: [],
 })
@@ -61,15 +91,17 @@ const data = {
   receivables: synced.receivables,
   localPayments: synced.localPayments,
   expenses: synced.expenses,
-  workers: parsed.workers,
+  workers: registry,
   payrollHistory: parsed.payrollHistory,
   anchorDate: parsed.anchorDate ?? '2026-09-23',
   aliases: {},
   learnedKinds: parsed.learnedKinds,
   cuentasOverrides: parsed.cuentasOverrides,
-  suppressedEntries: [],
-  unpaidWorkers: [],
-  payrollAdjustments: {},
+  suppressedEntries,
+  unpaidWorkers: parsed.unpaidWorkers ?? [],
+  payrollAdjustments: parsed.payrollAdjustments ?? {},
+  extraIncomes: parsed.extraIncomes ?? [],
+  inventoryAdjustments: [],
   transferMovements: parsed.transferMovements,
   bulletins: [],
 }
@@ -101,6 +133,27 @@ check('informe HTML con bloque «Firmas y cuño»', informeHtmlTxt.includes('Fir
 check('informe HTML con cuño digital', informeHtmlTxt.includes('CUÑO DIGITAL APROBADO'))
 check('informe HTML declara firma pendiente (sin trazos en el respaldo)', informeHtmlTxt.includes('Firma autorizada pendiente'))
 check('informe HTML con fondo aurora', informeHtmlTxt.includes('radial-gradient'))
+/* Las dos cifras que el montaje simplificado corrompía (auditoría
+   del 2026-10-26): con las supresiones derivadas, los gastos de
+   origen «ipv-cuentas» cuentan, y el resultado lleva la fórmula
+   del original (neta − gastos + extras). */
+check('gastos del mes = 262.505 (con los de origen ipv-cuentas)', informe.eco.gastos === 262505, String(informe.eco.gastos))
+check('gastos del mes: 51 registros', informe.eco.gastosCount === 51, String(informe.eco.gastosCount))
+check('ingresos extras del mes = 8500', informe.eco.ingresosExtras === 8500, String(informe.eco.ingresosExtras))
+check('resultado del mes = 391.571 (neta − gastos + extras)', informe.eco.resultado === 391571, String(informe.eco.resultado))
+check('quincenas: cada resultado = neta − gastos + extras de su tramo',
+  informe.eco.quincenas.every((q) => q.resultado === q.neta - q.gastos + q.ingresosExtras),
+  JSON.stringify(informe.eco.quincenas))
+check('quincenas: las dos suman el resultado del mes',
+  informe.eco.quincenas.reduce((s, q) => s + q.resultado, 0) === informe.eco.resultado)
+/* Cuño (estándar del dueño): con la imagen disponible, la zona
+   del cuño se sustituye entera — ni anillo dibujado ni aviso de
+   ausencia; sin imagen, el documento conserva su aviso honesto. */
+const informeConCuno = withStampImage(informeHtmlTxt, 'data:image/webp;base64,PRUEBA')
+check('cuño incrustado: sin anillo dibujado ni «Cuño no disponible»',
+  !informeConCuno.includes('class="stamp-ring"') && !informeConCuno.includes('Cuño no disponible'))
+check('cuño incrustado: la imagen real está en el documento', informeConCuno.includes('<img src="data:image/webp'))
+check('sin cuño disponible: el documento conserva el aviso', informeHtmlTxt.includes('Cuño no disponible'))
 
 /* ---------- Nómina ---------- */
 console.log('Nómina del ciclo RH:')
@@ -131,11 +184,23 @@ check('ningún producto prohibido en el menú', !menuNames.some((n) => PROHIBIDO
   menuNames.filter((n) => PROHIBIDOS.some((rx) => rx.test(n))).join(', '))
 check('excluidos por la regla reportados aparte', Array.isArray(menu.excluded))
 
+/* ---------- Existencias: el catálogo del menú y el libro ---------- */
+console.log('Alineación de existencias (menú ↔ Existencias):')
+const baseBook = buildInventoryBook(data.days, [])
+const anyProd = baseBook.products.find((p) => p.currentStock > 0)
+const adjIni = { id: 'verify-ini', productKey: anyProd.key, dept: anyProd.dept, productName: anyProd.name, um: anyProd.um, date: anyProd.firstSeen, kind: 'inicial', quantity: 777, note: 'verificación' }
+const bookAdj = buildInventoryBook(data.days, [adjIni])
+check('el ajuste «inicial» se aplica en el libro', bookAdj.products.find((p) => p.key === anyProd.key)?.hasInitialSet === true)
+const catAdj = buildProductsCatalog(data.days, [adjIni])
+check('catálogo y libro dan la misma existencia con ajustes aplicados',
+  bookAdj.products.every((p) => Math.abs((catAdj.products.find((c) => c.key === p.key)?.currentStock ?? NaN) - p.currentStock) <= 0.001))
+check('el menú se construye también con ajustes presentes', buildMenuData({ ...data, inventoryAdjustments: [adjIni] }, '2026-10-24').itemCount > 0)
+
 /* ---------- Boletín del 22-oct ---------- */
 console.log('Boletín diario del 22 de octubre de 2026:')
 const b22 = buildDailyBulletin(data, '2026-10-22', { now: '2026-10-24' })
 check('boletín generado', !!b22)
-check('asunto como el original', b22 && b22.subject === 'Queen SDA - Sistema de Automatización de Datos V2.0 · Boletín diario — 22 de octubre de 2026', b22?.subject)
+check('asunto como el original (separador «·» también ante la fecha, constatado en su bandeja)', b22 && b22.subject === 'Queen SDA - Sistema de Automatización de Datos V2.0 · Boletín diario · 22 de octubre de 2026', b22?.subject)
 check('venta del día = 88.060', b22 && b22.structured.venta === 88060, b22 && String(b22.structured.venta))
 check('bruta del día = 31.705', b22 && b22.structured.bruta === 31705)
 check('neta del día = 31.225', b22 && b22.structured.neta === 31225)
@@ -143,7 +208,11 @@ check('gastos del día = 2.600 (1 registro)', b22 && b22.structured.gastosDia ==
 check('resultado del día = 28.625', b22 && b22.structured.resultadoDia === 28625, b22 && String(b22.structured.resultadoDia))
 check('inversión del día = 3.400', b22 && b22.structured.inversionDia === 3400)
 check('top del día: Hollandia 32.860 primero', b22 && b22.structured.topProducts[0]?.name === 'Cerveza Hollandia' && b22.structured.topProducts[0]?.importe === 32860)
-check('dinero en la calle desde el respaldo = 42.240 (foto ya corregida de Leidy)', b22 && b22.structured.dineroEnLaCalle === 42240, b22 && String(b22.structured.dineroEnLaCalle))
+check('dinero en la calle A LA FECHA del boletín = 42.240 (reconstruida: pagos posteriores re-sumados)', b22 && b22.structured.dineroEnLaCalle === 42240, b22 && String(b22.structured.dineroEnLaCalle))
+check('calle del 22: todo en morosas (la más joven venció el 21)', b22 && b22.structured.calleMorosas === 42240 && b22.structured.calleEnCobrar === 0,
+  b22 && `${b22.structured.calleEnCobrar}/${b22.structured.calleMorosas}`)
+check('total cobrado del mes cortado a la fecha del boletín = 87.090 (pagos ≤ 22)', b22 && b22.structured.mes.totalCobrado === 87090, b22 && String(b22.structured.mes.totalCobrado))
+check('billar del mes solo con tabla guardada = 13.400 al 22', b22 && b22.structured.mes.billar === 13400, b22 && String(b22.structured.mes.billar))
 check('acumulados del mes: ventas 2.025.360', b22 && b22.structured.mes.ventas === 2025360, b22 && String(b22.structured.mes.ventas))
 check('acumulados del mes: bruta 565.191', b22 && b22.structured.mes.bruta === 565191, b22 && String(b22.structured.mes.bruta))
 check('acumulados del mes: neta 558.901', b22 && b22.structured.mes.neta === 558901, b22 && String(b22.structured.mes.neta))
@@ -188,6 +257,59 @@ check('reimportado: neta 645.576', roundTrip.summary.gananciaNeta === 645576)
 check('reimportado: cuadre 0 en todos', roundTrip.summary.allSquared === true)
 const informeRT = buildInformeData({ ...data, days: roundTrip.days, expenses: roundTrip.expenses, receivables: roundTrip.receivables, transferMovements: roundTrip.transferMovements }, '2026-10', '2026-10-24')
 check('informe del reimportado reproduce los totales', informeRT.eco.ventas === 2662090 && informeRT.eco.neta === 645576)
+
+/* ---------- Regresión: comparativa validada del boletín del 18 ----------
+   Cifras del boletín del 18-oct compuesto desde la foto del 26,
+   contra la reconstrucción validada del boletín del ORIGINAL
+   (boletin-prueba/comparativa-18.md, validada a su vez contra el
+   ejemplar real del 24 de la captura del dueño). Es el ancla
+   externa de esta batería: si una sola difiere, algo volvió a
+   nacer mal en el compositor o en los núcleos que consume. */
+console.log('Boletín del 18 desde la foto del 26 (comparativa validada):')
+const raw26 = JSON.parse(readFileSync(new URL('../../goals/panorama-mensual-la-reina/hidden_files/backups/backup-sda-2026-10-26.json', import.meta.url), 'utf8'))
+const parsed26 = parseBackup(raw26)
+const registry26 = buildWorkersRegistry(parsed26.workers, parsed26.days, parsed26.payrollHistory, parsed26.anchorDate ?? undefined)
+const known26 = new Set()
+for (const r of parsed26.receivables) {
+  known26.add(canonicalPersonKey(r.clientKey, r.client))
+  if (r.origin === 'ipv') known26.add(clientKeyOf(r.client))
+}
+for (const w of parsed26.workers) {
+  known26.add(canonicalPersonKey(w.key, w.nombre))
+  const f26 = firstNameKeyOf(w.nombre)
+  if (f26) known26.add(f26)
+}
+const suppressed26 = deriveSuppressedEntries(parsed26.days, parsed26.entrySourceKeys, {
+  learnedKinds: parsed26.learnedKinds ?? {},
+  overrides: parsed26.cuentasOverrides ?? {},
+  knownPersons: known26,
+})
+const synced26 = syncDerivedData({
+  days: parsed26.days, receivables: parsed26.receivables, localPayments: [], expenses: parsed26.expenses,
+  workers: registry26, aliases: {}, learnedKinds: parsed26.learnedKinds ?? {}, cuentasOverrides: parsed26.cuentasOverrides ?? {},
+  suppressedEntries: suppressed26, payrollHistory: parsed26.payrollHistory, accountSyncDates: [],
+})
+const data26 = {
+  days: parsed26.days, receivables: synced26.receivables, localPayments: synced26.localPayments, expenses: synced26.expenses,
+  workers: registry26, payrollHistory: parsed26.payrollHistory, anchorDate: parsed26.anchorDate ?? '2026-09-23',
+  aliases: {}, learnedKinds: parsed26.learnedKinds, cuentasOverrides: parsed26.cuentasOverrides, suppressedEntries: suppressed26,
+  unpaidWorkers: [], payrollAdjustments: {}, extraIncomes: parsed26.extraIncomes ?? [], inventoryAdjustments: [],
+  transferMovements: parsed26.transferMovements, bulletins: [],
+}
+const b18 = buildDailyBulletin(data26, '2026-10-18', { now: '2026-10-26' })
+check('b18: venta del día = 43.830', b18 && b18.structured.venta === 43830)
+check('b18: resultado del día = 5.620', b18 && b18.structured.resultadoDia === 5620)
+check('b18: gastos del mes = 158.315 (con los ipv-cuentas)', b18 && b18.structured.mes.gastos === 158315, b18 && String(b18.structured.mes.gastos))
+check('b18: resultado del mes = 334.586 (neta − gastos + extras)', b18 && b18.structured.mes.resultado === 334586, b18 && String(b18.structured.mes.resultado))
+check('b18: billar del mes = 13.100 (solo días con tabla)', b18 && b18.structured.mes.billar === 13100, b18 && String(b18.structured.mes.billar))
+check('b18: total cobrado cortado al 18 = 76.800', b18 && b18.structured.mes.totalCobrado === 76800, b18 && String(b18.structured.mes.totalCobrado))
+check('b18: dinero en la calle al 18 = 52.530', b18 && b18.structured.dineroEnLaCalle === 52530, b18 && String(b18.structured.dineroEnLaCalle))
+check('b18: calle en Cobrar = 17.350 · en morosas = 35.180', b18 && b18.structured.calleEnCobrar === 17350 && b18.structured.calleMorosas === 35180,
+  b18 && `${b18.structured.calleEnCobrar}/${b18.structured.calleMorosas}`)
+const informe26 = buildInformeData(data26, '2026-10', '2026-10-26')
+check('informe (foto 26): billar 18.700 / utilidad 14.620', informe26.eco.billar.venta === 18700 && informe26.eco.billar.utilidad === 14620,
+  `${informe26.eco.billar.venta}/${informe26.eco.billar.utilidad}`)
+check('informe (foto 26): resultado 429.091 y gastos 275.505', informe26.eco.resultado === 429091 && informe26.eco.gastos === 275505)
 
 /* ---------- Presentación ---------- */
 console.log('Presentación PowerPoint:')

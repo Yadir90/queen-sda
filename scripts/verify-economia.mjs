@@ -26,7 +26,11 @@
 //     sync: 51 registros / 262.505 (el crudo también es 51 / 262.505:
 //     la sync espejo no crea ni borra gastos sobre el respaldo ya
 //     conciliado — correspondencia documentada abajo).
-//   · Ingresos extras 8.500 (2), billar 44.400 / utilidad 34.540,
+//   · Ingresos extras 8.500 (2), billar 17.500 / utilidad 13.700
+//     (SOLO días con la tabla por turnos guardada: los IPV viejos
+//     traen en «juegos» la fila TOTAL acumulada — 26.900 en octubre
+//     — y sumarla inflaba el mes; corrección de la auditoría de
+//     documentos del 2026-10-26 contra la comparativa validada),
 //     barra 2.255.690, cocina 406.400, inversión 1.696.425, merma
 //     21.565, total cobrado 121.710, efectivo en caja al cierre del
 //     23 506.860, zelle 0, consumo de la casa 171.080, resultado
@@ -173,8 +177,8 @@ check('gastos auto-rh tras la sync', porOrigen['auto-rh'] ?? 0, 2)
 check('gastos manuales tras la sync', porOrigen.manual ?? 0, 42)
 check('ingresos extras', eco.ingresosExtras, 8500)
 check('ingresos extras (registros)', eco.ingresosExtrasCount, 2)
-check('billar: venta', eco.billar.venta, 44400)
-check('billar: utilidad', eco.billar.utilidad, 34540)
+check('billar: venta (solo días con tabla guardada)', eco.billar.venta, 17500)
+check('billar: utilidad (solo días con tabla guardada)', eco.billar.utilidad, 13700)
 check('venta en barra', eco.barra, 2255690)
 check('venta en cocina', eco.cocina, 406400)
 check('barra + cocina = ventas', eco.barra + eco.cocina, eco.ventas)

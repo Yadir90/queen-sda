@@ -37,6 +37,31 @@ export function summarizeDays(days) {
   }
 }
 
+/* Billar de un día (puerto de billarDelDia del original): solo la
+   tabla guardada de ESE día. Sin tabla (días importados antes del
+   desglose por turnos, cuya «juegos.venta» es la fila TOTAL del
+   registro acumulado) devuelve null: esa cifra no es del día y no
+   entra en ningún total. Con tabla: venta = importe día + importe
+   noche (o la venta guardada), utilidad = venta − pago encargado,
+   y el estado «con-horas» manda sobre cuándo suma al mes. */
+export function billarFromJuegos(j) {
+  if (!j || typeof j !== 'object' || !j.tablaGuardada || j.horasDia == null || j.horasNoche == null) return null
+  const horasDia = num(j.horasDia)
+  const horasNoche = num(j.horasNoche)
+  const precioDia = num(j.precioDia)
+  const precioNoche = num(j.precioNoche)
+  const importeDia = j.importeDia != null ? num(j.importeDia) : horasDia * precioDia
+  const importeNoche = j.importeNoche != null ? num(j.importeNoche) : horasNoche * precioNoche
+  const totalHoras = num(j.horas) || horasDia + horasNoche
+  const venta = importeDia + importeNoche || num(j.venta)
+  const pagoEncargado = num(j.pagoEncargado)
+  return {
+    estado: totalHoras > 0 || venta > 0 ? 'con-horas' : 'sin-horas',
+    horasDia, precioDia, importeDia, horasNoche, precioNoche, importeNoche,
+    totalHoras, venta, pagoEncargado, utilidad: venta - pagoEncargado,
+  }
+}
+
 export function normalizeDay(d) {
   const departments = (Array.isArray(d.departments) ? d.departments : []).map((dep) => ({
     name: String(dep.name ?? 'Sin departamento'),
@@ -97,14 +122,17 @@ export function normalizeDay(d) {
       (s, e) => s + num(e && typeof e === 'object' ? e.importe : 0),
       0,
     ),
-    // Billar: la tabla de juegos del IPV («juegos») con su venta y su
-    // utilidad (venta − pago del encargado). Sin tabla o sin horas ni
-    // venta registradas, el día no aporta billar (null), como el
-    // «no disponible» del original.
-    billar:
-      d.juegos && typeof d.juegos === 'object' && (num(d.juegos.venta) > 0 || num(d.juegos.horas) > 0)
-        ? { venta: num(d.juegos.venta), utilidad: num(d.juegos.utilidad) }
-        : null,
+    // Billar: SOLO la tabla de billar guardada de ese día (puerto de
+    // billarDelDia del original). Los días importados antes del
+    // desglose por turnos guardaron en «juegos.venta» la fila TOTAL
+    // del registro (el acumulado del período): sin «tablaGuardada»
+    // esa cifra NO es la venta del día y no se usa ni como venta ni
+    // como ganancia en ningún total (la versión anterior la sumaba
+    // y el billar del mes salía casi triplicado: 40.000 frente a
+    // 13.100 reales al 18-oct). Se conserva el desglose completo
+    // (horas/precios/importes por turno y pago al encargado) porque
+    // el boletín diario trae la sección «Billar del día».
+    billar: billarFromJuegos(d.juegos),
     // Ingresos extras del día: filas de «ingresosEntradaMesas»
     // (cobro de entrada, alquiler de mesas…) con su importe real.
     extras: (Array.isArray(d.ingresosEntradaMesas) ? d.ingresosEntradaMesas : [])
@@ -121,6 +149,11 @@ export function normalizeDay(d) {
       precioCompra: num(e?.precioCompra),
       precioVenta: num(e?.precioVenta),
       importe: num(e?.importe) || num(e?.cantidad) * num(e?.precioCompra),
+      // Importe de venta y ganancia potencial de la entrada: el
+      // boletín del original los trae en su sección «Entradas del
+      // día» (venta potencial y ganancia potencial por producto).
+      importeVenta: num(e?.importeVenta) || num(e?.cantidad) * num(e?.precioVenta),
+      ganancia: num(e?.ganancia),
       codigo: String(e?.codigo ?? ''),
     })),
     // Foto de almacén del día (hoja «Almacén» del IPV), tal como entró.

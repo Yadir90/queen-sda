@@ -7,6 +7,7 @@ import { DayTimeline, NightCloseConsole, type CloseStep, type TimelineEvent } fr
 import '../components/homeMirror.css'
 import { dueDate, effectiveSaldo, fmtCUP, fmtDate, fmtDateListEs, fmtDateShort, fmtInt, isMorosa, todayISO } from '../lib/utils'
 import { downloadBlob, printHtml } from '../lib/download'
+import { BRAND_CUNO_URL } from '../lib/brandAssets'
 import { logActivity } from '../lib/activityLog'
 
 /* Inicio (panorama) — orden de bloques del sistema original:
@@ -421,7 +422,7 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
                 const docs = await import('../lib/documentosCore.mjs')
                 const rep = docs.buildPeriodInformeData(data, range.from, range.to, range.label, today)
                 logActivity('exportacion', `Exportó el PDF del período (${range.label})`, { section: 'inicio' })
-                setExportMsg(printHtml(docs.informeHtml(rep))
+                setExportMsg(printHtml(docs.withStampImage(docs.informeHtml(rep), BRAND_CUNO_URL))
                   ? `PDF del período listo (${range.label}): se abrió la vista de impresión.`
                   : 'El navegador bloqueó la ventana del PDF. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
               } finally { setExportBusy(false) }

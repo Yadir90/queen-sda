@@ -141,6 +141,7 @@ export interface BulletinTransport { send: (b: Bulletin) => Promise<void> }
 export function attemptBulletinSend(queue: Bulletin[], bulletinId: string, transport: BulletinTransport | null, now?: string | null): Promise<{ queue: Bulletin[]; sent: boolean; reason: string }>
 
 export function informeHtml(rep: InformeData): string
+export function withStampImage(html: string, url: string): string
 export interface ExtrasInvoiceRow { date: string; concept: string; note: string; amount: number; method: string; source: string }
 export interface ExtrasInvoiceData { monthKey: string; monthLabel: string; rows: ExtrasInvoiceRow[]; total: number; signatures: SignatureBlock | null }
 export function buildExtrasInvoiceData(data: DocumentsData, monthKey: string): ExtrasInvoiceData

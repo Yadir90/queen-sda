@@ -6,6 +6,7 @@ import { effectiveSaldo, fmtCUP, fmtDate, fmtInt, isMorosa, todayISO } from '../
 import { saveMonthlyArchives, supabaseConfigured } from '../lib/backend'
 import { sbSaveMonthlyArchives } from '../lib/supabaseBackend'
 import { printHtml } from '../lib/download'
+import { BRAND_CUNO_URL } from '../lib/brandAssets'
 import '../components/sectionsMirror.css'
 
 const SB_MODE = supabaseConfigured()
@@ -121,11 +122,15 @@ export default function ArchivoScreen({ data, bulletins, isAdmin, onChanged, onN
   const openMonthDoc = async (kind: 'informe' | 'gastos' | 'entradas', monthKey: string) => {
     setError('')
     const docs = await import('../lib/documentosCore.mjs')
-    const html = kind === 'informe'
+    const rawHtml = kind === 'informe'
       ? docs.informeHtml(docs.buildInformeData(data, monthKey, today))
       : kind === 'gastos'
         ? docs.gastosInvoiceHtml(docs.buildGastosInvoiceData(data, monthKey))
         : docs.entradasInvoiceHtml(docs.buildEntradasInvoiceData(data, monthKey))
+    /* El cuño real va incrustado también desde Archivo: sin esto,
+       los documentos del mes archivado salían con el aviso de
+       «Cuño no disponible» aunque el cuño viaja con la app. */
+    const html = docs.withStampImage(rawHtml, BRAND_CUNO_URL)
     if (!printHtml(html)) setError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
   }
 

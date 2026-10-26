@@ -4,6 +4,7 @@ import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { fmtCUP, fmtDate, fmtInt } from '../lib/utils'
 import { printHtml } from '../lib/download'
+import { BRAND_CUNO_URL } from '../lib/brandAssets'
 import '../components/sectionsMirror.css'
 
 /* Entradas de productos (oleada 3): espejo del EntradasTab del
@@ -91,7 +92,7 @@ export default function EntradasTab({ data }: { data: StoredData }) {
     const rep = docs.buildEntradasInvoiceData(data, activeMonth)
     if (!rep.rows.length) { setInvoiceError('Este mes no tiene entradas que facturar.'); return }
     setInvoiceError('')
-    if (!printHtml(docs.entradasInvoiceHtml(rep))) setInvoiceError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
+    if (!printHtml(docs.withStampImage(docs.entradasInvoiceHtml(rep), BRAND_CUNO_URL))) setInvoiceError('El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
   }
 
   return (

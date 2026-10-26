@@ -174,7 +174,7 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
   const charcoalCost = charcoalHourCost(settings)
   const electricCost = electricHourCost(settings)
 
-  const catalog = useMemo(() => buildProductsCatalog(data.days), [data.days])
+  const catalog = useMemo(() => buildProductsCatalog(data.days, data.inventoryAdjustments), [data.days, data.inventoryAdjustments])
   const suggestions = useMemo(() => buildPriceSuggestions(catalog), [catalog])
   const refsView = useMemo(() => derivePackageReferences(data.packageReferences, data.expenses), [data.packageReferences, data.expenses])
   const comparisons = useMemo(() => expenseComparisons(data.expenses, refsView.packages), [data.expenses, refsView])

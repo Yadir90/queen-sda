@@ -125,8 +125,19 @@ export interface DayData {
   rhFechas?: string[]
   /** Inversión del día: suma de «importe» de las entradas del IPV (a precio de compra). */
   entriesImporte: number
-  /** Billar del día (tabla de juegos del IPV): venta y utilidad; null si el IPV no la trae. */
-  billar: { venta: number; utilidad: number } | null
+  /** Billar del día (billarFromJuegos del parser): SOLO existe si el
+   *  IPV trae la tabla por turnos guardada de ese día; en los IPV
+   *  viejos la fila de juegos es el TOTAL acumulado del registro y
+   *  el día queda en null — esa cifra no es venta de ningún día.
+   *  venta = importe día + importe noche; utilidad = venta − pago
+   *  al encargado; «estado» distingue días con horas de los de
+   *  tabla guardada sin horas. */
+  billar: {
+    estado: 'con-horas' | 'sin-horas'
+    horasDia: number; precioDia: number; importeDia: number
+    horasNoche: number; precioNoche: number; importeNoche: number
+    totalHoras: number; venta: number; pagoEncargado: number; utilidad: number
+  } | null
   /** Ingresos extras del día («ingresosEntradaMesas» del IPV: entradas, alquiler de mesas…). */
   extras: Array<{ concepto: string; importe: number }>
   /** Detalle de las entradas del día (mercancía que entró, con su precio de compra). */

@@ -262,7 +262,11 @@ export function payrollCyclesAvailable(data) {
 export const MENU_SECTION_ORDER = ['Entrantes y picaderas', 'Elaboración', 'Pizzas', 'Cantina', 'Bebidas alcohólicas', 'Bebidas no alcohólicas']
 
 export function buildMenuData(data, today) {
-  const catalog = buildProductsCatalog(data?.days ?? [])
+  /* El catálogo del menú es el mismo de Existencias: con los
+     ajustes manuales de existencia de esta copia aplicados, para
+     que el menú nunca ofrezca lo que el almacén ya dio de baja
+     ni esconda lo que se dio de alta a mano. */
+  const catalog = buildProductsCatalog(data?.days ?? [], data?.inventoryAdjustments ?? [])
   const conflicts = findMenuRuleConflicts(catalog.products.map((p) => p.name))
   const conflictNames = new Set(conflicts.map((c) => c.name))
   const groups = new Map()
@@ -411,7 +415,9 @@ export const BULLETIN_RECIPIENTS = [
 ]
 
 export function bulletinSubject(dateISO) {
-  return `${DOC_STYLE.systemName} · Boletín diario — ${fmtFechaDoc(dateISO)}`
+  /* Asunto del original, constatado en su bandeja: separador «·»
+     también antes de la fecha (antes aquí salía «—»). */
+  return `${DOC_STYLE.systemName} · Boletín diario · ${fmtFechaDoc(dateISO)}`
 }
 
 function dataUpTo(data, dateISO) {
@@ -438,10 +444,43 @@ export function buildDailyBulletin(data, targetDate, opts = {}) {
     .filter((p) => p.importe > 0)
     .sort((a, b) => b.importe - a.importe)
     .slice(0, 5)
-  const clientesPend = (data?.receivables ?? []).filter((r) => r.category === 'cliente' && r.status !== 'pagada' && !r.closeKind && r.saldoBase > 0 && r.date <= targetDate)
-  const calle = clientesPend.reduce((s, r) => s + num(r.saldoBase), 0)
+  /* Dinero en la calle A LA FECHA del boletín, no con la foto de
+     hoy: a cada cuenta de cliente nacida hasta ese día se le
+     re-suman los pagos posteriores a la fecha (los de su propio
+     historial, que el saldoBase ya trae descontados) y se le
+     restan solo los pagos locales (Cobrar de esta copia) hechos
+     hasta ese día — la misma aritmética de saldoEfectivo en
+     Economía, cortada a la fecha. Sin este corte, un boletín
+     regenerado días después perdía las cuentas pagadas entretanto
+     (al 18-oct: −13.080 frente al original). El corte por
+     morosidad (clientes: 7 días naturales desde el nacimiento)
+     también se recalcula a la fecha, por la regla, como hace el
+     original al componer el boletín de ese día. */
+  const saldoAlDia = (r) => {
+    const pagosPosteriores = (r.payments ?? []).filter((p) => p.paidDate > targetDate).reduce((s, p) => s + num(p.amount), 0)
+    const localesHastaElDia = (data?.localPayments ?? []).filter((p) => p.receivableId === r.id && p.date <= targetDate).reduce((s, p) => s + num(p.amount), 0)
+    return Math.max(0, num(r.saldoBase) + pagosPosteriores - localesHastaElDia)
+  }
+  const vencimientoCliente = (dateISO) => {
+    const d = new Date(`${dateISO}T12:00:00`)
+    d.setDate(d.getDate() + 7)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+  /* Solo quedan fuera las cuentas «ipv»: la lápida que la
+     sincronización pone a la versión vieja de una cuenta cuando un
+     IPV más nuevo la sustituye (contarla duplicaría la deuda). El
+     closeKind «manual» del original es solo el sello de «cerrada a
+     mano» de una cuenta pagada: si pagó después de la fecha del
+     boletín, a esa fecha estaba viva y cuenta. */
+  const clientesAlDia = (data?.receivables ?? [])
+    .filter((r) => r.category === 'cliente' && r.closeKind !== 'ipv' && r.date <= targetDate)
+    .map((r) => ({ rec: r, saldo: saldoAlDia(r) }))
+    .filter((x) => x.saldo > 0)
+  const calle = clientesAlDia.reduce((s, x) => s + x.saldo, 0)
+  const calleMorosas = clientesAlDia.filter((x) => targetDate > vencimientoCliente(x.rec.date)).reduce((s, x) => s + x.saldo, 0)
+  const calleEnCobrar = calle - calleMorosas
   const callePorNombre = new Map()
-  for (const r of clientesPend) callePorNombre.set(r.client, (callePorNombre.get(r.client) ?? 0) + num(r.saldoBase))
+  for (const x of clientesAlDia) callePorNombre.set(x.rec.client, (callePorNombre.get(x.rec.client) ?? 0) + x.saldo)
   const calleDetalle = [...callePorNombre.entries()].map(([name, saldo]) => ({ name, saldo })).sort((a, b) => b.saldo - a.saldo)
   const deptTotals = {}
   for (const dep of day.departments ?? []) deptTotals[dep.name] = num(dep.ventas ?? dep.venta)
@@ -463,6 +502,8 @@ export function buildDailyBulletin(data, targetDate, opts = {}) {
     deptTotals,
     topProducts,
     dineroEnLaCalle: calle,
+    calleEnCobrar,
+    calleMorosas,
     calleDetalle,
     mes: {
       ventas: eco.ventas, bruta: eco.bruta, neta: eco.neta, gastos: eco.gastos,
@@ -575,6 +616,8 @@ function bulletinBodies(s) {
   <h2 style="margin:18px 0 4px;font-size:15px;color:${dark ? '#EAF7F0' : '#0B3D2E'};">Cuentas por cobrar</h2>
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
     ${R('Dinero en la calle (solo clientes)', fmtDocCUP(s.dineroEnLaCalle), true)}
+    ${R('Clientes en Cobrar (dentro de plazo)', fmtDocCUP(s.calleEnCobrar ?? 0))}
+    ${R('Clientes en morosas (vencidas)', fmtDocCUP(s.calleMorosas ?? 0))}
     ${s.calleDetalle.map((c) => R(c.name, fmtDocCUP(c.saldo))).join('')}
   </table>
   <h2 style="margin:18px 0 8px;font-size:15px;color:${dark ? '#EAF7F0' : '#0B3D2E'};">Economía — acumulados de ${esc(monthLabelEs(s.monthKey))}</h2>
@@ -616,7 +659,7 @@ export function bulletinHtml(s, subject) {
     <div style="font-size:11px;font-weight:800;letter-spacing:.14em;color:${dark ? '#7EE2B8' : '#0E9F6E'};text-transform:uppercase;">${esc(DOC_STYLE.systemName)}</div>
     <div style="font-size:23px;font-weight:800;color:${dark ? '#EAF7F0' : '#0B3D2E'};margin-top:4px;">Boletín diario</div>
     <div style="font-size:14px;color:${dark ? '#9DB8A8' : '#57705F'};">${esc(fmtFechaDoc(s.date))} · ${esc(DOC_STYLE.business)}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;"><tr>${dark ? b.chipsDark : b.chipsLight}</tr></table>
+    <table class="bchips" role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-top:10px;"><tr>${dark ? b.chipsDark : b.chipsLight}</tr></table>
   </div>`
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -624,6 +667,12 @@ export function bulletinHtml(s, subject) {
 <style>
   @media (prefers-color-scheme: dark) { .bs-light { display: none !important; } }
   @media (prefers-color-scheme: light) { .bs-dark { display: none !important; } }
+  /* En pantallas estrechas las cuatro cifras de cabecera pasan a
+     dos por fila: a 360 px la fila única desbordaba el boletín. */
+  @media (max-width: 640px) {
+    .bchips, .bchips tbody, .bchips tr { display: block; }
+    .bchips td { display: inline-block; width: 49%; box-sizing: border-box; vertical-align: top; }
+  }
 </style></head>
 <body style="margin:0;padding:16px;background:#EEF5F1;font-family:Arial, Helvetica, sans-serif;color:#14231C;">
 <div style="max-width:640px;margin:0 auto;background:#FFFFFF;border:1px solid #DDE8E1;border-radius:20px;padding:18px;">
@@ -676,6 +725,8 @@ export function bulletinText(s) {
   L.push('')
   L.push('CUENTAS POR COBRAR')
   L.push(`Dinero en la calle (solo clientes): ${fmtDocCUP(s.dineroEnLaCalle)}`)
+  L.push(`Clientes en Cobrar (dentro de plazo): ${fmtDocCUP(s.calleEnCobrar ?? 0)}`)
+  L.push(`Clientes en morosas (vencidas): ${fmtDocCUP(s.calleMorosas ?? 0)}`)
   for (const c of s.calleDetalle) L.push(`${c.name}: ${fmtDocCUP(c.saldo)}`)
   L.push('')
   L.push(`ECONOMÍA — ACUMULADOS DE ${monthLabelEs(s.monthKey).toUpperCase()}`)
@@ -791,11 +842,13 @@ function docShell({ title, subtitle, body, signatures, menu = false }) {
         <div class="sig-pending">${esc(signatures.pendingText)}</div>
       </div>`).join('')}
       <div class="sig-box stamp">
+        <!--stamp-zone-->
         <div class="stamp-ring">
           <div class="stamp-title">${esc(signatures.stamp.title)}</div>
           <div class="stamp-sub">${esc(signatures.stamp.subtitle)}</div>
         </div>
         <div class="sig-pending">${esc(signatures.stamp.missingText)}</div>
+        <!--/stamp-zone-->
       </div>
     </div>
   </section>` : ''
@@ -840,6 +893,15 @@ function docShell({ title, subtitle, body, signatures, menu = false }) {
   .menu-item .nm { font-size: 13.5px; }
   .menu-item .ds { font-size: 11px; color: ${S.dim}; }
   .menu-item .pr { font-weight: 800; color: ${S.menuDeep}; white-space: nowrap; }
+  @media screen and (max-width: 640px) {
+    body { padding: 8px; }
+    .sheet { padding: 18px 12px; border-radius: 12px; overflow-x: auto; }
+    h1 { font-size: 21px; }
+    .kpis { grid-template-columns: 1fr 1fr; }
+    .sig-grid { grid-template-columns: 1fr; }
+    td, th { padding: 5px 3px; font-size: 11.5px; }
+    .stamp-ring { width: 132px; height: 132px; }
+  }
   @media print { body { padding: 0; background: #fff; } .sheet { border: none; background: #fff; max-width: none; } }
 </style></head>
 <body><div class="sheet">
@@ -850,6 +912,23 @@ function docShell({ title, subtitle, body, signatures, menu = false }) {
   ${body}
   ${sig}
 </div></body></html>`
+}
+
+/** Incrusta la imagen REAL del cuño aprobado en un documento
+ * generado por docShell, sustituyendo de una pieza la zona del
+ * cuño (el anillo dibujado + el texto de ausencia). El original
+ * muestra la imagen del cuño o el aviso, nunca un anillo dibujado
+ * ni ambos a la vez; como el cuño viaja empaquetado con la app,
+ * TODAS las vías de impresión pasan por aquí y el documento nunca
+ * sale con «Cuño no disponible» habiendo cuño. Sin url (o sin
+ * zona), el documento queda como nació: con su aviso honesto. */
+export function withStampImage(html, url) {
+  const source = String(html ?? '')
+  if (!url) return source
+  return source.replace(
+    /<!--stamp-zone-->[\s\S]*?<!--\/stamp-zone-->/,
+    `<img src="${url}" alt="Cuño APROBADO de La Reina" style="width:132px;height:132px;object-fit:contain;display:block;margin:2px auto 0;">`,
+  )
 }
 
 export function informeHtml(rep) {
@@ -892,7 +971,7 @@ export function informeHtml(rep) {
   <h2 class="sec">Quincenas del mes (contabilidad)</h2>
   <table>${rows(e.quincenas.map((q, i) => [
     `${i === 0 ? 'Primera quincena (1–15)' : 'Segunda quincena (16–fin)'} — ventas`,
-    `${fmtDocCUP(q.ventas)} · neta ${fmtDocCUP(q.neta)} · gastos ${fmtDocCUP(q.gastos)} · resultado ${fmtDocCUP(q.neta - q.gastos)}`,
+    `${fmtDocCUP(q.ventas)} · neta ${fmtDocCUP(q.neta)} · gastos ${fmtDocCUP(q.gastos)}${q.ingresosExtras ? ` · extras ${fmtDocCUP(q.ingresosExtras)}` : ''} · resultado ${fmtDocCUP(q.resultado ?? (q.neta - q.gastos))}`,
   ]))}</table>
   <p class="note">Informe generado desde los datos del IPV importados (${e.daysCount} días con IPV en ${esc(rep.monthLabel)}). Cuadre acumulado: ${fmtDocCUP(e.cuadreTotal)}.</p>`
   return docShell({

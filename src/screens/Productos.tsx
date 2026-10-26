@@ -44,7 +44,7 @@ export default function Productos({ data }: { data: StoredData }) {
   const [query, setQuery] = useState('')
   const [openKey, setOpenKey] = useState<string | null>(null)
 
-  const catalog = useMemo(() => buildProductsCatalog(data.days), [data.days])
+  const catalog = useMemo(() => buildProductsCatalog(data.days, data.inventoryAdjustments), [data.days, data.inventoryAdjustments])
   const suggestions = useMemo(() => buildPriceSuggestions(catalog), [catalog])
   const changes = useMemo(() => detectPriceChanges(data.days), [data.days])
   const sugByKey = useMemo(() => new Map(suggestions.items.map((i) => [i.productKey, i])), [suggestions])

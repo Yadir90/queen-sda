@@ -361,7 +361,7 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
  *  antes de la oleada 2; no se pierde, pero ya no sustituye al
  *  almacén manual del original. */
 function IpvWarehouseSection({ data }: { data: StoredData }) {
-  const catalog = useMemo(() => buildProductsCatalog(data.days), [data.days])
+  const catalog = useMemo(() => buildProductsCatalog(data.days, data.inventoryAdjustments), [data.days, data.inventoryAdjustments])
   const wh = useMemo(() => buildWarehouse(data.days, catalog), [data.days, catalog])
   if (wh.rows.length === 0) {
     return (

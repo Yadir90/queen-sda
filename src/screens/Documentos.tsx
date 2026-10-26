@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   buildBackupExport, buildInformeData, buildMenuData, buildNominaDocumento,
   buildPptxBlob, informeHtml, menuHtml, nominaHtml, payrollCyclesAvailable,
-  DOC_STYLE,
+  withStampImage, DOC_STYLE,
 } from '../lib/documentosCore.mjs'
 import { downloadBlob, downloadText, printHtml } from '../lib/download'
 import { requireBiometricUnlock } from '../lib/webauthn'
@@ -104,14 +104,11 @@ export default function Documentos({ data, today, isAdmin }: { data: StoredData;
   }
 
   const openDoc = (html: string, label: string) => {
-    // Con el cuño cargado, el bloque de certificación lleva la
-    // imagen real en vez del texto de ausencia del núcleo.
-    const finalHtml = stampUrl
-      ? html.replace(
-          '<div class="sig-pending">Cuño no disponible en este dispositivo.</div>',
-          `<img src="${stampUrl}" alt="Cuño APROBADO de La Reina" style="width:150px;height:150px;object-fit:contain;display:block;margin:4px auto">`,
-        )
-      : html
+    // Con el cuño cargado, la zona del cuño del documento se
+    // sustituye entera por la imagen real (withStampImage): sin
+    // el anillo dibujado del núcleo ni el texto de ausencia
+    // apilados sobre la imagen, como salía antes.
+    const finalHtml = stampUrl ? withStampImage(html, stampUrl) : html
     setMsg(printHtml(finalHtml) ? `${label}: se abrió la vista del documento — desde ahí se imprime o se guarda como PDF.` : 'El navegador bloqueó la ventana del documento. Permite las ventanas emergentes para esta página e inténtalo de nuevo.')
   }
 

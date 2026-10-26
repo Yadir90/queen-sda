@@ -1,7 +1,7 @@
 // Declaraciones de tipos para el núcleo de Productos / Elaboración /
 // Almacén (productosCore.mjs): libro de existencias, catálogo maestro,
 // sugerencias de precio de Queen, almacén y referencias de paquetes.
-import type { DayData, Expense, PackageObservation, PackageReference } from '../types'
+import type { DayData, Expense, InventoryAdjustment, PackageObservation, PackageReference } from '../types'
 
 export declare function normalizeLoose(s: string): string
 export declare function productKeyOf(dept: string, name: string, um: string): string
@@ -154,7 +154,7 @@ export interface ProductsCatalog extends InventoryBook {
   sinExplicar: Array<{ productKey: string; dept: string; name: string; um: string; date: string; texto: string; diferencia: number }>
 }
 
-export declare function buildProductsCatalog(days: DayData[]): ProductsCatalog
+export declare function buildProductsCatalog(days: DayData[], adjustments?: InventoryAdjustment[]): ProductsCatalog
 
 export interface DetectedPriceChange {
   productKey: string
