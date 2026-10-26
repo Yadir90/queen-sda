@@ -25,9 +25,9 @@
 | 4 | Barra inferior móvil (Inicio, Cobrar, Queen, Sistema, Más) | App.tsx: mobileBottomTabIds + PanoramaApp nav | App.tsx NAV | **PRESENTE** | `const NAV: NavItem[]` | Encontrado en: App.tsx |
 | 5 | Badges/dots navegación por estado real (cobrar vencidas, cuadre) | App.tsx:1071 TAB_BADGES + PanoramaApp | App.tsx badgeFor/dotFor + ui.tsx TAB_BADGES | **PRESENTE** | `badgeFor` | Encontrado en: App.tsx |
 | 6 | TabHeader (icono, título, desc, badge) | App.tsx:1098 TabHeader | components/ui.tsx TabHeader | **PRESENTE** | `export function TabHeader` | Sistema y Queen no lo usan, igual que el original tras el espejo |
-| 7 | ActionMenu (menú desplegable de acciones por tarjeta) | App.tsx:1117 ActionMenu | — sin equivalente global | **AUSENTE** | `ActionMenu` | No existe en ui.tsx ni en ninguna pantalla del clon |
-| 8 | InfoHelp (i) con explicación de la pestaña | App.tsx:1231 InfoHelp | — | **AUSENTE** | `InfoHelp` | Solo queda un aria-label suelto en Cobrar (Plazos y estados) |
-| 9 | ViewModeToggle catálogo (rejilla/lista) | App.tsx:1046 ViewModeToggle | — | **AUSENTE** | `ViewModeToggle` | Productos/Elaboración del clon no alternan layout |
+| 7 | ActionMenu (menú desplegable de acciones por tarjeta) | App.tsx:1117 ActionMenu | — sin equivalente global | **PRESENTE** | `ActionMenu` | Portado a components/ui.tsx (26-oct): popover en portal con colocación medida y auto-curación, como el original |
+| 8 | InfoHelp (i) con explicación de la pestaña | App.tsx:1231 InfoHelp | components/ui.tsx InfoHelp | **PRESENTE** | `InfoHelp` | Portado a components/ui.tsx (26-oct): las explicaciones viven tras el ⓘ, nunca abiertas en los formularios |
+| 9 | ViewModeToggle catálogo (rejilla/lista) | App.tsx:1046 ViewModeToggle | — | **PRESENTE** | `ViewModeToggle` | Portado a components/ui.tsx (26-oct) con useCatalogLayout persistido por módulo |
 | 10 | Icon: set de 36 iconos SVG propios | App.tsx:977 ICON_PATHS / 1016 Icon | components/icons.tsx ICON_PATHS | **PRESENTE** | `export const ICON_PATHS` | Puerto literal declarado en cabecera de icons.tsx; IconName con 36 nombres |
 | 11 | AlertDot punto de estado sin emoji | App.tsx:4103 AlertDot | components/icons.tsx AlertDot | **PRESENTE** | `export function AlertDot` | Encontrado en: components/icons.tsx |
 | 12 | QueenOrb / orbe Reactor con salud y estado | App.tsx:1275 QueenOrb + futureCharts QueenReactorMark | components/QueenReactor.tsx QueenOrb/QueenReactorMark | **PRESENTE** | `export function QueenOrb` | Estados working/expectant en vivo no viajan (ver Queen) |
@@ -38,7 +38,7 @@
 | 17 | Cambio de contraseña obligatorio al primer acceso | actions changePassword + AccessScreen | App.tsx ChangePasswordScreen | **PRESENTE** | `ChangePasswordScreen` | Encontrado en: App.tsx |
 | 18 | PIN de seguridad: SecurityAuthorizationDialog (verifySecurityPin) | App.tsx:26289 SecurityAuthorizationDialog | — | **AUSENTE** | `SecurityAuthorizationDialog` | Sistema declara que el PIN no viaja y no se finge; no hay diálogo ni verificación |
 | 19 | Biometría WebAuthn (registro y autenticación) | App.tsx:26133 BIOMETRIC_KEY + QueenTab/App | — | **AUSENTE** | `BIOMETRIC_KEY` | Sin WebAuthn en todo el clon |
-| 20 | ConnectionStatus (estado de conexión tocable) | App.tsx:26349 ConnectionStatus | — | **AUSENTE** | `ConnectionStatus` | Hay remoteError en App y online derivado en Sistema, sin componente de estado de conexión |
+| 20 | ConnectionStatus (estado de conexión tocable) | App.tsx:26349 ConnectionStatus | — | **PRESENTE** | `ConnectionStatus` | Puerto completo D-68 (26-oct): 4 estados reales alimentados por la cola durable offlineQueue.ts, junto a la foto en la cabecera de sección |
 | 21 | Continuidad entre dispositivos (get/updateDeviceContinuity: pestaña, scroll, borrador Queen) | App.tsx:1454,1473 + actions | — | **AUSENTE** | `DeviceContinuity` | Ni pestaña ni scroll ni borrador se sincronizan entre dispositivos |
 | 22 | Persistencia de pestaña lr-tab en localStorage | PanoramaApp: tab inicial lr-tab | App.tsx useState<Section>('inicio') | **AUSENTE** | `lr-tab` | El clon arranca siempre en inicio |
 | 23 | Modo ultraligero manual (sda-ultralight, cubre arranque y acceso) | main.tsx + PanoramaApp ultraLight | screens/Sistema.tsx ULTRA_KEY | **PARCIAL** | `queen-sda:sistema-ultra:v1` | Solo interruptor dentro de Sistema; no marca <html> desde el primer fotograma ni afecta al login |
@@ -127,7 +127,7 @@
 | 91 | Impacto administrativo | EconomiaTab | screens/Economia.tsx | **PRESENTE** | `Impacto administrativo` | Encontrado en: screens/Economia.tsx |
 | 92 | Participación de gastos por categoría | EconomiaTab | screens/Economia.tsx | **PRESENTE** | `Participación de gastos por categoría` | Encontrado en: screens/Economia.tsx |
 | 93 | Anomalías económicas de Queen (analyzeEconomicAnomalies, ejecutable) | EconomiaTab + actions analyzeEconomicAnomalies | screens/Economia.tsx (botón deshabilitado) | **PARCIAL** | `Anomalías detectadas por Queen` | Se muestran con botón deshabilitado y motivo: el endpoint no está desplegado |
-| 94 | Ver el detalle en Cobrar → (navegación desde Economía) | EconomiaTab botón | — Economia no recibe navegación | **AUSENTE** | `Ver el detalle en Cobrar →` | La frase sin flecha solo aparece en un comentario de Economia.tsx que declara que el botón no se finge; el botón no existe |
+| 94 | Ver el detalle en Cobrar → (navegación desde Economía) | EconomiaTab botón | screens/Economia.tsx (tarjeta «Impacto administrativo») + App pasa `onGoCobrar` | **PRESENTE** | `Ver el detalle en Cobrar →` | Botón real que navega a Cobrar, como el `onGoCobrar` del original (D-54, corregido el 26-oct) |
 | 95 | Panel de cierre del dueño / cierre de mes completo (ganancia, extras, billar, gastos, utilidad neta, bruta, barra, cocina, inversión, merma, efectivo, por cobrar, zelle, cobrado) | EconomiaTab + boletines/informes | screens/Economia.tsx «Panel de cierre» + documentosCore buildInformeData | **PRESENTE** | `Panel de cierre` | Encontrado en: lib/economiaCore.mjs, screens/Economia.tsx |
 | 96 | Quincenas naturales del mes (contabilidad 1-15 / 16-fin) | EconomiaTab / periods | screens/Economia.tsx «Quincenas del mes» | **PRESENTE** | `Quincenas del mes` | Encontrado en: lib/documentosCore.mjs, screens/Economia.tsx |
 | 97 | Agregación por período arbitrario del servidor (no solo mes completo) | EconomiaTab statsFor por período | screens/Economia.tsx selector de mes | **PARCIAL** | `Mes a analizar` | El clon agrega por MES completo (diferencia declarada) |
@@ -157,7 +157,7 @@
 | 116 | Detalle del día: entradas e inversión del día | DiasTab / EntradasTab | screens/Dias.tsx entriesDetail en DayData | **PARCIAL** | `entriesDetail` | Dato presente en el tipo y con despliegue completo en la pantalla Entradas (oleada 3); en el detalle del día de Días sigue sin listarse línea a línea |
 | 117 | Huecos: días sin importar / huecos vencidos | DiasTab | screens/Dias.tsx «Huecos vencidos» | **PRESENTE** | `Huecos vencidos` | Encontrado en: screens/Dias.tsx |
 | 118 | IpvDayEditor: editar cifras del IPV de un día (editIpvDay) | App.tsx:4617 IpvDayEditor | — | **AUSENTE** | `editIpvDay` | Sin editor de IPV en Días |
-| 119 | Eliminar el día (deleteDay con autorización reforzada) | DiasTab + actions deleteDay | — | **AUSENTE** | `sbDeleteDay` | Conocido y declarado: ni backend local ni Supabase lo exponen; «deleteDay» solo aparece en un comentario de Dias.tsx que declara su ausencia |
+| 119 | Eliminar el día (deleteDay con autorización reforzada) | DiasTab + actions deleteDay | — | **PRESENTE** | `sbDeleteDay` | Implementado (26-oct): deleteDay local + sbDeleteDay con re-derivación acotada y UI en Dias.tsx con confirmación expresa; solo admin |
 | 120 | Descargar el día: IPV actualizado .xlsx (getIpvUpdatedFile / buildUpdatedIpv) | DiasTab + ipvRoundTrip buildUpdatedIpv | screens/Dias.tsx «Descargar el día» (.txt) | **PARCIAL** | `Descargar el día` | Entrega resumen .txt completo, no el XLSX redondeado (diferencia declarada) |
 | 121 | Historial de versiones del IPV y restaurar versión (getIpvVersionHistory/restoreIpvVersion) | DiasTab + actions | — | **AUSENTE** | `getIpvVersionHistory` |  |
 | 122 | Corrección autorizada del IPV (recordIpvAuthorizedCorrection) | DiasTab + actions | — | **AUSENTE** | `recordIpvAuthorizedCorrection` |  |
@@ -238,9 +238,9 @@
 | # | Elemento | Original | Destino en el clon | Estado | Token (grep en clon) | Evidencia / nota |
 |---|---|---|---|---|---|---|
 | 184 | Héroe de ciclo RH (ciclo de 15 días desde ancla, pago día 16) | RHTab | screens/RH.tsx | **PRESENTE** | `Ciclo siguiente` | Navegación de ciclos anterior/siguiente |
-| 185 | Cuadrados del mes por trabajador (WorkerMonthSquares: lleno/medio/gris/punteado/dorado hoy) | App.tsx:5455 WorkerMonthSquares | screens/RH.tsx RhSquares | **PRESENTE** | `function RhSquares` | En Inicio/Días también hay rejillas equivalentes |
+| 185 | Cuadrados del mes por trabajador (WorkerMonthSquares: lleno/medio/gris/punteado/dorado hoy) | App.tsx:5455 WorkerMonthSquares | screens/WorkerRegistry.tsx WorkerMonthSquares | **PRESENTE** | `function WorkerMonthSquares` | Puerto del registro completo (D-RH, 26-oct); geometría medida en render: 7 columnas alineadas por semana, cuadrados 36×36, bloques de quincena en una fila de 15 |
 | 186 | Leyenda de cuadrados con significado | WorkersRegistry/RHTab | screens/RH.tsx SQUARES_LEGEND | **PRESENTE** | `Cuadrados del mes:` | Incluye la declaración de la «A» ausente |
-| 187 | Marca «A» de ausencia justificada en cuadrados | WorkersRegistry (registro de ausencias) | — | **AUSENTE** | `workerAbsences` | El registro de ausencias no viaja; declarado en la propia leyenda del clon |
+| 187 | Marca «A» de ausencia justificada en cuadrados | WorkersRegistry (registro de ausencias) | screens/WorkerRegistry.tsx ausencias de la ficha (WorkerExtended.ausencias) | **PARCIAL** | `ausencias` | El registro de ausencias del clon vive en su estado extendido (local + Supabase) y marca la «A»; no viaja en el respaldo del original, que es la diferencia con la fuente |
 | 188 | Nómina del ciclo derivada de la foto RH (deriveCyclePayroll del servidor: syncPayroll) | RHTab + actions getWorkersRegistry/loadPayroll | lib/syncCore deriveCyclePayroll | **PRESENTE** | `deriveCyclePayroll` | Encontrado en: lib/documentosCore.mjs, lib/syncCore.d.mts, lib/syncCore.mjs |
 | 189 | Columna salario diario y salario leído de la hoja RH de ese ciclo (no del anterior) | RHTab | screens/RH.tsx / syncCore latestCyclePhoto | **PRESENTE** | `latestCyclePhoto` | Encontrado en: lib/syncCore.mjs |
 | 190 | Pago mixto: desglose efectivo / transferencia por trabajador | RHTab + payroll employees | types PayrollEmployee pagoEfectivo/pagoTransferencia + Documentos nómina | **PRESENTE** | `pagoTransferencia` | Encontrado en: lib/backupCore.mjs, lib/documentosCore.mjs, lib/syncCore.mjs |
@@ -258,12 +258,12 @@
 | 202 | PDF del organigrama (generateOrgChartPdf) | export.ts:306 | — | **AUSENTE** | `generateOrgChartPdf` |  |
 | 203 | Comparación de turnos / patrón de turno (TurnoComparacion, patronesAprendidos turno) | App.tsx:5498 TurnoComparacion | screens/RH.tsx detección de turno en el organigrama | **PARCIAL** | `detectarTurnoAlterno` | No hay componente TurnoComparacion en la ficha; la lógica de turnos vive en el organigrama (detectado) y patronesAprendidosFor no se portó |
 | 204 | Excusados con cero días (excusadosCeroDias de periods.ts) | periods.ts:566 | — | **AUSENTE** | `excusadosCeroDias` | Lógica de exención de avisos por 0 días no portada |
-| 205 | Ficha de trabajador simplificada (nombre, ocupación, carnet, cuenta, móvil, notas) | WorkersRegistry ficha | screens/RH.tsx ficha al seleccionar trabajador | **PRESENTE** | `Trabajadores (` | Decisión registrada del dueño: ficha simplificada |
-| 206 | Alta de trabajador manual (addWorker) | WorkersRegistry + actions | — | **AUSENTE** | `addWorker` | Los trabajadores llegan del respaldo/IPV; sin alta en UI |
+| 205 | Ficha de trabajador (nombre, ocupación, carnet, cuenta, móvil, notas y todos sus bloques) | WorkersRegistry ficha | screens/WorkerRegistry.tsx ficha completa (buildFicha/FichaEditor) | **PRESENTE** | `function buildFicha` | La ficha simplificada quedó sustituida por la ficha completa del original (D-RH, 26-oct): pagos por ciclo y manuales, turno, descanso y días fijos, ausencias, estrellas, cuños en su banda, credencial, documentos y firma |
+| 206 | Alta de trabajador manual (addWorker) | WorkersRegistry + actions | screens/WorkerRegistry.tsx alta + backend saveWorkersRegistry / sbSaveWorkersRegistry | **PRESENTE** | `addWorker` | Alta manual en el registro (D-RH, 26-oct) con persistencia local y Supabase |
 | 207 | Editar trabajador (updateWorker) | WorkersRegistry + actions | — | **AUSENTE** | `updateWorker` |  |
 | 208 | Eliminar / restaurar / eliminar para siempre trabajador (delete/restore/deleteWorkerForever) | WorkersRegistry + actions | — | **AUSENTE** | `deleteWorkerForever` |  |
 | 209 | Foto del trabajador (setWorkerPhoto/removeWorkerPhoto, blob) | WorkersRegistry + actions | — | **AUSENTE** | `setWorkerPhoto` | CONOCIDO: foto binaria no viaja; el respaldo solo trae tieneFoto (ver §2) |
-| 210 | Valoración por estrellas: EDITAR (EstrellasEditor, setWorkerStars) | App.tsx:5604 EstrellasEditor + actions setWorkerStars | — (visualización en organigrama, ver fila del organigrama) | **AUSENTE** | `EstrellasEditor` | Sin editor de estrellas; solo lectura si el dato viajara |
+| 210 | Valoración por estrellas: EDITAR (EstrellasEditor, setWorkerStars) | App.tsx:5604 EstrellasEditor + actions setWorkerStars | screens/WorkerRegistry.tsx EstrellasEditor en la ficha | **PRESENTE** | `EstrellasEditor` | Editor de estrellas en la ficha (D-RH, 26-oct), persistido en el estado extendido del trabajador |
 | 211 | Ausencias del trabajador (addWorkerAbsence/deleteWorkerAbsence) | WorkersRegistry + actions | — | **AUSENTE** | `addWorkerAbsence` |  |
 | 212 | Pagos al trabajador fuera de nómina (getWorkerPaymentRecords/add/deleteWorkerPayment) | WorkersRegistry + actions | — | **AUSENTE** | `getWorkerPaymentRecords` |  |
 | 213 | FIRMA del trabajador: SignaturePad por trazos (saveWorkerSignature/removeWorkerSignature) | App.tsx:5772 SignaturePad + actions | — | **PRESENTE** | `SignaturePad` | Portado en WorkerFichaCompleta (lienzo con presión de lápiz y rechazo de palma); el guardado es PNG en media «firma-trabajador», no trazos JSON como el servidor del original — diferencia de formato declarada en IGUALACION §7. En el original no hay ninguna firma guardada (verificado). |
@@ -280,7 +280,7 @@
 | 224 | Documentos extra del trabajador (addWorkerExtraDocument/removeWorkerExtraDocument) | actions | — | **AUSENTE** | `addWorkerExtraDocument` |  |
 | 225 | Extracción de texto de documentos y diferencias con la ficha (documentExtracts en workers) | schema workers.documentExtracts + setWorkerDocument | — | **AUSENTE** | `documentExtracts` |  |
 | 226 | Cancelar / restaurar contrato con cuños CANCELADO y APROBADO en banda propia | WorkersRegistry + actions cancel/restoreWorkerContract | — | **AUSENTE** | `cancelWorkerContract` | Sin cuños en la ficha del clon |
-| 227 | Vacaciones: a los 6 meses, 1 semana, con cuenta atrás visible | WorkersRegistry (regla RH) | — | **AUSENTE** | `Vacaciones` | Sin cálculo ni cuenta atrás de vacaciones en RH del clon |
+| 227 | Vacaciones: a los 6 meses, 1 semana, con cuenta atrás visible | WorkersRegistry (regla RH) | screens/WorkerRegistry.tsx vacationStatus en la ficha | **PRESENTE** | `Vacaciones` | Regla portada (D-RH, 26-oct): a los 6 meses, 1 semana, con cuenta atrás visible en la ficha |
 | 228 | Jornada automática 10:00-22:00 (12 h/día; totales día/semana/quincena) | WorkersRegistry/RHTab | screens/RH.tsx + Dias detalle RH | **PARCIAL** | `horas = días` | Horas = días × 12 declarado en Días; sin totales semanales de jornada en la ficha |
 | 229 | Dirección (Jesús, Dayami): ficha sin nómina y sin cuño APROBADO, roleKind direccion | WorkersRegistry + organigrama | lib/syncCore isDirectionPerson + types roleKind | **PRESENTE** | `isDirectionPerson` | Encontrado en: lib/syncCore.d.mts, lib/syncCore.mjs, screens/RH.tsx |
 | 230 | Nómina PDF firmada y cuñada (generateNominaPdf, 3 niveles cuando aplica) | export.ts:1254 + RH/Documentos | screens/Documentos.tsx «Nómina de salarios» (HTML) | **PARCIAL** | `Nómina de salarios` | HTML en navegador con textos honestos de firma/cuño, no PDF de servidor firmado |
@@ -332,18 +332,18 @@
 | 266 | Quitar/restaurar ingrediente de barra (remove/restoreBarIngredient) | actions | — | **AUSENTE** | `removeBarIngredient` |  |
 | 267 | Quitar/restaurar producto de elaboración (remove/restoreElaborationProduct) | actions | — | **AUSENTE** | `removeElaborationProduct` |  |
 | 268 | Añadir producto manual de elaboración (addManualElaborationProduct) | actions | — | **AUSENTE** | `addManualElaborationProduct` | Declarado: sin crear producto manual |
-| 269 | Importar/exportar fichas en Excel (buildCostSheetXlsx/buildAllCostSheetsXlsx) | ipvRoundTrip:1436,1444 | — | **AUSENTE** | `buildCostSheetXlsx` | Declarado: sin importación/exportación de fichas Excel |
+| 269 | Importar/exportar fichas en Excel (buildCostSheetXlsx/buildAllCostSheetsXlsx) | ipvRoundTrip:1436,1444 | — | **PARCIAL** | `buildCostSheetXlsx` | Las funciones viajan ya en src/lib/ipvRoundTrip.ts (puerto 26-oct); falta exponerlas en la pantalla de Elaboración |
 | 270 | Rentabilidad de fichas con filtros (pérdida/riesgo/bajo/sano) y ranking | ElaboracionTab PriceSuggestionsPanel 19527 | screens/Elaboracion.tsx Rentabilidad | **PRESENTE** | `Ranking de rentabilidad` | Encontrado en: screens/Elaboracion.tsx |
-| 271 | Alertas de margen / productos sin ficha | ElaboracionTab alertSummary | screens/Elaboracion.tsx «Alertas de margen» | **PRESENTE** | `Alertas de margen` | Encontrado en: screens/Elaboracion.tsx |
+| 271 | Alertas de margen / productos sin ficha | ElaboracionTab alertSummary | screens/Elaboracion.tsx alertSummary | **PRESENTE** | `alertSummary` | Encontrado en: screens/Elaboracion.tsx (resumen de alertas: productos sin ficha y márgenes) |
 | 272 | Comparador de recetas (Comparar dos platos) | ElaboracionTab | screens/Elaboracion.tsx Comparar | **PRESENTE** | `Comparador de recetas` | Encontrado en: screens/Elaboracion.tsx |
-| 273 | Gráfico coste/margen (CostMarginPie) | App.tsx:21377 CostMarginPie | — | **AUSENTE** | `CostMarginPie` | Rentabilidad sin pie de coste/margen |
+| 273 | Gráfico coste/margen (CostMarginPie) | App.tsx:21377 CostMarginPie | screens/Elaboracion.tsx CostMarginPie | **PRESENTE** | `CostMarginPie` | Gráfico coste/margen en el análisis de Rentabilidad (puerto de la ficha de costo, 26-oct) |
 | 274 | Paquetes y rendimientos (PackagesPanel: referencias, observaciones de precio, sugerencias) | App.tsx:19227 PackagesPanel + actions getPackageReferences | screens/Elaboracion.tsx Paquetes + backend savePackageReference (Supabase package_references) | **PRESENTE** | `Referencias de compra` | Encontrado en: screens/Elaboracion.tsx, types.ts |
 | 275 | Descartar sugerencia de paquete (dismissPackageSuggestion) / poblar referencias (populatePackageReferences) | actions | lib/productosCore derivePackageReferences | **PARCIAL** | `dismissPackageSuggestion` | Derivación desde gastos presente; descarte/poblado como acciones no |
 | 276 | LABORATORIO pantalla (LaboratorioTab: simulación aislada sin tocar datos reales) | App.tsx:20277 LaboratorioTab | screens/Laboratorio.tsx | **PRESENTE** | `Laboratorio` | Reescrito como puerto según IGUALACION |
 | 277 | Tabla de precios del laboratorio (LabPriceTable, % ganancia) | App.tsx:20142 LabPriceTable | screens/Laboratorio.tsx LabPriceTable | **PRESENTE** | `function LabPriceTable` | Encontrado en: screens/Laboratorio.tsx |
 | 278 | Simulador de precios (SimulationLab del laboratorio) | App.tsx:19606 SimulationLab | screens/Laboratorio.tsx SimulationLab | **PRESENTE** | `function SimulationLab` | Encontrado en: screens/Laboratorio.tsx |
 | 279 | Sugerencias de precio del servidor (getPriceSuggestions con factores por categoría) | LaboratorioTab + actions | lib/productosCore buildPriceSuggestions | **PARCIAL** | `buildPriceSuggestions` | Cálculo local; los factores por categoría del servidor no viajan |
-| 280 | IpvLabPanel: subir IPV de prueba, corregirlo y cuadrarlo a 0 (buildCorrectedIpv) | App.tsx:19712 IpvLabPanel + ipvRoundTrip:1241 | — | **AUSENTE** | `function IpvLabPanel` | Declarado: IpvLabPanel sin subir IPV en el clon; «IpvLabPanel» solo aparece en comentarios de Laboratorio.tsx que declaran su ausencia |
+| 280 | IpvLabPanel: subir IPV de prueba, corregirlo y cuadrarlo a 0 (buildCorrectedIpv) | App.tsx:19712 IpvLabPanel + ipvRoundTrip:1241 | screens/Laboratorio.tsx IpvLabPanel | **PRESENTE** | `function IpvLabPanel` | Panel portado (D-13, 26-oct): trabaja sobre un IPV de prueba efímero que se corrige y cuadra a 0 sin tocar datos reales; el envío por correo queda declarado no igualable (D-08) |
 
 ### 1.11 Almacén (AlmacenTab App.tsx:9282) · Inventario bienes (9118) · Entradas (8766)
 
@@ -355,8 +355,8 @@
 | 284 | Añadir entrada de almacén (addWarehouseEntry) | actions | screens/Almacen.tsx «Entrada manual» + persistencia app_settings | **PRESENTE** | `addWarehouseEntry` | Oleada 2: alta de entrada (y de rebaja, con «Para qué se cogió») solo admin, persistiendo la clave completa 'almacen-extended' (Supabase) o el StoredData local |
 | 285 | Añadir salida/retiro de almacén con gasto sincronizado (addWarehouseWithdrawal + syncWarehouseWithdrawalExpense) | actions | — | **AUSENTE** | `addWarehouseWithdrawal` | Sin sincronización almacén→gasto |
 | 286 | Editar/eliminar movimiento de almacén (update/deleteWarehouseEntry) | actions | screens/Almacen.tsx (editar en línea + eliminar con confirmación) | **PRESENTE** | `updateWarehouseEntry` | Oleada 2: edición y baja solo admin con la misma persistencia; las existencias se recalculan desde los movimientos |
-| 287 | ESCÁNER/búsqueda por código de barras en almacén (lookupWarehouseBarcode) | AlmacenTab + actions | — | **AUSENTE** | `lookupWarehouseBarcode` | Sin escáner de barras en Almacén |
-| 288 | Registrar código de barras (registerWarehouseBarcode) / asignar interno (assignInternalWarehouseBarcode) | actions | — | **AUSENTE** | `registerWarehouseBarcode` |  |
+| 287 | ESCÁNER/búsqueda por código de barras en almacén (lookupWarehouseBarcode) | AlmacenTab + actions | lib/barcodeLookup.ts + components/BarcodeScanner.tsx + screens/Almacen.tsx | **PRESENTE** | `lookupWarehouseBarcode` | Búsqueda y escáner de barras (D-12, 26-oct); diferencia de ruta declarada: el clon busca en OpenFoodFacts en vez del web_search+IA del servidor |
+| 288 | Registrar código de barras (registerWarehouseBarcode) / asignar interno (assignInternalWarehouseBarcode) | actions | lib/barcodeLookup.ts (metaForRegisteredBarcode) + screens/Almacen.tsx | **PRESENTE** | `registerWarehouseBarcode` | Registro del código en la ficha del producto al dar la entrada (D-12); sin acción homónima de «asignar interno»: el clon lo resuelve registrando el código en la ficha |
 | 289 | Descartar búsqueda de barras (discardWarehouseBarcodeLookup) | actions | — | **AUSENTE** | `discardWarehouseBarcodeLookup` |  |
 | 290 | Foto de producto de almacén (set/removeWarehouseProductPhoto) | actions | — | **AUSENTE** | `setWarehouseProductPhoto` |  |
 | 291 | Imagen de internet del producto de almacén (refresh/saveWarehouseInternetProductImage) | actions | — | **AUSENTE** | `saveWarehouseInternetProductImage` |  |
@@ -537,11 +537,11 @@
 
 | # | Elemento | Original | Destino en el clon | Estado | Token (grep en clon) | Evidencia / nota |
 |---|---|---|---|---|---|---|
-| 434 | buildUpdatedIpv: IPV de vuelta cuadrado (agrega RH, coctelería, pizzería, entradas/mesas, almacén SIN tocar cifras) | ipvRoundTrip.ts:1127 buildUpdatedIpv | — | **AUSENTE** | `buildUpdatedIpv` | CONOCIDO: el redondeo/devolución del IPV no existe; Días descarga un .txt resumen |
-| 435 | buildFreshIpvForDay: plantilla fresca con precios del día | ipvRoundTrip.ts:1074 | — | **AUSENTE** | `buildFreshIpvForDay` |  |
-| 436 | buildCorrectedIpv: IPV corregido del Laboratorio | ipvRoundTrip.ts:1241 | — | **AUSENTE** | `buildCorrectedIpv` |  |
-| 437 | buildCostSheetXlsx / buildAllCostSheetsXlsx: fichas de costo en Excel | ipvRoundTrip.ts:1436,1444 | — | **AUSENTE** | `buildCostSheetXlsx` |  |
-| 438 | IpvAddition / IpvProductBarcode / IpvNameCorrection (tipos del redondeo: códigos y correcciones de nombre) | ipvRoundTrip.ts:1,10,18 | — | **AUSENTE** | `IpvNameCorrection` | Sin códigos de barras ni correcciones de nombre en la devolución |
+| 434 | buildUpdatedIpv: IPV de vuelta cuadrado (agrega RH, coctelería, pizzería, entradas/mesas, almacén SIN tocar cifras) | ipvRoundTrip.ts:1127 buildUpdatedIpv | — | **PARCIAL** | `buildUpdatedIpv` | Función portada íntegra a src/lib/ipvRoundTrip.ts (26-oct); el cableado con la reconciliación del cliente está en curso |
+| 435 | buildFreshIpvForDay: plantilla fresca con precios del día | ipvRoundTrip.ts:1074 | — | **PARCIAL** | `buildFreshIpvForDay` | Función portada íntegra a src/lib/ipvRoundTrip.ts (26-oct); sin superficie propia aún en el clon |
+| 436 | buildCorrectedIpv: IPV corregido del Laboratorio | ipvRoundTrip.ts:1241 | — | **PARCIAL** | `buildCorrectedIpv` | Función portada íntegra a src/lib/ipvRoundTrip.ts (26-oct); el panel del Laboratorio la consume al portarse |
+| 437 | buildCostSheetXlsx / buildAllCostSheetsXlsx: fichas de costo en Excel | ipvRoundTrip.ts:1436,1444 | — | **PARCIAL** | `buildCostSheetXlsx` | Funciones portadas a src/lib/ipvRoundTrip.ts (26-oct); falta exponerlas en Elaboración |
+| 438 | IpvAddition / IpvProductBarcode / IpvNameCorrection (tipos del redondeo: códigos y correcciones de nombre) | ipvRoundTrip.ts:1,10,18 | — | **PRESENTE** | `IpvNameCorrection` | Tipos portados con ipvRoundTrip.ts (26-oct) |
 | 439 | parseDayFile: parser completo del Excel IPV (hojas, RH, almacén, desglose, billar, billetes) | xlsx.ts:358 parseDayFile | lib/ipvCore.mjs parser propio + ipvPayloadToRawDay | **PARCIAL** | `ipvPayloadToRawDay` | Parser propio del clon para importar un día; cobertura verificada por batería ipv, sin ser parseDayFile |
 | 440 | parseVenueInventoryFile | xlsx.ts:1368 | — | **AUSENTE** | `parseVenueInventoryFile` |  |
 | 441 | statsFor / bucketsFor / alertsFor / conclusionsFor (motor de períodos) | periods.ts:304,459,677,1223 | screens/Inicio.tsx cálculo local + productosCore | **PARCIAL** | `statsFor` | Agregaciones equivalentes repartidas; el motor periods.ts no se portó como módulo |
@@ -554,7 +554,7 @@
 | # | Elemento | Original | Destino en el clon | Estado | Token (grep en clon) | Evidencia / nota |
 |---|---|---|---|---|---|---|
 | 445 | offlineFetch: lecturas en IndexedDB y cola durable de escrituras sin red, en orden | offline.ts offlineFetch + api.ts | — (Supabase/localStorage directos) | **AUSENTE** | `offlineFetch` | Sin capa offline: sin IndexedDB ni cola de escrituras; el trabajo sin red no se encola |
-| 446 | getOfflineState / subscribeOfflineState (estado de conexión reactivo) | offline.ts:218,222 | — | **AUSENTE** | `getOfflineState` |  |
+| 446 | getOfflineState / subscribeOfflineState (estado de conexión reactivo) | offline.ts:218,222 | — | **PRESENTE** | `getOfflineState` | Implementados en src/lib/offlineQueue.ts (26-oct, D-03/D-68) y consumidos por ConnectionStatus |
 | 447 | subscribeOfflineSyncComplete | offline.ts:232 | — | **AUSENTE** | `subscribeOfflineSyncComplete` |  |
 | 448 | resilientAssetFetch (activos con reintento) | offline.ts:470 | public/sw.js (PWA del clon) | **PARCIAL** | `resilientAssetFetch` | Hay service worker PWA propio; sin resilientAssetFetch del original — la caché del SW fue sospechosa en la 2ª revisión (ver nota Sistema) |
 | 449 | startOfflineSync / requestOfflineSync (sincronización al volver la red) | offline.ts:653,687 + main.tsx startOfflineSync() | — | **AUSENTE** | `startOfflineSync` |  |
@@ -565,6 +565,29 @@
 | 454 | QaPage: laboratorio visual #/qa (desborde, táctiles <48px, texto <14px, contraste AA, CLS; matriz A16/Redmi 12C/Tab P11) | qa.tsx:199 QaPage + main.tsx ruta #/qa | — | **AUSENTE** | `QaPage` | Sin ruta #/qa; la auditoría visual del clon es proceso externo de desarrollo |
 | 455 | main.tsx: QueryClient con REINTENTO_LECTURA (stale 10 min, reintentos ×4 con backoff) | App.tsx:1393 REINTENTO_LECTURA + main.tsx | — fetch directo Supabase/local | **AUSENTE** | `REINTENTO_LECTURA` | Sin política de caché/reintento de lecturas equivalente |
 | 456 | Service worker / PWA instalable | original: registro SW en App + manifest del artefacto | src/main.tsx registro + public/sw.js y manifest del clon | **PRESENTE** | `serviceWorker` | Registro en main.tsx del clon (register de /sw.js en producción); su caché v2 fue sospechosa de pestañas que no abrían en la 2ª revisión del dueño — hecho de despliegue, no de código fuente |
+
+---
+
+### 1.20 Núcleos y piezas añadidos en la corrección de igualación (26-oct)
+
+| # | Pieza | Fuente en el original | Destino en el clon | Estado | Token (grep en clon) | Evidencia / nota |
+|---|---|---|---|---|---|---|
+| 457 | Conciliación IPV (identidad SMS = IPV + cuentas + otras entradas) | actions.ts `getIpvReconciliation` | src/lib/ipvReconciliation.ts `buildIpvReconciliation` | **PRESENTE** | `buildIpvReconciliation` | Puerto fiel; cableado en ImportIpv, IpvDownloads, Dias, Historial, Sistema |
+| 458 | Guardado de cuentas con morosidad (marca manual, upsert + borrados declarados) | actions de Cobrar/Cuentas | backend `saveReceivables` + SB `rawSbSaveReceivables` | **PRESENTE** | `sbSaveReceivables` | Con cola offline; la fusión de duplicados verifica totales antes/después (D-10/D-11) |
+| 459 | Otros ingresos con CRUD completo | ExtrasTab + actions | backend `saveExtraIncomes` + SB «extra-incomes» | **PRESENTE** | `saveExtraIncomes` | monthEconomy los suma; factura de extras en documentosCore (D-16) |
+| 460 | Ajustes de existencias (inicial/baja/traslado) | ExistenciasTab + actions | types `InventoryAdjustment` + SB «existencias-ajustes» | **PRESENTE** | `inventoryAdjustments` | buildInventoryBook los aplica (D-16) |
+| 461 | Facturas HTML de extras, gastos y entradas | documentos del servidor | documentosCore `extrasInvoiceHtml` / `gastosInvoiceHtml` / `entradasInvoiceHtml` | **PRESENTE** | `extrasInvoiceHtml` | Sincronizados a _shared (D-16) |
+| 462 | Informe del período (Inicio) | documentos del servidor | documentosCore `buildPeriodInformeData` | **PRESENTE** | `buildPeriodInformeData` | Equivale al informe mensual en sus 12 cifras (verify:reglas) |
+| 463 | Panel del Laboratorio IPV | IpvLabPanel del original | src/screens/Laboratorio.tsx | **PRESENTE** | `IpvLabPanel` | El envío por correo queda declarado no igualable (D-08) |
+| 464 | Archivo mensual con guardado en servidor | actions de Archivo | SB `rawSbSaveMonthlyArchives` | **PRESENTE** | `sbSaveMonthlyArchives` | «Archivar mes» + PDFs (D-16) |
+| 465 | Sincronización de gastos de almacén | actions.ts:6823-6960 | src/lib/warehouseExpenses.ts + SB `rawSbSyncWarehouseExpense` | **PRESENTE** | `sbSyncWarehouseExpense` | Reconciliación idempotente (D-12) |
+| 466 | Edición/borrado de movimientos de transferencias | TransferenciasTab + actions | backend `updateTransferMovement` / `deleteTransferMovement` | **PRESENTE** | `updateTransferMovement` | Con la guarda de saldo no negativo del original (D-57) |
+| 467 | Recuperación de contraseña | (hueco de ambos; la cuenta del clon es Supabase) | SB `sbRequestPasswordReset` + pantalla de restablecimiento | **PRESENTE** | `sbRequestPasswordReset` | Pieza nueva por hueco real (D-69), demostrada en render 8/8 |
+| 468 | Registro de trabajadores completo (ficha, historial, ausencias) | WorkersRegistry del original | src/screens/WorkerRegistry.tsx + `saveWorkersRegistry` / `sbSaveWorkersRegistry` | **PRESENTE** | `saveWorkersRegistry` | Puerto regla a regla (D-RH); gaps declarados en el INFORME |
+| 469 | Matriz de permisos por sección y por persona | (capa multiusuario del clon) | src/lib/permissions.ts `sectionAccess` / `canModifyIn` | **PRESENTE** | `sectionAccess` | Piezas del dueño F/J: matriz de Yan y pestañas de admin invisibles |
+| 470 | Acceso rápido por dispositivo (PIN/biometría de desbloqueo) | (decisión del dueño para esta copia) | src/lib/quickAccess.ts | **PRESENTE** | `quickAccess` | Pieza H: hash con sal en el dispositivo, 5 intentos, se apaga al cerrar sesión |
+| 471 | Orbe de voz de Queen (icono premium + animación al hablar) | (acabado del dueño para esta copia) | src/components/QueenVoiceOrb.tsx | **PRESENTE** | `QueenVoiceOrb` | Pieza I: diferencia medida 6,9 % claro / 9,7 % oscuro |
+| 472 | Registro de actividad rastreable | (decisión del dueño: Cronología lo refleja todo) | src/lib/activityLog.ts + `activityDiff.ts` + SB `sbLoadActivityLog` / `sbSaveActivityLog` | **PRESENTE** | `sbSaveActivityLog` | Piezas K/L: diff por campo con anterior → nuevo e intentos fallidos |
 
 ---
 
@@ -930,7 +953,7 @@
 
 | # | Acción | Original | Equivalente en el clon | Estado | Token (grep en clon) | Evidencia / nota |
 |---|---|---|---|---|---|---|
-| 789 | Acción getIpvReconciliation | server/src/actions.ts:15713 getIpvReconciliation: defineAction | — | **AUSENTE** | `getIpvReconciliation` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
+| 789 | Acción getIpvReconciliation | server/src/actions.ts:15713 getIpvReconciliation: defineAction | lib/ipvReconciliation.ts buildIpvReconciliation | **PRESENTE** | `getIpvReconciliation` | Puerto fiel de la acción (D-15/D-41, 26-oct), cableado en ImportIpv, IpvDownloads, Días, Historial y Sistema |
 | 790 | Acción saveIpvUpdatedFile | server/src/actions.ts:15924 saveIpvUpdatedFile: defineAction | — | **AUSENTE** | `saveIpvUpdatedFile` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 791 | Acción restoreIpvUpdatedFile | server/src/actions.ts:16013 restoreIpvUpdatedFile: defineAction | — | **AUSENTE** | `restoreIpvUpdatedFile` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 792 | Acción promotePerfectedIpvDay11 | server/src/actions.ts:16076 promotePerfectedIpvDay11: defineAction | — | **AUSENTE** | `promotePerfectedIpvDay11` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
@@ -952,7 +975,7 @@
 | 808 | Acción recordIpvAuthorizedCorrection | server/src/actions.ts:16790 recordIpvAuthorizedCorrection: defineAction | — | **AUSENTE** | `recordIpvAuthorizedCorrection` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 809 | Acción applyOwnerMandatedAdjustments | server/src/actions.ts:16838 applyOwnerMandatedAdjustments: defineAction | — | **AUSENTE** | `applyOwnerMandatedAdjustments` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 810 | Acción getOrganismStatus | server/src/actions.ts:16859 getOrganismStatus: defineAction | systemMirror OrganismMap derivado | **PARCIAL** | `OrganismMap` |  |
-| 811 | Acción deleteDay | server/src/actions.ts:17321 deleteDay: defineAction | — | **AUSENTE** | `sbDeleteDay` | Conocido; «deleteDay» solo aparece en un comentario de Dias.tsx que declara su ausencia |
+| 811 | Acción deleteDay | server/src/actions.ts:17321 deleteDay: defineAction | — | **PRESENTE** | `sbDeleteDay` | sbDeleteDay implementado en supabaseBackend.ts (26-oct) |
 | 812 | Acción updateAnchor | server/src/actions.ts:17388 updateAnchor: defineAction | backend saveRhSettings | **PRESENTE** | `saveRhSettings` |  |
 
 ### 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Almacén/inventario/entradas/extras
@@ -968,8 +991,8 @@
 | 819 | Acción deactivateVenueInventoryItem | server/src/actions.ts:17549 deactivateVenueInventoryItem: defineAction | — | **PARCIAL** | `deactivateVenueInventoryItem` | oleada 2: equivalente en el clon por app_settings (ver §1.11/§2.1), no como acción del servidor |
 | 820 | Acción deleteVenueInventoryItem | server/src/actions.ts:17566 deleteVenueInventoryItem: defineAction | — | **AUSENTE** | `deleteVenueInventoryItem:` | Sin equivalente: la baja del bien se hace editando su estado a «Baja» (oleada 2); el nombre sin dos puntos aparece solo en el comentario de modulosExtended.ts que declara esta ausencia. |
 | 821 | Acción healthCheck | server/src/actions.ts:17587 healthCheck: defineAction | — | **AUSENTE** | `healthCheck` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
-| 822 | Acción lookupWarehouseBarcode | server/src/actions.ts:17595 lookupWarehouseBarcode: defineAction | — | **AUSENTE** | `lookupWarehouseBarcode` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
-| 823 | Acción registerWarehouseBarcode | server/src/actions.ts:17658 registerWarehouseBarcode: defineAction | — | **AUSENTE** | `registerWarehouseBarcode` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
+| 822 | Acción lookupWarehouseBarcode | server/src/actions.ts:17595 lookupWarehouseBarcode: defineAction | lib/barcodeLookup.ts lookupWarehouseBarcode | **PRESENTE** | `lookupWarehouseBarcode` | Equivalente local de la acción (D-12): busca en el almacén y en OpenFoodFacts |
+| 823 | Acción registerWarehouseBarcode | server/src/actions.ts:17658 registerWarehouseBarcode: defineAction | lib/barcodeLookup.ts registerWarehouseBarcode (metaForRegisteredBarcode) | **PRESENTE** | `registerWarehouseBarcode` | Equivalente local de la acción (D-12) |
 | 824 | Acción assignInternalWarehouseBarcode | server/src/actions.ts:17745 assignInternalWarehouseBarcode: defineAction | — | **AUSENTE** | `assignInternalWarehouseBarcode` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 825 | Acción refreshWarehouseProductImage | server/src/actions.ts:17782 refreshWarehouseProductImage: defineAction | — | **AUSENTE** | `refreshWarehouseProductImage` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 826 | Acción saveWarehouseInternetProductImage | server/src/actions.ts:17796 saveWarehouseInternetProductImage: defineAction | — | **AUSENTE** | `saveWarehouseInternetProductImage` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
@@ -1055,7 +1078,7 @@
 | 896 | Acción registerReceivablePayment | server/src/actions.ts:20741 registerReceivablePayment: defineAction | backend addLocalPayments / sbAddCobrarPayments | **PRESENTE** | `sbAddCobrarPayments` |  |
 | 897 | Acción registerPersonPayment | server/src/actions.ts:20807 registerPersonPayment: defineAction | addLocalPayments allocations / sbAddCobrarPayments | **PRESENTE** | `addLocalPayments` |  |
 | 898 | Acción revertReceivablePayment | server/src/actions.ts:20918 revertReceivablePayment: defineAction | — | **AUSENTE** | `revertReceivablePayment` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
-| 899 | Acción toggleMorosa | server/src/actions.ts:20955 toggleMorosa: defineAction | — | **AUSENTE** | `toggleMorosa` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
+| 899 | Acción toggleMorosa | server/src/actions.ts:20955 toggleMorosa: defineAction | screens/Cobrar.tsx (ActionMenu de la cuenta) + lib/utils toggleMorosa | **PRESENTE** | `toggleMorosa` | Mover a morosas / volver a Cobrar desde el ActionMenu de la cuenta (D-11, 26-oct), con la marca manual isMorosa persistida |
 | 900 | Acción undoIpvReceivablePaid | server/src/actions.ts:20977 undoIpvReceivablePaid: defineAction | — | **AUSENTE** | `undoIpvReceivablePaid` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 
 ### 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · RH/trabajadores/nómina
@@ -1069,7 +1092,7 @@
 | 905 | Acción restorePayrollRecord | server/src/actions.ts:21142 restorePayrollRecord: defineAction | — | **AUSENTE** | `restorePayrollRecord` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 906 | Acción getWorkersRegistry | server/src/actions.ts:21158 getWorkersRegistry: defineAction | syncCore buildWorkersRegistry (derivado local) | **PARCIAL** | `buildWorkersRegistry` | Sin registro de servidor con fotos/firmas/documentos |
 | 907 | Acción prepareOrgChartPeople | server/src/actions.ts:21641 prepareOrgChartPeople: defineAction | — | **AUSENTE** | `prepareOrgChartPeople` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
-| 908 | Acción addWorker | server/src/actions.ts:21711 addWorker: defineAction | — | **AUSENTE** | `addWorker` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
+| 908 | Acción addWorker | server/src/actions.ts:21711 addWorker: defineAction | screens/WorkerRegistry.tsx addWorker + saveWorkersRegistry / sbSaveWorkersRegistry | **PRESENTE** | `addWorker` | Alta manual del registro (D-RH, 26-oct) |
 | 909 | Acción updateWorker | server/src/actions.ts:21763 updateWorker: defineAction | — | **AUSENTE** | `updateWorker` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 910 | Acción saveWorkerHiringContract | server/src/actions.ts:21850 saveWorkerHiringContract: defineAction | — | **AUSENTE** | `saveWorkerHiringContract` | Sin equivalente localizado en el clon (búsqueda literal del nombre de la acción en todo src: 0 hits salvo nota) |
 | 911 | Acción generateWorkerCurriculum | server/src/actions.ts:21899 generateWorkerCurriculum: defineAction | — | **AUSENTE** | `generateWorkerCurriculum` |  |
@@ -1177,35 +1200,36 @@
 
 ## 4. Resumen por estado y por pantalla/módulo
 
-- Total de líneas: **995** — PRESENTE **236**, PARCIAL **200**, AUSENTE **559**. (Recuento mecánico actualizado en la oleada 3: las 6 secciones de «Más» conectadas movieron 11 líneas de AUSENTE a PRESENTE/PARCIAL.)
-- 1.01 Global · acceso, shell y navegación: 35 líneas — P 11 · Pa 10 · A 14
+- Total de líneas: **1011** — PRESENTE **272**, PARCIAL **208**, AUSENTE **531**. (Recuento mecánico regenerado el 26-oct al cierre de la corrección de igualación, contando el estado de cada fila de §1–§3; lo verifica `verify:inventario`.)
+- 1.01 Global · acceso, shell y navegación: 35 líneas — P 15 · Pa 10 · A 10
 - 1.02 Mapa de pestañas (Tab original → destino en el clon): 26 líneas — P 21 · Pa 5 · A 0
 - 1.03 Inicio / Panorama (PanoramaApp App.tsx:1411-3783): 24 líneas — P 16 · Pa 6 · A 2
-- 1.04 Economía (EconomiaTab App.tsx:3847-4074) + Gastos (9932) + Extras (9785): 24 líneas — P 12 · Pa 3 · A 9
-- 1.05 Días (DiasTab App.tsx:4855) · Archivo (4188) · Importar (12874): 29 líneas — P 10 · Pa 9 · A 10
-- 1.06 Cobrar (CobrarTab App.tsx:11182) y subpaneles: 34 líneas — P 9 · Pa 13 · A 12
+- 1.04 Economía (EconomiaTab App.tsx:3847-4074) + Gastos (9932) + Extras (9785): 24 líneas — P 13 · Pa 3 · A 8
+- 1.05 Días (DiasTab App.tsx:4855) · Archivo (4188) · Importar (12874): 29 líneas — P 11 · Pa 9 · A 9
+- 1.06 Cobrar (CobrarTab App.tsx:11182) y subpaneles: 34 líneas — P 8 · Pa 14 · A 12
 - 1.07 Transferencias (TransferenciasTab App.tsx:12195): 11 líneas — P 6 · Pa 3 · A 2
-- 1.08 RH · Pagos (WorkersRegistry App.tsx:6783 + RHTab 8281): 47 líneas — P 17 · Pa 5 · A 25
+- 1.08 RH · Pagos (WorkersRegistry App.tsx:6783 + RHTab 8281): 47 líneas — P 20 · Pa 6 · A 21
 - 1.09 Productos (ProductosTab App.tsx:21435) · Existencias (22478) · Menú (18400): 27 líneas — P 11 · Pa 4 · A 12
-- 1.10 Elaboración (ElaboracionTab App.tsx:20291) · Laboratorio (20277): 23 líneas — P 8 · Pa 3 · A 12
-- 1.11 Almacén (AlmacenTab App.tsx:9282) · Inventario bienes (9118) · Entradas (8766): 22 líneas — P 7 · Pa 1 · A 14
+- 1.10 Elaboración (ElaboracionTab App.tsx:20291) · Laboratorio (20277): 23 líneas — P 10 · Pa 4 · A 9
+- 1.11 Almacén (AlmacenTab App.tsx:9282) · Inventario bienes (9118) · Entradas (8766): 22 líneas — P 9 · Pa 1 · A 12
 - 1.12 Cronología (CronologiaTab App.tsx:13240) · Historial (13500): 9 líneas — P 6 · Pa 3 · A 0
 - 1.13 Queen (QueenTab App.tsx:24518 + paneles 22976-24517): 35 líneas — P 15 · Pa 12 · A 8
 - 1.14 Sistema (SistemaTab App.tsx:17325 · SystemDnaPanel 14648 · subpaneles): 46 líneas — P 17 · Pa 15 · A 14
 - 1.15 Ajustes (AjustesTab App.tsx:17413-17890): 9 líneas — P 2 · Pa 4 · A 3
 - 1.16 Módulos cliente: charts.tsx · futureCharts.tsx: 17 líneas — P 11 · Pa 0 · A 6
 - 1.17 Módulos cliente: export.ts · docStyle.ts · documentos: 15 líneas — P 2 · Pa 4 · A 9
-- 1.18 Módulos cliente: ipvRoundTrip.ts · xlsx.ts · periods.ts: 11 líneas — P 0 · Pa 4 · A 7
-- 1.19 Módulos cliente: offline.ts · photoProcessing.ts · spell.tsx · qa.tsx · main.tsx: 12 líneas — P 1 · Pa 1 · A 10
-- 2.1 Datos y archivos: tipos principales (fuente exportData / schema / blobs): 92 líneas — P 17 · Pa 24 · A 51
+- 1.18 Módulos cliente: ipvRoundTrip.ts · xlsx.ts · periods.ts: 11 líneas — P 1 · Pa 8 · A 2
+- 1.19 Módulos cliente: offline.ts · photoProcessing.ts · spell.tsx · qa.tsx · main.tsx: 12 líneas — P 2 · Pa 1 · A 9
+- 1.20 Núcleos y piezas añadidos en la corrección de igualación (26-oct): 16 líneas — P 16 · Pa 0 · A 0
+- 2.1 Datos y archivos: tipos principales (fuente exportData / schema / blobs): 92 líneas — P 17 · Pa 25 · A 50
 - 2.2 Datos: las 108 tablas de server/src/schema.ts, una a una: 108 líneas — P 9 · Pa 25 · A 74
 - 2.3 Datos: destino en el clon (tablas Supabase y almacenes locales): 16 líneas — P 15 · Pa 1 · A 0
 - 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Sistema/Queen/seguridad/correo/respaldo: 116 líneas — P 4 · Pa 18 · A 94
-- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · IPV/días: 24 líneas — P 2 · Pa 4 · A 18
-- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Almacén/inventario/entradas/extras: 32 líneas — P 0 · Pa 8 · A 24
+- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · IPV/días: 24 líneas — P 4 · Pa 4 · A 16
+- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Almacén/inventario/entradas/extras: 32 líneas — P 2 · Pa 8 · A 22
 - 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Gastos/servicios: 8 líneas — P 1 · Pa 1 · A 6
-- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Cobrar/cuentas/clientes/SMS: 48 líneas — P 2 · Pa 4 · A 42
-- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · RH/trabajadores/nómina: 33 líneas — P 0 · Pa 1 · A 32
+- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Cobrar/cuentas/clientes/SMS: 48 líneas — P 3 · Pa 4 · A 41
+- 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · RH/trabajadores/nómina: 33 líneas — P 1 · Pa 1 · A 31
 - 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Elaboración/productos/menú: 46 líneas — P 3 · Pa 5 · A 38
 - 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Transferencias/archivo: 14 líneas — P 1 · Pa 4 · A 9
 - 3. Acciones del servidor (server/src/actions.ts, objeto Actions) · Privilegiados: 2 líneas — P 0 · Pa 0 · A 2

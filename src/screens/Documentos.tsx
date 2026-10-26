@@ -5,11 +5,15 @@ import {
   DOC_STYLE,
 } from '../lib/documentosCore.mjs'
 import { downloadBlob, downloadText, printHtml } from '../lib/download'
+import { requireBiometricUnlock } from '../lib/webauthn'
+import { canExportBackup, exportNeedsBiometric } from '../lib/permissions'
+import { logActivity } from '../lib/activityLog'
 import type { StoredData } from '../types'
 import { fmtCUP, fmtDate } from '../lib/utils'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
 import { MediaImage } from '../components/MediaImage'
 import { useMediaUrl } from '../lib/media'
+import { BRAND_CUNO_URL, BRAND_LOGO_URL } from '../lib/brandAssets'
 
 /**
  * Documentos del sistema: nómina, informe de Economía, menú de
@@ -36,8 +40,16 @@ import { useMediaUrl } from '../lib/media'
  *  - El menú queda EXCLUIDO de firma y cuño (regla del dueño)
  *    y la regla de cocina deja fuera camarón, langosta, res y
  *    tortuga: los productos señalados se reportan, no se sirven.
+ *  - Candado biométrico (AÑADIDO DEL DUEÑO en esta copia,
+ *    2026-10-26): todas las exportaciones pasan por runExport →
+ *    lib/webauthn.requireBiometricUnlock; con credencial WebAuthn
+ *    registrada, el servidor verifica la huella/cara antes de
+ *    exportar. Sin credencial, la exportación sigue como siempre.
  */
-export default function Documentos({ data, today }: { data: StoredData; today: string }) {
+export default function Documentos({ data, today, isAdmin }: { data: StoredData; today: string; isAdmin: boolean }) {
+  /* Rol de esta sesión para las capacidades de permissions.ts:
+     admin o lectura (Jesús, Dayami y Yan). */
+  const role = isAdmin ? 'admin' : 'lectura'
   const months = useMemo(() => {
     const set = new Set(data.days.map((d) => d.date.slice(0, 7)))
     return [...set].sort().reverse()
@@ -59,8 +71,37 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
   const menu = useMemo(() => buildMenuData(data, today), [data, today])
   const [msg, setMsg] = useState<string | null>(null)
 
-  // Cuño APROBADO real desde la media autenticada (activo fijo).
-  const stampUrl = useMediaUrl('activo-sistema', 'cuno-la-reina-aprobado')
+  // Cuño APROBADO real: primero la media autenticada (activo fijo);
+  // si no está cargada, el activo EMPAQUETADO byte a byte (D-30,
+  // brandAssets): el cuño existe siempre, también en modo local.
+  const mediaStampUrl = useMediaUrl('activo-sistema', 'cuno-la-reina-aprobado')
+  const stampUrl = mediaStampUrl ?? BRAND_CUNO_URL
+
+  /* Candado biométrico (AÑADIDO DEL DUEÑO en esta copia,
+     2026-10-26): toda exportación de documentos pasa por aquí. Si
+     el usuario tiene credencial WebAuthn registrada, el servidor
+     verifica su huella/cara antes de exportar; sin credencial (o
+     sin el despliegue de la pieza), la exportación sigue como
+     siempre y este guardián deja pasar sin pedir nada. */
+  const runExport = async (action: () => void, label = 'un documento') => {
+    /* Permiso del dueño (2026-10-26): el rol lectura exporta SIN
+       candado biométrico; el candado sigue guardando las
+       exportaciones del administrador (exportNeedsBiometric). */
+    if (!exportNeedsBiometric(role)) {
+      action()
+      /* Registro de actividad (dueño, 15:02): la exportación de un
+         usuario del equipo queda en la Cronología del admin. */
+      logActivity('exportacion', `Exportó ${label}`, { section: 'documentos' })
+      return
+    }
+    const unlock = await requireBiometricUnlock()
+    if (!unlock.ok) {
+      setMsg(`Exportación cancelada: ${unlock.reason ?? 'la verificación biométrica no se completó.'}`)
+      logActivity('fallido', `Exportación de ${label} cancelada: la verificación biométrica no se completó`, { section: 'documentos' })
+      return
+    }
+    action()
+  }
 
   const openDoc = (html: string, label: string) => {
     // Con el cuño cargado, el bloque de certificación lleva la
@@ -88,7 +129,8 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
         <p className="eyebrow">Certificación</p>
         <h2>Firmas y cuño</h2>
         <p className="sub">
-          El cuño APROBADO es el activo real del sistema original y llega por la media autenticada:
+          El cuño APROBADO es el activo real del sistema original: llega por la media autenticada
+          y, si esta no está cargada, por el activo empaquetado byte a byte en la propia app (D-30);
           se incrusta en el bloque de certificación de la nómina y el informe. Las firmas personales
           se firman en la ficha de cada persona en RH; sin firma registrada, el documento lo declara.
         </p>
@@ -96,11 +138,12 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
           <MediaImage
             kind="activo-sistema" entityKey="cuno-la-reina-aprobado" alt="Cuño APROBADO de La Reina"
             className="stamp-preview"
-            fallback={<p className="small muted">Cuño no disponible en este dispositivo: en esta copia (modo local) la media no está cargada.</p>}
+            fallback={<img src={BRAND_CUNO_URL} alt="Cuño APROBADO de La Reina" className="stamp-preview" />}
           />
           <MediaImage
             kind="activo-sistema" entityKey="la-reina-logo" alt="Logotipo de La Reina"
             style={{ width: 120, height: 120, objectFit: 'contain' }}
+            fallback={<img src={BRAND_LOGO_URL} alt="Logotipo de La Reina" style={{ width: 120, height: 120, objectFit: 'contain' }} />}
           />
         </div>
       </Card>
@@ -128,8 +171,8 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
               <div className="stat"><div className="label">Resultado del mes</div><div className="value">{fmtCUP(informe.eco.resultado)}</div></div>
             </div>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 14 }}>
-              <button className="btn primary" onClick={() => openDoc(informeHtml(informe), 'Informe')}>Abrir informe (PDF)</button>
-              <button className="btn" onClick={() => { downloadBlob(buildPptxBlob(informe), `presentacion-economia-${activeMonth}.pptx`); setMsg('Presentación descargada (.pptx) con las cifras del mes.') }}>Descargar presentación (.pptx)</button>
+              <button className="btn primary" onClick={() => void runExport(() => openDoc(informeHtml(informe), 'Informe'), 'el informe (PDF)')}>Abrir informe (PDF)</button>
+              <button className="btn" onClick={() => void runExport(() => { downloadBlob(buildPptxBlob(informe), `presentacion-economia-${activeMonth}.pptx`); setMsg('Presentación descargada (.pptx) con las cifras del mes.') }, 'la presentación (.pptx)')}>Descargar presentación (.pptx)</button>
             </div>
           </>
         ) : <p className="small muted">Sin días importados todavía: el informe se genera cuando haya IPV cargados.</p>}
@@ -165,7 +208,7 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
               <tr><td>Estado</td><td>{nomina.recorded ? `Registrada · pago ${fmtDate(nomina.payDate)}` : 'Derivada del ciclo (aún sin registrar como pagada)'}</td></tr>
             </tbody></table>
             <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-              <button className="btn primary" onClick={() => openDoc(nominaHtml(nomina), 'Nómina')}>Abrir nómina (PDF)</button>
+              <button className="btn primary" onClick={() => void runExport(() => openDoc(nominaHtml(nomina), 'Nómina'), 'la nómina (PDF)')}>Abrir nómina (PDF)</button>
             </div>
           </>
         ) : <p className="small muted">Sin ciclos de RH con datos todavía.</p>}
@@ -189,10 +232,11 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
           </div>
         ) : null}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 12 }}>
-          <button className="btn primary" disabled={!menu.itemCount} onClick={() => openDoc(menuHtml(menu), 'Menú')}>Abrir menú (PDF)</button>
+          <button className="btn primary" disabled={!menu.itemCount} onClick={() => void runExport(() => openDoc(menuHtml(menu), 'Menú'), 'el menú (PDF)')}>Abrir menú (PDF)</button>
         </div>
       </Card>
 
+      {canExportBackup(role) ? (
       <Card>
         <p className="eyebrow">Respaldo · Ida y vuelta</p>
         <h2>Exportar respaldo del sistema</h2>
@@ -203,11 +247,11 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
         </p>
         <button
           className="btn primary"
-          onClick={() => {
+          onClick={() => void runExport(() => {
             const backup = buildBackupExport(data, today)
             downloadText(JSON.stringify(backup, null, 2), `backup-sda-${today}.json`, 'application/json;charset=utf-8')
             setMsg(`Respaldo exportado: ${data.days.length} días. Guárdalo donde guardas los respaldos diarios.`)
-          }}
+          }, 'el respaldo del sistema')}
         >
           Descargar respaldo (.json)
         </button>
@@ -215,6 +259,7 @@ export default function Documentos({ data, today }: { data: StoredData; today: s
           {DOC_STYLE.systemName} · {DOC_STYLE.business}
         </p>
       </Card>
+      ) : null}
     </section>
   )
 }
