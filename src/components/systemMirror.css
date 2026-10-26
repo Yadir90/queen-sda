@@ -247,6 +247,12 @@
 .queen-evolution-stage-copy h3 { margin-top: 1px; color: var(--text); font-size: clamp(27px, 8vw, 38px); font-weight: 820; line-height: 1; }
 .queen-evolution-stage-copy > p:not(.queen-evolution-kicker) { margin-top: 7px; color: var(--dim); font-size: 12px; line-height: 1.45; }
 .queen-evolution-stage-copy small { display: block; margin-top: 8px; color: var(--dim); font-size: 10px; }
+/* Envoltura del héroe del panel completo (QueenEvolutionPanel): el
+   original la centra con el preflight de Tailwind; aquí, sin Tailwind,
+   se declara lo mismo en plano y la figura va sin margen de navegador. */
+.queen-profile-orb-wrap { display: grid; place-items: center; min-width: 0; }
+.queen-organism { margin: 0; }
+.queen-organism-picture { width: 100%; height: 100%; }
 .queen-organism {
   position: relative; width: 138px; height: 138px; justify-self: center;
   border-radius: 999px; background: radial-gradient(circle, color-mix(in srgb, var(--accent) 13%, transparent), transparent 66%);
@@ -4768,3 +4774,151 @@ html[data-ultralight="true"] :where(
    que le da flex-wrap: wrap, y en el clon la tarjeta de ADN no lleva ese
    ámbito. Se porta la propiedad operativa del original a la cabecera. */
 .system-dna-head { flex-wrap: wrap; }
+
+/* ===== Oleada 3c: animación del sistema solar IPV (puerto del
+   theme.css del original). Faltaban los tres @keyframes y el bloque
+   @supports completo: las clases declaraban la animación pero los
+   planetas quedaban fijos en su posición inicial. ===== */
+.ipv-neural-constellation.is-visible .ipv-neural-sun,
+.ipv-neural-constellation.is-visible .ipv-neural-node {
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.ipv-neural-constellation.is-visible .ipv-link-particle {
+  filter: none;
+  will-change: opacity;
+}
+.ipv-neural-constellation.is-paused *,
+.ipv-neural-constellation.is-paused *::before,
+.ipv-neural-constellation.is-paused *::after {
+  animation-play-state: paused !important;
+}
+.ipv-neural-constellation.is-paused .ipv-neural-sun,
+.ipv-neural-constellation.is-paused .ipv-neural-node,
+.ipv-neural-constellation.is-paused .ipv-link-particle {
+  will-change: auto;
+}
+@keyframes ipv-heartbeat {
+  0%, 34%, 100% { transform: translate3d(-50%, -50%, 0) scale(1); }
+  12% { transform: translate3d(-50%, -50%, 0) scale(1.075); }
+  22% { transform: translate3d(-50%, -50%, 0) scale(.985); }
+  28% { transform: translate3d(-50%, -50%, 0) scale(1.045); }
+}
+@keyframes ipv-planet-float {
+  0%, 100% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(0, -2px, 0) scale(1.035); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ipv-neural-constellation.is-visible .ipv-neural-sun,
+  .ipv-neural-constellation.is-visible .ipv-neural-node,
+  .ipv-neural-constellation.is-visible .ipv-link-particle { will-change: auto; }
+}
+
+/* Barrido de animaciones (oleada 3c): nombres referenciados en el CSS
+   del clon que no tenían @keyframes ni siquiera en el original se
+   definen aquí con los valores del original; warehouse-spin no está
+   definido en NINGÚN css del original (su spinner quedaba quieto
+   también allí): se define como rotación simple, la única lectura
+   posible de un spinner de borde. */
+@keyframes md-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes system-status-ring { to { transform: rotate(360deg); } }
+@keyframes dna-problem-blink {
+  0%, 100% { opacity: 1; filter: brightness(1); }
+  48% { opacity: .3; filter: brightness(1.55); }
+  62% { opacity: .82; filter: brightness(1.12); }
+}
+@keyframes warehouse-spin { to { transform: rotate(360deg); } }
+
+/* Sistema solar IPV · órbitas por antigüedad. El orden sale de la fecha real:
+   reciente cerca del corazón, antiguo lejos. Dieciséis tramos elípticos y
+   temporización lineal producen rotación continua en GPU; la pausa existente
+   evita consumo fuera de pantalla. En navegadores sin unidades de contenedor
+   queda la posición estática correcta, sin perder acceso a ningún IPV. */
+@supports (width: 1cqw) {
+  .ipv-neural-constellation { container-type: size; }
+  .ipv-orbit-item {
+    left: 50%;
+    top: 50%;
+    animation: ipv-node-orbit var(--ipv-orbit-duration, 24s) linear infinite;
+    animation-delay: var(--ipv-delay, 0ms);
+    animation-fill-mode: both;
+    backface-visibility: hidden;
+    will-change: transform;
+  }
+  @keyframes ipv-node-orbit {
+    0%, 100% { transform: translate3d(calc(var(--ipv-dx0) * 1cqw - 50%), calc(var(--ipv-dy0) * 1cqh - 50%), 0); }
+    6.25% { transform: translate3d(calc(var(--ipv-dx1) * 1cqw - 50%), calc(var(--ipv-dy1) * 1cqh - 50%), 0); }
+    12.5% { transform: translate3d(calc(var(--ipv-dx2) * 1cqw - 50%), calc(var(--ipv-dy2) * 1cqh - 50%), 0); }
+    18.75% { transform: translate3d(calc(var(--ipv-dx3) * 1cqw - 50%), calc(var(--ipv-dy3) * 1cqh - 50%), 0); }
+    25% { transform: translate3d(calc(var(--ipv-dx4) * 1cqw - 50%), calc(var(--ipv-dy4) * 1cqh - 50%), 0); }
+    31.25% { transform: translate3d(calc(var(--ipv-dx5) * 1cqw - 50%), calc(var(--ipv-dy5) * 1cqh - 50%), 0); }
+    37.5% { transform: translate3d(calc(var(--ipv-dx6) * 1cqw - 50%), calc(var(--ipv-dy6) * 1cqh - 50%), 0); }
+    43.75% { transform: translate3d(calc(var(--ipv-dx7) * 1cqw - 50%), calc(var(--ipv-dy7) * 1cqh - 50%), 0); }
+    50% { transform: translate3d(calc(var(--ipv-dx8) * 1cqw - 50%), calc(var(--ipv-dy8) * 1cqh - 50%), 0); }
+    56.25% { transform: translate3d(calc(var(--ipv-dx9) * 1cqw - 50%), calc(var(--ipv-dy9) * 1cqh - 50%), 0); }
+    62.5% { transform: translate3d(calc(var(--ipv-dx10) * 1cqw - 50%), calc(var(--ipv-dy10) * 1cqh - 50%), 0); }
+    68.75% { transform: translate3d(calc(var(--ipv-dx11) * 1cqw - 50%), calc(var(--ipv-dy11) * 1cqh - 50%), 0); }
+    75% { transform: translate3d(calc(var(--ipv-dx12) * 1cqw - 50%), calc(var(--ipv-dy12) * 1cqh - 50%), 0); }
+    81.25% { transform: translate3d(calc(var(--ipv-dx13) * 1cqw - 50%), calc(var(--ipv-dy13) * 1cqh - 50%), 0); }
+    87.5% { transform: translate3d(calc(var(--ipv-dx14) * 1cqw - 50%), calc(var(--ipv-dy14) * 1cqh - 50%), 0); }
+    93.75% { transform: translate3d(calc(var(--ipv-dx15) * 1cqw - 50%), calc(var(--ipv-dy15) * 1cqh - 50%), 0); }
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ipv-orbit-item {
+    animation: none !important;
+    left: var(--ipv-x);
+    top: var(--ipv-y);
+    transform: translate(-50%, -50%) !important;
+    will-change: auto;
+  }
+}
+
+/* ===== Oleada 3d: paridad claro/oscuro del ADN y las áreas =====
+   Esta hoja sigue el mecanismo del theme.css original (base =
+   oscuro, claro por media): aquí van los valores OSCUROS del
+   original que el clon tenía fijos en un valor intermedio, y en el
+   bloque claro los CLAROS correspondientes. */
+.system-area-dna .dna-helix-base.is-critical { --change: #ff657c; }
+.system-area-dna .dna-helix-base.is-modified { --change: #f0c34b; }
+.system-area-dna .dna-helix-base.is-added { --change: #55dda5; }
+.system-area-dna .system-dna-helix { --helix-ribbon-a: #5ed6aa; --helix-ribbon-b: #9ce5ca; }
+.system-area-dna .dna-helix-node {
+  border-color: #14222c;
+  background: radial-gradient(circle at 34% 28%, color-mix(in srgb, currentColor 44%, #edf5f8) 0 17%, color-mix(in srgb, currentColor 76%, #14222c) 20% 60%, color-mix(in srgb, currentColor 90%, #0c141b) 100%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent), 0 0 14px color-mix(in srgb, currentColor 54%, transparent), inset -3px -3px 5px color-mix(in srgb, #0c141b 72%, currentColor);
+}
+.system-area-dna .dna-helix-rung {
+  background: linear-gradient(90deg, currentColor, color-mix(in srgb, currentColor 30%, #edf5f8) 48%, currentColor);
+  box-shadow: none;
+}
+.system-area-dna .dna-helix-rung b, .system-area-dna .dna-helix-rung small { box-shadow: 0 0 0 3px #14222c; }
+.system-area-dna .dna-helix-rail { border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
+.system-area { box-shadow: 0 1px 1px rgb(0 0 0 / .22), 0 10px 28px rgb(0 0 0 / .18); }
+.system-evolution, .system-activity-board { box-shadow: var(--card-shadow); }
+@media (prefers-color-scheme: light) {
+  .system-area-dna .dna-helix-base.is-critical { --change: #bc3049; }
+  .system-area-dna .dna-helix-base.is-modified { --change: #8b6200; }
+  .system-area-dna .dna-helix-base.is-added { --change: #177a57; }
+  .system-area-dna .system-dna-helix { --helix-ribbon-a: #52b992; --helix-ribbon-b: #8bd1b8; }
+  .system-area-dna .dna-helix-node {
+    border-color: #f7fcfa;
+    background: currentColor;
+    box-shadow: inset 2px 2px 4px rgb(255 255 255 / .74), inset -4px -5px 7px rgb(0 0 0 / .2), 0 3px 7px rgb(17 55 47 / .2), 0 0 10px color-mix(in srgb, currentColor 25%, transparent);
+  }
+  .system-area-dna .dna-helix-rung {
+    background: transparent;
+    box-shadow: inset 0 1px 1px rgb(255 255 255 / .7), inset 0 -2px 2px rgb(0 0 0 / .2), 0 3px 6px rgb(17 55 47 / .16), 0 0 7px color-mix(in srgb, currentColor 22%, transparent);
+  }
+  .system-area-dna .dna-helix-rung b, .system-area-dna .dna-helix-rung small { box-shadow: none; }
+}
+
+/* Oleada 3d-bis: sombra clara de .system-area, literal del bloque
+   claro del original (0 8px 24px rgb(29 83 72 / .055)). */
+@media (prefers-color-scheme: light) {
+  .system-area { box-shadow: 0 1px 2px rgb(10 42 31 / .045), 0 8px 24px rgb(10 42 31 / .055); }
+}

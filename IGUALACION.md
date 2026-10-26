@@ -1,3 +1,103 @@
+# ACTUALIZACIÓN 2026-10-26 — OLEADA 2: ALMACÉN MANUAL REAL, INVENTARIO DE BIENES Y CIERRE DE LA FUGA DEL RESPALDO
+
+Datos reales cargados por la coordinación en `supabase/modulos-extended-import.sql`
+(app_settings `almacen-extended` y `venue-inventory`, media `foto-almacen` con 5
+fotos por slug) y construidos aquí como módulos vivos del clon.
+
+## Almacén manual (vista principal; la foto del IPV queda secundaria)
+- La pantalla Almacén abre ahora con el módulo manual del original
+  (`AlmacenTab`): conmutador Entrada / Rebajar producto, formularios
+  «Entrada manual» (producto, cantidad, fecha, nota opcional) y «Rebaja
+  manual» (producto con existencias, cantidad — nunca más que lo que
+  queda —, fecha y «Para qué se cogió» obligatorio), «Existencias
+  disponibles» CALCULADAS desde los movimientos (entrada suma, rebaja
+  resta, orden alfabético) y «Registro de movimientos» en orden de fecha
+  con su tipo, su motivo y su cantidad con signo.
+- Datos mostrados: **19 movimientos reales** (4 productos: Papel
+  sanitario 10−6=4 · Sazón frezko 14−12=2 · Codito 3−2=1 · Spageti
+  8−5=3) y los metadatos de `warehouse_product_meta_v1` (6 claves:
+  código de barras por producto, marca, categoría, descripción, fuente
+  de imagen y estado de búsqueda — se muestra lo que cada ficha trae;
+  Termómetro trae fuente y el resto, sobre todo códigos). Foto por
+  producto desde la media (`foto-almacen`, slug del nombre).
+- Alta/edición/baja SOLO admin, con confirmación de borrado y
+  recálculo de existencias; persistencia: se reescribe la clave
+  completa `app_settings 'almacen-extended'` en Supabase
+  (`sbSaveWarehouseExtended`, patrón workers-extended) o el
+  StoredData local (`saveWarehouseExtended`).
+- La foto del IPV (existencias por foto, Salidas → Gastos con su regla
+  de costo y registro de fotos) queda ÍNTEGRA como sección secundaria
+  declarada al final de la pantalla; ya no es la vista principal.
+- Diferencias honestas que quedan: sin escáner de códigos de barras
+  con cámara ni búsqueda en internet del producto (los códigos reales
+  se muestran desde los metadatos, la pantalla lo declara); las
+  rebajas manuales NO crean gasto automáticamente en esta copia (esa
+  sincronización almacén→gasto vive en el servidor del original y
+  crearla aquí duplicaría gastos: la pantalla lo dice junto al
+  formulario); sin foto de producto editable ni «Eliminar producto»
+  como acción separada (borrar sus movimientos lo retira del cálculo).
+
+## Inventario de bienes (destino propio)
+- Nueva pantalla Inventario (entrar por Más — su tarjeta ya no dice
+  «Siguiente fase» — y por la barra lateral): los **219 bienes reales**
+  de `app_settings 'venue-inventory'` con los campos del original
+  (`InventoryFields`): ID Inventario, fecha de adquisición, artículo,
+  coste por artículo, cantidad, departamento, estado, clasificación,
+  modelo, fabricante y observaciones. Lo que el dato no trae se
+  muestra vacío o «—», nunca inventado (solo 19 bienes traen coste,
+  21 fecha y 2 modelo: el «Valor conocido» suma solo los que traen
+  coste, como en el original).
+- Cabecera del original: Registros (219) · Cantidad activa · Valor
+  conocido con «Suma solo los artículos con coste · N sin coste».
+  Buscador (ID, artículo, departamento, modelo, fabricante,
+  observaciones) y filtros por departamento y estado como en el
+  original; la lista se agrupa por departamento (19 departamentos en
+  el dato real). Foto desde la media por slug del nombre si la
+  hubiera: el dato cargado no trae fotos de bienes y la ausencia se
+  dibuja como ausencia (icono), sin fingir ninguna.
+- Alta manual («El sistema asignará automáticamente el siguiente ID
+  consecutivo» — la serie real continúa en IN0220) y edición, SOLO
+  admin; persistencia: clave completa `app_settings
+  'venue-inventory'` (`sbSaveVenueInventory`) o StoredData local
+  (`saveVenueInventory`).
+- Diferencias honestas: sin importar/actualizar desde Excel, sin PDF
+  del inventario por correo y sin acciones separadas de «Dar de baja»
+  y «Eliminar» del original (la baja se hace editando el estado a
+  «Baja» en el mismo formulario de campos del original); sin foto del
+  bien editable.
+
+## Fuga del respaldo cerrada (integridad)
+- El importador (`parseBackup`) descartaba y el exportador
+  (`buildBackupExport`) vaciaba cinco colecciones que el respaldo SÍ
+  trae. Ahora viajan ÍNTEGRAS de ida y vuelta, sin tocar su contenido
+  (parseo = conservar el array tal como viene; reexportación = volcar
+  el array guardado): **receivablePhotos 23 · smsLogs 15 · smsOutbox
+  8 · monthlyArchives 1 · workerPayments 0** en el respaldo del
+  24-oct. En modo Supabase se persisten en `app_settings
+  'backup-collections'` al importar y se leen de ahí (no tienen tabla
+  propia); en modo local viven en el StoredData.
+- Las pantallas que las consumen las leen de ahí: Cobrar (eventos SMS
+  en la cronología de la cuenta por `receivableId` + chip «SMS
+  enviado» en la tarjeta morosa, como el original, y tarjeta de la
+  última foto de cuentas de `receivablePhotos`), Queen → SMS (buzón
+  real por categorías Enviados/Pendientes/Cancelados/Reenvíos desde
+  `smsOutbox` + registro de envíos de `smsLogs`; enviar SMS nuevos
+  sigue sin transporte y así se declara), Historial (tarjeta
+  «Meses del archivo» desde `monthlyArchives`, tal como viajan, sin
+  recalcular) y RH (sección «Pagos fuera de nómina (del respaldo)»
+  desde `workerPayments`).
+- Comprobación nueva en `scripts/verify-import.mjs`: ida-y-vuelta
+  parse→export→parse con los esperados calculados DESDE el propio
+  archivo leído y exigencia de contenido idéntico (JSON) en las
+  cinco colecciones.
+- Verificación de esta oleada: `npm run build` OK; batería completa
+  en verde — verify:import (con la ida-y-vuelta nueva), verify:ipv,
+  verify:rh-sync, verify:economia, verify:productos (32/32),
+  verify:documentos (68/68), verify:queen (46/46),
+  verify:automatizaciones (42/42) y verify:paridad (72/72).
+
+---
+
 # ACTUALIZACIÓN 2026-10-26 — PAQUETE DE CORRECCIÓN «ESPEJO» (mandato del dueño, 25-oct 23:44/23:47: «que sea el mismo con todo, un espejo, un clon del que diseñamos aquí» / «Haz una copia exacta de todo el sistema»)
 
 Las cuatro áreas se rehicieron POR PUERTO del código del original
@@ -159,8 +259,10 @@ Diferencias honestas:
   desde el abono real y declara que no hay estado de envío en esta copia.
 - Avatar con foto / `defaultPersonAvatar`: la foto no viaja → iniciales con
   la paleta existente.
-- La cronología no incluye eventos de SMS ni «arrastre a nueva quincena»:
-  `smsLogs` y `workerCycleStart` no viajan en el respaldo.
+- La cronología no incluye «arrastre a nueva quincena»:
+  `workerCycleStart` no viaja en el respaldo. (Los eventos de SMS SÍ
+  llegaron en la oleada 2: `smsLogs` viaja íntegro y la cronología los
+  muestra, con el chip «SMS enviado» en la tarjeta morosa.)
 
 ## Economía
 Rehecha como la EconomiaTab del original: 9 bloques con EconomyMeters
@@ -198,11 +300,14 @@ Diferencias honestas:
   del clon no expone la existencia previa a ese costo.
 
 ## Almacén
-Títulos y estructura literales de la superficie del original.
-Diferencia honesta (la mayor del área, declarada también en pantalla):
-- El almacén del original es un módulo manual vivo (escáner, movimientos,
-  existencias propias en su base de datos); el respaldo solo trae la foto
-  del IPV. El clon muestra esa foto y lo declara; no simula movimientos.
+ACTUALIZADO en la oleada 2 (ver la sección nueva al principio de este
+documento): el módulo manual del original ya es la vista principal
+(19 movimientos reales, existencias calculadas, metadatos, CRUD admin
+persistido en app_settings 'almacen-extended') y la foto del IPV queda
+como sección secundaria declarada. Diferencias que quedan: sin
+escáner de códigos de barras con cámara ni búsqueda en internet del
+producto, y las rebajas manuales no crean gasto automáticamente en
+esta copia (declarado en pantalla junto al formulario).
 
 ## Laboratorio
 Reescrito como puerto de LaboratorioTab del original (el clon tenía un
@@ -920,3 +1025,229 @@ entran en el radar: no se dibujan como cero». `aria-label` con la puntuación d
 
 *Generado el 2026-10-25 desde el código fuente de ambas apps. Sin modificar código de
 ninguna de las dos: solo lectura y este entregable.*
+
+---
+
+## 7. Fase media + ficha completa (2026-10-26): lo que esta fase cierra
+
+Con la tabla `public.media` (167 filas cargadas por SQL) y el estado
+extendido de `app_settings` ya en Supabase, esta fase CONECTA todo
+en la app. Cliente nuevo `src/lib/media.ts`: índice ligero por kind
+bajo demanda (sin `data_base64`) y binario por
+(kind, entity_key, variant) bajo demanda con caché en memoria →
+data URL; nunca se trae la tabla entera (rendimiento A16). El
+`slug()` es idéntico al del generador de la carga (NFD, sin
+diacríticos, `[^a-z0-9]+` → `-`).
+
+**Por pantalla:**
+
+- **Productos:** foto de cada producto (`foto-producto` por
+  slug(dept+nombre+um), la clave de `productKeyOf`) en la cabecera
+  de la tarjeta y en grande en el detalle. Sin fila en media, la
+  tarjeta va sin foto: ausencia, nunca imagen inventada.
+- **Elaboración:** la misma foto en la rejilla de productos (con la
+  letra de respaldo de antes) y en Barra · ml.
+- **Almacén:** foto del producto (`foto-almacen` por slug del
+  nombre) en existencias y en movimientos.
+- **RH:** foto del trabajador (`foto-trabajador` por slug del
+  nombre; sin foto, iniciales) en el organigrama, en la lista y en
+  la ficha. La ficha y el organigrama leen `workers-extended`
+  (emparejado por worker_key/nombre normalizado) con la precedencia
+  del original: turno válido = corrección → detectado del IPV →
+  puesto a mano (la ficha declara la fuente); estrellas pintadas
+  si > 0 (organigrama, lista y ficha); días fijos y día de descanso
+  visibles en la ficha; contrato cancelado con banda roja
+  «CANCELADO» y su fecha (Yeisi, 2026-10-17). El texto del
+  organigrama quedó corregido: el turno a mano y las estrellas YA
+  viajan por esta vía.
+- **Cobrar/Cuentas:** foto del cliente (`foto-cliente`, coincidencia
+  por slug completo y, si no, por primer nombre) en la tarjeta de
+  cuenta y en los grupos; sin foto, el avatar de iniciales de siempre.
+- **Perfil:** la foto `foto-perfil` (perfil-admin) en el perfil
+  lateral de la app y en el avatar del usuario en la consola de
+  Queen; sin foto, las iniciales.
+- **Documentos:** el cuño APROBADO real (`activo-sistema` ·
+  cuno-la-reina-aprobado) se incrusta en el bloque de certificación
+  al abrir la nómina y el informe, sustituyendo el texto «Cuño no
+  disponible en este dispositivo.»; tarjeta «Firmas y cuño» con la
+  vista previa del cuño y del logotipo. Las firmas personales
+  siguen marcadas «Firma autorizada pendiente» en el documento:
+  el trazo de cada persona vive en su ficha de RH y el bloque de
+  documentos no lo sustituye por su cuenta. El menú sigue EXCLUIDO
+  de firma y cuño (regla del dueño), intacto.
+- **Sistema · Evolución:** el panel muestra el HISTORIAL REAL del
+  servidor (`app_settings` · `queen-evolution-history`: Infante
+  40.4 → Joven 50.0, con fecha y motivo), que MANDA sobre el
+  snapshot local de esta copia; la procedencia queda declarada en
+  el propio panel.
+- **Días e Historial:** botones de descarga del IPV original y del
+  actualizado de cada fecha desde la media (`ipv-original` /
+  `ipv-actualizado`), solo cuando el archivo existe para esa fecha,
+  como el historial de versiones del original. El resumen del día
+  en texto se mantiene como estaba.
+
+**Ficha completa (RH), puerto del original:**
+
+- **Lienzo de firma:** firma con dedo o lápiz óptico (presión si
+  hay lápiz, rechazo de palma, eventos coalescidos, como el
+  SignaturePad del original), con su texto «Firma con el lápiz
+  óptico o con el dedo…», borrar y guardar. Solo el administrador
+  firma/guarda/borra; la firma se guarda en media
+  (`firma-trabajador`, PNG) y, si existe, se muestra en la ficha y
+  en la credencial. Hoy NO existe ninguna firma (en el original
+  `signature_data` viene vacío en las 25 fichas): la ficha parte
+  sin firma, como en el original.
+- **Credencial digital:** tarjeta 638/1011 con los dibujos y
+  posiciones del original, foto, logotipo blanco, nombre, cargo,
+  identificador `LR-TRAB-…` del id real del trabajador y QR
+  generado con la librería `qrcode`. Botones «Mostrar credencial
+  digital» (pantalla completa) y «Descargar credencial en PDF»;
+  si falta foto, ocupación, carné o firma, el aviso del original:
+  «Completa … para generar la credencial final».
+- **Escáner de credenciales:** sección en RH que lee el QR con la
+  cámara (`jsqr` + getUserMedia), con respaldo por foto y por
+  entrada manual del código; al leerlo abre la ficha de la persona.
+- **Documentos del trabajador:** carnet (frente y reverso), tarjeta
+  bancaria, título y documentos extra, en media
+  (`documento-trabajador` con su variant): los 4 documentos reales
+  de Yadir Medina Oliva se ven desde la carga inicial; visor de
+  imagen o PDF; subir/reemplazar/eliminar solo administrador.
+
+**Librerías:** `qrcode` y `jsqr` instaladas y cargadas SOLO como
+import dinámico perezoso (trozos separados del paquete: ~26 KB y
+~131 KB; el arranque no paga su peso), como el original.
+
+**Desviaciones honestas de esta fase:**
+
+1. **Firma guardada como imagen, no como trazos:** el original
+   guarda la firma como JSON de trazos vectoriales
+   (`signature_data`); en esta copia se guarda el PNG rasterizado
+   del lienzo en la tabla media (es el contrato fijado para el
+   clon). La firma se ve igual en ficha y credencial; no se puede
+   re-dibujar trazo a trazo.
+2. **Identificador derivado solo cuando falta el real:** el id de
+   credencial sale del id real del estado extendido; para un
+   trabajador sin registro extendido se deriva un número estable
+   de su clave (900000 + hash) para que la credencial no quede sin
+   identificador. No sustituye a ningún id real.
+3. **PDF de la credencial:** se genera desde la propia tarjeta
+   (ventana de impresión con la tarjeta reconstruida en HTML y el
+   QR dibujado desde su matriz), no con el generador de PDF del
+   servidor del original.
+4. **Sin extracción automática de documentos:** la verificación
+   del carnet del original extrae los datos en su servidor
+   (`document_extracts`); esta copia muestra los datos de la ficha
+   frente al documento y declara «sin extracción automática en
+   esta copia». No se simula ninguna extracción.
+5. **Fotos de producto y nombres de catálogo:** la coincidencia
+   es exacta por slug(dept+nombre+um). Algunos archivos cargados
+   traen el nombre de otra época (p. ej. el stem de «ron black
+   tears», o «vino-titnto» con errata): esos productos se quedan
+   sin foto hasta que el nombre coincida; no se hace coincidencia
+   difusa para no enseñar la foto de otro producto.
+6. **Modo local:** sin Supabase configurado, la media queda vacía
+   y mandan los respaldos (iniciales, textos de ausencia): la app
+   no inventa binarios.
+
+---
+
+# CIERRE — COPIA INTEGRAL POR INVENTARIO CERRADO (26-oct, coordinación)
+
+## La foto de datos es el estado ACTUAL del original
+La carga de esta copia NO es el respaldo del 24-oct: es la foto extraída del servidor original el 26-oct (acción `exportdata`), guardada como `backup-sda-2026-10-26.json` (24 días, 1→24-oct). Sus totales se verificaron contra los resúmenes que calcula el propio servidor (`getcoresnapshot`): **24 días · ventas 2.786.190 · bruta 718.191 · neta 696.096 · cuadre 0 · 119 cuentas · 51 gastos · 25 trabajadores · nóminas 95.000 y 86.500** — coincidencia exacta por dos vías independientes. El SQL de carga es `supabase/import-backup-2026-10-26.sql` (generado con los totales de control de ESTA foto; `verify:import` pasa contra ambos respaldos). El del 24-oct queda como referencia de contraste y regresión.
+
+## Orden de carga en un proyecto Supabase (tras el login del dueño)
+1. `supabase/schema.sql` (incluye la tabla `media` con RLS).
+2. `supabase/import-backup-2026-10-26.sql` (los datos de la foto actual).
+3. `supabase/media-import.sql` (167 binarios reales; SOLO por la vía autenticada — nunca archivos estáticos).
+4. `supabase/workers-extended-import.sql` (turnos asignados, estrellas, contrato cancelado, historial real de evolución de Queen).
+5. `supabase/modulos-extended-import.sql` (almacén manual, inventario de bienes, versiones de IPV).
+
+## Qué cerró esta fase (todo verificado, batería entera en verde)
+- Organigrama-flujo de RH (con turno válido = corrección → detectado → asignado, estrellas y fotos reales).
+- Panel completo de evolución de Queen en Sistema + historial real del servidor (Infante 40,4 → Joven 50,0).
+- **Sistema inmune en vivo** dentro del Banco de errores (campo animado del original, alimentado del banco real del clon; 16 checks nuevos en verify:paridad, que ya suma 72).
+- Media real tras el login: 35 fotos de producto, 5 de almacén, 18 de trabajadores, 4 de clientes, 4 documentos (de Yadir: carnet frente/reverso, tarjeta bancaria, título), foto de perfil, cuño y logos, 22 archivos IPV y 74 adjuntos/gráficos de boletines. **Firmas: no existe ninguna guardada en el original** (verificado en su BD: `signature_data` vacío en las 25 fichas, sin formularios ni contratos guardados) — el lienzo de firma está portado y parte vacío, como en el original.
+- Ficha completa: firma, credencial 638/1011 con QR real, escáner de credenciales, documentos con subida/visor.
+- Almacén manual (19 movimientos reales, existencias calculadas) e Inventario de bienes (219 reales) con persistencia admin en app_settings.
+- Fuga del respaldo cerrada: receivablePhotos, smsLogs, smsOutbox, monthlyArchives y workerPayments viajan íntegros de ida y vuelta (contenido idéntico verificado).
+- Service worker v3: red primero para JS/CSS/HTML; cada despliegue se aplica al abrir.
+- Inventario cerrado: **995 líneas — PRESENTE 225 · PARCIAL 198 · AUSENTE 572**, con `npm run verify:inventario` recorriéndolo entero y fallando si código e inventario se separan.
+
+## Lo que sigue sin viajar (declarado, nunca simulado)
+El inventario línea a línea es la lista completa; en síntesis queda fuera lo que vive SOLO como inteligencia del servidor del original y no como pantalla o dato exportable: la memoria interna de Queen en su servidor (decisiones, predicciones, lecciones, conversación persistida, auditoría y disciplina automáticas), el sistema inmune DE SERVIDOR (el campo en vivo SÍ está; la intervención automática sigue diferida con las funciones en la nube que el dueño aplazó), el motor offline con IndexedDB del original (el clon es PWA con service worker propio), las herramientas internas de desarrollo (QA, corrector ortográfico interno, banco de tests), los constructores XLSX del IPV de vuelta (ipvRoundTrip: el clon descarga los XLSX reales guardados, no los regenera), la extracción automática de documentos por OCR del servidor, y los CRUD completos de módulos secundarios que el original tiene y esta copia cubre en lectura (Entradas, Extras/Entidades, Existencias como libro, Cronología global, Ajustes propios con PIN/biometría — sustituidos por la capa de acceso Supabase, la única diferencia admitida). Siete IPV originales del 14–17 oct están referenciados en el original pero sus archivos ya no existen ni en su propio almacén: no hay nada que copiar.
+
+## Auditoría visual sintética — EJECUTADA (26-oct, harness reconstruido)
+
+La auditoría que el paquete espejo anterior corrió sin guardar el harness quedó reconstruida y guardada en el repo: `scripts/audit-visual.mjs` (comando `npm run audit:visual`; requiere playwright-core y un Chromium headless — si falta, lo dice y no simula nada). Corre de verdad, no por análisis estático: Chromium 156 headless (caché de Playwright de la VM), la app en **modo local** (build propio con Supabase vacío cuyo CSS salió **byte-idéntico al de dist/**, comprobado por hash en la propia corrida) sembrada por la vía real de la app — login local → cambio de contraseña → «Importar respaldo del SDA» — con la foto fresca `backup-sda-2026-10-26.json` (24 días, 1–24 oct, en las 4 combinaciones de contexto).
+
+**Alcance:** las 17 vistas de la app (las 15 de la matriz original más «cuentas» y «mas») × claro/oscuro × 360 px (Galaxy A16) y 1280 px = **68 combinaciones, todas renderizando, 0 errores JS**. Informe completo y capturas en `audits/audit-2026-10-26/` (report.json + 68 capturas + 4 del campo inmune).
+
+**Resultado final: 0 defectos duros.** Sin un solo desborde horizontal de página ni elementos fuera del viewport en ninguna combinación. La corrida inicial encontró 3 defectos reales, corregidos solo en CSS/presentación (sin tocar datos, cifras ni lógica), tras lo cual se reconstruyó y la auditoría se repitió entera:
+
+1. **Inicio a 360 px desbordaba a 590 px**: la tarjeta de la Línea de tiempo es ítem de la rejilla «El día y su cierre» y su tamaño mínimo automático (la cinta de 540 px) la estiraba. `min-width: 0` en `.hm-future-card` y su carril: la tarjeta encoge y la cinta se desplaza dentro de su carril, como pide su propio texto. Verificado en captura: tarjeta a 328 px, cinta desplazable.
+2. **Elaboración a 360 px con las pestañas ilegibles** («Pro…/Re…»): al portar las pestañas se habían quedado fuera los bloques responsive del theme.css original. Portados tal cual (`sectionsMirror.css`): `@media (min-width: 1100px)`, `@media (max-width: 680px)` (principales a 3 columnas, área a 2, rejilla de productos a 1) y `@media (max-width: 390px)` completos. Las de área se leen enteras («Todas 66 · Cocina 44 · Pizzas 2 · Coctelería 20»); en las principales aún se eliden «Rentabilidad» y «Paquetes y rendimientos» a 360 px — con las mismas cuentas de ancho que en el original en ese dispositivo (rejilla de 3, fuente 11 px, contador de 20 px): paridad, no recorte añadido.
+3. **Gráficos en oscuro con los colores de día**: el bloque oscuro no redefinía las 8 series `--chart-*`. Añadidas con los valores del bloque oscuro del original (#42d392, #a7d7bc, #42cfe3, #81968a, #78b898, #62ddb0, #a1b5a9, #3fb582).
+
+**Paridad de tokens (check estático sobre el CSS entregado):** 45 tokens en claro, 31 redefinidos en oscuro, **0 tokens de color sin redefinir**; heredan el claro solo `--accent-ink`, `--gold` y `--on-accent`, que el bloque oscuro del propio original tampoco redefine (acentos constantes). Reglas de ancho: max-width en 350/380/390/420/430 (banda ≤360 cubierta) y min-width de 700 a 1100 (banda tablet cubierta). Ninguna animación con `transform` aplicada a contenedores de página (las de entrada son solo opacidad). `--card-shadow` sí se redefine en oscuro.
+
+**Sistema inmune en vivo (criterios de la skill, verificados en runtime y en fuente):** fondo sólido en ambos temas (pintado en el propio canvas: #e9f3ee / #0a1e26) con bandas alternas por carril; células con cuerpo saturado, borde definido y núcleo (135–154 colores distintos por frame; píxeles no-fondo 12–49 %); rótulos de carril y etiquetas de anomalía sobre píldoras sólidas; **nada flota sobre el campo** — chips, barra de amenaza, leyenda y registro viven en `.immune-info` bajo el lienzo (comprobado en el DOM de las 4 combinaciones); el toque sobre una célula abre su tarjeta con datos reales (abierta en 7 de 8 contextos entre las dos corridas completas; el toque es sensible a la posición porque las células se mueven). Revisión visual de las capturas del campo en claro y oscuro: legible a brillo real, sin disolverse en degradado.
+
+**Candidatos revisados a mano y clasificados «por diseño» (sin tocar):** elipsis del subtítulo de marca en la barra superior a 360 px (regla explícita `nowrap + ellipsis`; el texto completo vive en la barra lateral y en el acceso), etiqueta accesible de Queen de 1 px (oculta a propósito), nombres del organigrama con elipsis (la misma regla del original), etiquetas anguladas de los gráficos ligeros (rotadas) y el desborde interno de los SVG de los mapas de Sistema (recortado decorativo; etiquetas legibles en captura a 360 y 1280, en claro y oscuro).
+
+---
+
+# OLEADA 3 — LAS 6 SECCIONES DE «MÁS» CONECTADAS (26-oct, a orden del dueño)
+
+El dueño encontró las tarjetas de «Más» que mostraban «Siguiente fase» y ordenó conectarlas ANTES de subir el zip. Hecho: **las 19 tarjetas de la rejilla abren una pantalla real**; la etiqueta «Siguiente fase» ya no existe en el código (check en verify:paridad). Cada pantalla espeja la del original con los datos que de verdad viajan en la foto fresca del 26-oct:
+
+- **Entradas** (`src/screens/Entradas.tsx`, EntradasTab): KPIs del mes, inversión por departamento con barras, filtro por departamento, buscador y detalle agrupado por fecha desde `DayData.entriesDetail` (139 registros · 1.841.620 en la foto). Declarado en pantalla: las fotos de factura de entradas viven como blob en el servidor del original y no viajan; el PDF de factura tampoco se genera en esta copia.
+- **Otros ingresos** (`src/screens/Extras.tsx`, ExtrasTab): lectura espejo del ExtrasTab — total del mes, las 4 categorías del original (Coctelería, Pizzería, Entrada, Mesas) con su misma heurística de clasificación y todos los registros, desde `DayData.extras` (2 registros · 8.500 en la foto, cuadrados contra Economía y el boletín). Sin CRUD: la tabla de registro manual del original no existe en el clon y no se simula; declarado en pantalla.
+- **Existencias** (`src/screens/Existencias.tsx`, ExistenciasTab): destino propio con el MISMO `buildInventoryBook` de Productos (sin duplicar lógica): descuadres primero, buscador, lista por departamento y cadena por día del producto elegido. Declarado: los ajustes manuales del libro (rebajas/traslados/saldo inicial a mano) se guardan en el servidor del original y no viajan; aquí no se registran.
+- **Archivo** (`src/screens/Archivo.tsx`): meses desde `StoredData.monthlyArchives` ÍNTEGRO (con consumo de la casa y resultado efectivo tal como los calculó el original), detalle del mes derivado de los registros reales (días, gastos, cuentas pagadas/nacidas, boletines) y la sección «Lo que NO se archiva ni se reinicia» con sus tres tarjetas vivas. Declarado: archivar un mes es acción del servidor del original — la copia muestra el estado del respaldo y no lo cambia; los PDF/facturas del mes no se generan (constructor no portado).
+- **Cronología** (`src/screens/Cronologia.tsx`): CRONO_CATS (ipv, rh, cuentas, gastos, productos, boletines) con filtros, buscador, despliegue y salto a la sección de origen. Cada evento se DERIVA de un registro real: días, nóminas, pagos fuera de nómina, contrato cancelado, cuentas/abonos (del respaldo y locales)/saldadas, SMS de cobro enviados, gastos, cambios de precio y de costo detectados por el catálogo y boletines. El historial interno por trabajador del registro de RH del original no viaja y no se reconstruye.
+- **Ajustes** (`src/screens/Ajustes.tsx`, AjustesTab): perfiles y roles reales de la capa del clon, ancla de ciclos de RH editable por el administrador con la misma vía que RH (local y Supabase), destinatarios fijos del boletín con enlace a Historial, enlaces a Documentos/Sistema (sin duplicar pantallas) y restablecer datos locales en modo local. Declarado en pantalla: el PIN y la biometría del original no existen en esta copia — los sustituye la capa de acceso, la única diferencia admitida — y el perfil se consulta, no se edita.
+
+**Inventario tras la oleada 3** (recuento mecánico, `npm run verify:inventario` en verde): **995 líneas — PRESENTE 236 · PARCIAL 200 · AUSENTE 559**. De las líneas tocadas por esta oleada: 11 pasaron de AUSENTE a PRESENTE (las 6 pestañas, las pantallas de Extras/Entradas/Existencias, «Lo que NO se archiva» y el detalle del mes) y 3 de AUSENTE a PARCIAL (pantalla Archivo como lectura local, Cronología y pantalla Ajustes). Lo que sigue AUSENTE en estos módulos queda con su causa escrita en su fila: acciones de servidor (archivar mes, CRUD de extras, facturas y sus PDF, ajustes de inventario, edición de perfil, bandeja de correo del original).
+
+**Verificación de la oleada 3:** build limpio (6 trozos nuevos bajo demanda); batería entera en verde; verify:paridad ampliado con 32 checks de la oleada (104 en total: las 6 tarjetas con destino, las 6 secciones en el tipo y en App, las fuentes de datos de cada pantalla y las declaraciones honestas presentes); verify:inventario OK; auditoría visual sintética repetida con la matriz ampliada a 23 vistas (las 6 nuevas incluidas, llegando por su tarjeta de «Más») × claro/oscuro × 360/1280 = 92 combinaciones. Manifiesto de GitHub: 109 rutas.
+
+---
+
+## Apéndice OLEADA 3b — Tarjetas de contactos de Cuentas/Cobrar (26-oct, orden de Yadir 09:31)
+
+**Qué difería.** La vista «Clientes» de Cobrar del clon usaba una tarjeta propia (avatar con iniciales, varias cifras y chips de diseño local) que no se parecía a la del original. **Qué se portó** (regla a regla desde `ClientesPanel`, App.tsx:10690 del original, y su CSS en theme.css:3717-3865 y :11234): tarjeta `contact-card-oneui account-tinted-card` con `--card-accent` por estado de pago derivado como `loadClientProfiles` del servidor (casa→amarillo/`var(--gold)`, trabajador→morado `#7c3aed` o rojo si vencido, cliente→rojo si morosa o media >7 días, verde si paga en ≤7 días, neutro sin historial) y etiquetas literales («Administrativo · consumo de la casa», «Trabajador · plazo de 15 días hábiles para pagar», «Buena paga: suele pagar dentro del plazo de 7 días»…); fila de llamada con avatar de 64 px, botón de llamada verde `#13a85a` (`tel:` real) y botón SMS (`sms:` real); identidad centrada (nombre, Móvil, Correo, CI salvo identidad de trabajador, Dirección); banda «Enlazado con RH · CI · Cuenta» cuando el contacto enlaza con una ficha de RH (derivación `workerKeyForAccount`, con la regla Nelson/Nelsito); stats Cuentas / Pendientes / **Días al pagar** (media de días reales de pago, con decimales como el original); «Debe ahora: X CUP» **solo** si el saldo pendiente es > 0 (regla del dueño); tocar la tarjeta filtra sus cuentas, como en el original. Buscador fijo con el placeholder literal y chips de categoría Todas/Clientes/Trabajadores/Administrativo.
+
+**Fotos de clientes — estado verificado.** El original muestra la foto del cliente en el avatar de la tarjeta de contacto y, vía `debtorAvatar`, en las partidas pagadas y cabeceras de grupo de cuentas; sin foto usa `default-person-avatar`. En el clon: las 4 `foto-cliente` extraídas (dayami-daya, ismael-morales-vivas, jesus, noel) se sirven desde la tabla `media`; y el avatar genérico va **empaquetado en el código del clon** (`src/assets/default-person-avatar.jpg`, sha256 `b19de296…`, byte a byte el archivo que el original importa desde su `assets/`), así que el respaldo se ve siempre — también en modo local o antes de aplicar `media-import.sql` — y nunca cae a iniciales (defectos corregidos en esta oleada: antes el clon caía a iniciales con el color de la persona). Nota de GitHub: ese `.jpg` es binario; viaja dentro del zip (dist) y el push por `push-files` (solo texto) no lo puede llevar — queda anotado en el manifiesto. `receivablePhotos` (24) NO son fotos de personas: son la foto contable diaria de cuentas y el clon ya las trata como tal. Las fotos de productos están cableadas por la misma tabla `media` (Productos.tsx:238,254): se verán al aplicar `media-import.sql` y subir el zip; sin defecto de código. Cliente/producto sin foto va sin foto, como en el original.
+
+**Declarado (no fingido).** La ficha personal (teléfono, correo, CI, dirección, notas) no viaja en el respaldo: llega solo lo que trae la ficha RH de los trabajadores; el resto se muestra vacío como hace el original con campos sin dato. Editar contacto, subir foto, fusionar duplicados y eliminar son acciones del servidor original: no se portan (filas 161-164 del inventario) y la pantalla lo declara al pie.
+
+## Apéndice OLEADA 3c — Sistema solar animado (26-oct, orden de Yadir 09:38)
+
+**Causa.** En el clon no existía ninguno de los tres `@keyframes` (`ipv-planet-float`, `ipv-heartbeat`, `ipv-node-orbit`) ni el bloque `@supports (width: 1cqw)`: las clases declaraban animaciones contra keyframes ausentes y los nodos quedaban fijos en su posición inicial («estático como una foto»). Tampoco existía la pausa fuera de pantalla. **Puerto** (valores byte a byte de theme.css): los dos keyframes, el bloque `@supports` completo con `container-type: size`, la órbita con 17 paradas (`--ipv-dx0..15`/`--ipv-dy0..15` × 1cqw/1cqh − 50%), su bloque `prefers-reduced-motion`, las reglas `.is-visible`/`.is-paused` de la constelación y el `IntersectionObserver` del original (rootMargin 80px, threshold 0.02 + visibilitychange) en `IpvNeuralMap`. El fondo de `.ipv-neural-constellation` ya era idéntico al original (mismos degradados); no hay contenedor extra con fondo propio. **Barrido anti-recurrencia**: de todo el CSS del clon, 6 nombres referenciados sin definición → portados `md-fade-up`, `system-status-ring`, `dna-problem-blink`; `warehouse-spin` no está definido **ni en el original** (su spinner también está quieto allí): el clon lo define como rotación simple — mejora declarada, no espejo. El barrido quedó como puerta permanente en `verify:paridad` (67 animaciones referenciadas, todas definidas) y la auditoría visual demuestra el movimiento muestreando los centros de los nodos orbitales en dos instantes (ver informe de auditoría).
+
+## Apéndice OLEADA 3d — Paridad claro/oscuro sistemática (26-oct, orden de Yadir 09:41)
+
+**Método.** Barrido regla a regla: se calculan los estilos efectivos por esquema (base + `@media (prefers-color-scheme)`) del theme.css original y de todo el CSS del clon, resolviendo `var()` contra las variables de cada esquema, y se comparan solo las propiedades que el original adapta por esquema. **Causa raíz**: la paleta oscura del clon era verde (fondo `#0a1411`, `--deep` fijo `#0b3d2e`) y la del original es pizarra azulada. **Alineación de tokens en `src/index.css`**: oscuro `--bg #0c141b`, `--surface #14222c`, `--surface-alt #1b2d39`, `--surface-tonal #182832`, `--border #29404d`, `--text #edf5f8`, `--dim #a7bac5`, `--deep #102b27`, `--deep-2 #143d35`, `--turquoise-soft #17343b`, sombras de tarjeta del original; claro: sombras y `--chart-grid` del original y variables que faltaban (`--chart-sky`, `--chart-cursor`, `--button-shadow`, `--space-*`, textos de Queen). **Puertos de componentes**: `.chip` (fondo surface + borde), `select` (borde turquesa), `.queen-orb` y su imagen por esquema, `.tab-header-chip` oscuro, `.queen-panel-count-warn` oscuro, `.lab-card`, tarjetas de Elaboración en oscuro (sombra y textos legibles de pestaña activa/receta lista), el conjunto ADN de Sistema (colores de cambio, nodos, peldaños y riel por esquema), sombras de `.system-area`/evolución/actividad, borde de `.smart-summary` (= `var(--border)` del original) y sombra oscura de `.elaboration-bar-card`. **Residuo final del barrido: 2 entradas, ambas documentadas** — `.btn { box-shadow: none }` (regla permanente del dueño: botones sin sombras; gana a la fidelidad) y `.system-change-list span` (selector fantasma: no se renderiza en el clon; su CSS es residual sin efecto visible). No se tocaron: el fondo aurora `--ambient-bg` (aprobado por Yadir) ni los fondos auto-contenidos de `.queen-organism`/etapa de evolución (adaptan por esquema dentro del propio componente; en el original el fondo vive en otro elemento).
+
+## Apéndice OLEADA 3e — Tarjetas de cuenta de Cobrar (26-oct, orden de Yadir 09:46)
+
+**Puerto literal de `pendingCard`/`paidItem` y `vigenciaCuenta` (App.tsx:886-958, 11540+).** La tarjeta del clon usaba una fórmula propia de envejecimiento (hsl 145→0, saturación 62 %, lightness 66→42) y mostraba avatar también en pendientes. Ahora: color de vigencia con la fórmula del original (hue 142→0, `hsl(h,72%,54→48%)`, suave `hsla(h,72%,48%,.14)`, borde `hsla(h,72%,44%,.6)`), etiquetas y detalle literales («Vigente · recién creada», «Vence hoy», «Morosa · plazo vencido», «venció el … · pasó el plazo de N días…»), **ventana del trabajador en días HÁBILES** (el clon contaba días naturales: `addBusinessDaysISO`/`businessDaysElapsed` portados a `lib/utils` y `dueDate`/`agingRatio` alineados); marcas fijas PAID (vars `--paid*`), HOUSE (`var(--gold)`, «Consumo de la casa · sin vencimiento ni aviso de demora») y WORKER (`#7c3aed`) para el chip de categoría; estructura del original: nombre semibold 14 px con insignia «Del IPV»/«Manual» y chip de categoría, sublínea 11 px «fecha · hace N días · detalle», importe a la derecha en display 18 px con «Debe X de Y · abonado Z», bloque de marca (chip con punto + detalle + barra de 6 px), borde de tarjeta por estado y `box-shadow: inset 3px 0 0` del color de la marca, tinte `account-tinted-card`, radio 16 px (24 px desde 640 px, como el `sm:` del original). **Sin avatar en pendientes** (como el original); la pagada lleva el avatar de 44 px y su bloque de marca «Pagada». **Diferencia declarada**: el original distingue la morosa «de archivo» (`morosaSince`) de la vencida por calendario; ese dato no viaja, así que la tarjeta del clon presenta la vencida con la forma de vencida del original («Morosa · plazo vencido» + su detalle). El ActionMenu del original (registrar pago, mover a morosas, editar, eliminar) es acción de servidor no portada; el clon conserva su botón «Abonar», el arrastre (pagar/historial) y la cronología al tocar, que ya espejaban ese comportamiento.
+
+---
+
+## Cierre de la ronda completa (oleadas 3–3e, 26-oct)
+
+**Entregable:** `queen-sda-dist.zip` regenerado con todo junto — **756.041 B, sha256 `c8f9c9d74c7439f5c412ed05564b77f3302d67f48790d3b13d7ae0de38d6fd8a`, 40 entradas** (sustituye al de 720.922 B / `4a59156f…`). Contenido: el `dist/` verificado, con las 6 pantallas nuevas como trozos propios y el avatar genérico empaquetado.
+
+**Puertas, todas en verde sobre el dist entregado:** build limpio; `verify:import` OK contra AMBOS respaldos (23 días/2.662.090 y 24 días/2.786.190, cuadre 0, las 5 colecciones íntegras); `verify:ipv`, `verify:rh-sync`, `verify:economia` OK; productos 32 ok; documentos 68/68; queen 46 ok; automatizaciones 42 ok; `verify:paridad` **113 ok, 0 fallos** (incluye como puertas permanentes el barrido de animaciones referenciadas-vs-definidas, los keyframes y el `@supports` del solar, las tarjetas de contacto/cuenta y la paleta oscura alineada); `verify:inventario` OK — **recuento final: PRESENTE 235 · PARCIAL 202 · AUSENTE 558** (de 995).
+
+**Auditoría visual sintética final** (`audits/audit-2026-10-26/report.json`): 23 vistas × claro/oscuro × 360/1280 = **92 combinaciones, 0 defectos duros, 0 errores JS, 0 desbordes de página**, CSS auditado byte-idéntico al de dist. **Movimiento del solar demostrado** en claro y oscuro: 8 nodos `.ipv-orbit-item` con `animation-name: ipv-node-orbit` cuyos centros difieren entre dos muestras separadas 1200 ms. Avisos blandos (59): los de siempre (subtítulo de marca con elipsis a 360, etiquetas `sr-only` medidas por el harness, nombres largos del organigrama, etiquetas anguladas de gráficos, un toque del inmune a 1280 claro sin tarjeta) — ninguno es defecto duro ni nuevo de esta ronda.
+
+**Divergencias visuales que QUEDAN tras la ronda (lista explícita, por pantalla):**
+- **Global** — `.btn { box-shadow: none }`: el original sombrea algunos botones; la regla del dueño «botones sin sombras» gana a la fidelidad. Y el fondo aurora `--ambient-bg` es el aprobado por Yadir, no el fondo plano del theme.css.
+- **Sistema** — CSS residual de selectores que el clon no renderiza (p. ej. `.system-change-list`): sin efecto visible; el barrido lo cuenta como DISTINTO solo por completitud. `warehouse-spin` está definido en el clon y **no** en el original (allí ese spinner también está quieto): divergencia a favor, declarada.
+- **Queen** — el anillo de salud vive en `.queen-organism-expression`; en el original vive en `.queen-orb-health-aura` (no portado como elemento): misma información, otro elemento.
+- **Cobrar/Cuentas (contactos)** — la ficha personal no viaja en el respaldo: teléfono/correo/CI/dirección solo existen vía la ficha RH de trabajadores; el resto se ve vacío como en el original con campos sin dato. Correo: ningún contacto trae correo en los datos que viajan («Sin correo»). Fotos: 4 clientes vía tabla media + avatar genérico empaquetado; el resto, avatar genérico — igual que el original sin foto.
+- **Cobrar (cuentas)** — el clon no distingue la morosa «de archivo» (`morosaSince` no viaja) de la vencida por calendario: presenta la vencida con la forma de vencida del original. El ActionMenu de la tarjeta (registrar pago/mover a morosas/editar/eliminar) es acción de servidor no portada; el clon conserva «Abonar», arrastre y cronología.
+- **Oleada 3 (lecturas)** — Entradas sin fotos de factura ni PDF (no viajan / no se genera), Extras sin CRUD ni PDF, Existencias sin ajustes manuales, Archivo sin la acción de archivar mes, Cronología sin el historial interno de acciones de RH, Ajustes sin edición de perfil ni PIN/biometría (sustituidos por la capa de acceso): todo declarado EN pantalla y en su fila del inventario; la lectura es espejo con los datos reales.
