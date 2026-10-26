@@ -22,12 +22,18 @@
 //   el logo, el QR y la firma reales ya cargados de media.
 // - qrcode y jsqr se cargan SOLO como import dinámico perezoso
 //   (igual que el original): no pesan en el arranque de la app.
+// - Documento único de contratación (WorkerHiringDocuments.tsx): el
+//   asistente en 6 pasos del original con su formulario y su contrato
+//   guardados en el extendido de la ficha; sus adaptaciones (firmas
+//   de los firmantes por media, borrador de currículum en el
+//   dispositivo, PDF por impresión) están declaradas en su cabecera.
 
 import {
   useCallback, useEffect, useRef, useState,
   type PointerEvent as ReactPointerEvent,
 } from 'react'
-import type { Worker, WorkerExtended } from '../types'
+import type { Worker, WorkerExtended, WorkerHiringForm, WorkerWorkContract } from '../types'
+import WorkerHiringDocuments, { type HiringCiclo, type HiringSigners } from './WorkerHiringDocuments'
 import { Icon } from './icons'
 import { WorkerPhoto } from './MediaImage'
 import { printHtml } from '../lib/download'
@@ -847,10 +853,17 @@ export function WorkerQrScanner({ workers, extendedList, onOpenWorker }: {
 /** La ficha completa de RH: documentos, firma y credencial, en el
  *  orden del original, con la firma compartida entre el lienzo y
  *  la credencial (al guardarla, la credencial la repinta). */
-export default function WorkerFichaCompleta({ worker, extended, isAdmin }: {
+export default function WorkerFichaCompleta({ worker, extended, isAdmin, signers, ciclo, onSaveHiring, onMessage }: {
   worker: Worker
   extended: WorkerExtended | null
   isAdmin: boolean
+  /** Firmantes del documento (Administrador/Director) detectados en
+   *  el registro; sin ellos el asistente muestra los avisos del
+   *  original y no exporta. */
+  signers?: HiringSigners
+  ciclo?: HiringCiclo | null
+  onSaveHiring?: (hiringForm: WorkerHiringForm, workContract: WorkerWorkContract) => Promise<void>
+  onMessage?: (message: string) => void
 }) {
   const [firmaVersion, setFirmaVersion] = useState(0)
   return (
@@ -858,6 +871,20 @@ export default function WorkerFichaCompleta({ worker, extended, isAdmin }: {
       <WorkerDocuments worker={worker} isAdmin={isAdmin} />
       <FirmaPad worker={worker} isAdmin={isAdmin} onSaved={() => setFirmaVersion((v) => v + 1)} />
       <WorkerCredential worker={worker} extended={extended} firmaVersion={firmaVersion} />
+      {/* El asistente de contratación vive dentro de la ficha de cada
+          trabajador que no es de Dirección, como en el original. */}
+      {worker.roleKind !== 'direccion' && onSaveHiring ? (
+        <WorkerHiringDocuments
+          key={`${worker.key}-${extended?.hiringForm?.updatedAt ?? 'new'}-${extended?.workContract?.updatedAt ?? 'new'}`}
+          worker={worker}
+          extended={extended}
+          isAdmin={isAdmin}
+          signers={signers ?? { administrator: null, director: null }}
+          ciclo={ciclo ?? null}
+          onSave={onSaveHiring}
+          onMessage={onMessage ?? (() => {})}
+        />
+      ) : null}
     </>
   )
 }

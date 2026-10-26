@@ -321,6 +321,84 @@ export interface WorkerExtended {
   /** Fecha de contratación escrita en la ficha: arranca la cuenta
    *  atrás de las vacaciones (a los 6 meses, 1 semana). */
   fechaContratacion?: string
+  /** Documento único de contratación (asistente en 6 pasos de la
+   *  ficha): formulario y contrato guardados desde la propia ficha;
+   *  null/ausente si nunca se guardó — el asistente nace entonces del
+   *  autocompletado con los datos de RH, como en el original. */
+  hiringForm?: WorkerHiringForm | null
+  workContract?: WorkerWorkContract | null
+}
+
+/** Formulario de contratación del documento único (puerto de
+ *  WorkerHiringFormData del original): todos los campos son texto,
+ *  como en el original, más la marca de guardado. */
+export interface WorkerHiringForm {
+  fechaContratacion: string
+  nombre: string
+  primerApellido: string
+  segundoApellido: string
+  calle: string
+  numero: string
+  codigoPostal: string
+  carnet: string
+  municipio: string
+  provincia: string
+  sexo: string
+  edad: string
+  estudiosTerminados: string
+  campoEstudios: string
+  enfermedad: string
+  medicamentos: string
+  correo: string
+  telefono: string
+  estadoCivil: string
+  hijos: string
+  cantidadHijos: string
+  cuentaBancaria: string
+  idiomas: string
+  firmaTrabajador: string
+  institucion: string
+  direccionInstitucion: string
+  correoInstitucion: string
+  telefonoInstitucion: string
+  ocupacion: string
+  departamento: string
+  horasTrabajo: string
+  salario: string
+  anosExperiencia: string
+  evaluacion: string
+  curriculum: string
+  rhNombre: string
+  rhPrimerApellido: string
+  rhSegundoApellido: string
+  rhCargo: string
+  firmaRh: string
+  updatedAt: string
+}
+
+/** Contrato de trabajo del documento único (puerto de
+ *  WorkerContractData del original). */
+export interface WorkerWorkContract {
+  nombreTrabajador: string
+  carnet: string
+  profesionOficio: string
+  direccion: string
+  municipio: string
+  provincia: string
+  tipoContrato: string
+  pruebaDesde: string
+  pruebaHasta: string
+  ocupacion: string
+  grupoEscala: string
+  escalaSalarial: string
+  categoriaOcupacional: string
+  lugarTrabajo: string
+  jornada: string
+  horario: string
+  fechaFirma: string
+  firmaAdministracion: string
+  firmaTrabajador: string
+  updatedAt: string
 }
 
 /** Ficha pasada al historial de trabajadores («Eliminar del

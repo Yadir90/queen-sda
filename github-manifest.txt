@@ -15,6 +15,7 @@ package.json
 public/icons/queen-maduro-192.png
 public/icons/queen-maduro-512.png
 public/manifest.webmanifest
+public/.well-known/assetlinks.json
 public/sw.js
 scripts/audit-pieza0.mjs
 scripts/audit-visual.mjs
@@ -29,6 +30,7 @@ scripts/verify-import.mjs
 scripts/verify-inventario.mjs
 scripts/verify-ipv.mjs
 scripts/verify-paridad.mjs
+scripts/diag-d7.mjs
 scripts/verify-productos.mjs
 scripts/verify-queen.mjs
 scripts/verify-reglas.mjs
@@ -51,6 +53,7 @@ src/components/QueenEvolutionPanel.tsx
 src/components/QueenReactor.tsx
 src/components/QueenVoiceOrb.tsx
 src/components/WorkerFichaCompleta.tsx
+src/components/WorkerHiringDocuments.tsx
 src/components/charts.tsx
 src/components/homeMirror.css
 src/components/homeMirror.tsx
@@ -160,3 +163,5 @@ supabase/workers-extended-import.sql
 tsconfig.json
 vite.config.ts
 # Actualización 2026-10-26 (ronda de corrección tras la revisión del dueño en su A16): +9 rutas nuevas (src/components/FichaBoundary.tsx, src/lib/ultralight.ts, scripts/diag-ronda2.mjs, scripts/diag-cobrar.mjs, scripts/diag-cobrar2.mjs, scripts/diag-ajustes.mjs, scripts/diag-offline.mjs, scripts/probe-round2.mjs, scripts/diag-sistema.mjs) y la tanda de archivos corregidos (App, Ajustes, Cobrar, Sistema, Almacén, Elaboración, Economía, Transferencias, WorkerRegistry, Queen, systemMirror, secciones, backend, supabaseBackend, queenVoice, sw.js, manifiesto con short_name «SDA La Reina», auditoría visual). Total: 167 rutas. EXCLUIDO siempre: android-twa/ (material de firma del APK).
+
+# Actualización 2026-10-26 (tanda D-R2-10: asistente de contratación de RH confirmado y corregido): +3 rutas nuevas (src/components/WorkerHiringDocuments.tsx, scripts/diag-d7.mjs, public/.well-known/assetlinks.json). Rutas listadas en este manifiesto: 161.

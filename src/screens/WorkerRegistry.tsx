@@ -22,7 +22,7 @@
    clon (sin el ActionMenu de foto del original). */
 
 import { useMemo, useState } from 'react'
-import type { Receivable, StoredData, Worker, WorkerExtended, WorkerHistorialEntry, WorkerPayment } from '../types'
+import type { Receivable, StoredData, Worker, WorkerExtended, WorkerHiringForm, WorkerHistorialEntry, WorkerPayment, WorkerWorkContract } from '../types'
 import { InfoHelp } from '../components/ui'
 import { Icon } from '../components/icons'
 import { WorkerPhoto } from '../components/MediaImage'
@@ -362,6 +362,11 @@ interface CardCtx {
   setOpenKey: (k: string | null) => void
   persist: (patch: RegistryPatch) => Promise<void>
   setMsg: (m: string) => void
+  /** Firmantes del documento de contratación (los mismos que busca
+   *  el original: el perfil «yadir» firma como Administrador y el
+   *  perfil «jesus» como Director). */
+  signers: { administrator: { name: string } | null; director: { name: string } | null }
+  saveHiring: (w: Worker, ext: WorkerExtended | null, hiringForm: WorkerHiringForm, workContract: WorkerWorkContract) => Promise<void>
 }
 
 function TurnoComparacion({ model }: { model: FichaModel }) {
@@ -929,7 +934,15 @@ function FichaEditor({ model, ctx }: { model: FichaModel; ctx: CardCtx }) {
       )}
 
       <FichaBoundary bloque="Documentos y contrato">
-        <WorkerFichaCompleta worker={w} extended={ext} isAdmin={isAdmin} />
+        <WorkerFichaCompleta
+          worker={w}
+          extended={ext}
+          isAdmin={isAdmin}
+          signers={ctx.signers}
+          ciclo={model.ciclo ? { cycleStart: model.ciclo.cycleStart, cycleEnd: model.ciclo.cycleEnd, dias: model.ciclo.dias, detalleDias: model.ciclo.detalleDias } : null}
+          onSaveHiring={(hf, wc) => ctx.saveHiring(w, ext, hf, wc)}
+          onMessage={ctx.setMsg}
+        />
       </FichaBoundary>
 
       {w.roleKind !== 'direccion' && (
@@ -1168,9 +1181,31 @@ export default function WorkerRegistry(props: RegistryProps) {
     else saveWorkersRegistry(patch)
     props.onChanged()
   }
+  const signers = useMemo(() => {
+    const all = [...data.workers, ...data.workersHistorial.map((h) => h.worker)]
+    const seen = new Set<string>()
+    const profiles = all.filter((x) => (seen.has(x.key) ? false : (seen.add(x.key), true)))
+    const firstToken = (nombre: string) => canonicalPersonKey(null, nombre).split(' ')[0] ?? ''
+    const administrator = profiles.find((x) => firstToken(x.nombre) === 'yadir') ?? null
+    const director = profiles.find((x) => firstToken(x.nombre) === 'jesus') ?? null
+    return {
+      administrator: administrator ? { name: administrator.nombre } : null,
+      director: director ? { name: director.nombre } : null,
+    }
+  }, [data.workers, data.workersHistorial])
+  const saveHiring = async (w: Worker, ext: WorkerExtended | null, hiringForm: WorkerHiringForm, workContract: WorkerWorkContract) => {
+    // El guardado del documento único sincroniza también la fecha de
+    // contratación de la ficha (la cuenta atrás de vacaciones la lee
+    // de ahí, como en el original lee del propio formulario).
+    const workersExtended = upsertExtendedList(data, w, ext, {
+      hiringForm, workContract,
+      fechaContratacion: hiringForm.fechaContratacion || ext?.fechaContratacion || '',
+    })
+    await persist({ workersExtended })
+  }
   const ctx: CardCtx = {
     data, marks: props.marks, today, win: props.win, isAdmin,
-    openKey, setOpenKey, persist, setMsg,
+    openKey, setOpenKey, persist, setMsg, signers, saveHiring,
   }
 
   const activos = useMemo(() => data.workers.filter((w) => !data.workersHistorial.some((h) => h.key === w.key)), [data.workers, data.workersHistorial])

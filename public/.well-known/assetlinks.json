@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.lareina.queensda",
+      "sha256_cert_fingerprints": [
+        "8D:10:14:1B:40:0B:15:24:72:A9:E3:6F:55:17:26:B3:11:5E:FA:E9:A4:02:5E:84:A2:C1:74:BC:54:21:17:93"
+      ]
+    }
+  }
+]

@@ -195,5 +195,33 @@ if (existsSync(assetsDir)) {
     read('src/index.css').includes('--bg: #0c141b') && read('src/index.css').includes('--deep: #102b27'))
 }
 
+// — D-R2-10: el asistente de contratación en 6 pasos de la ficha
+// (WorkerHiringDocuments del original) existe en el clon, montado en
+// la ficha y con su persistencia en el extendido por ambas vías. —
+{
+  const hiring = read('src/components/WorkerHiringDocuments.tsx')
+  const ficha = read('src/components/WorkerFichaCompleta.tsx')
+  const registry = read('src/screens/WorkerRegistry.tsx')
+  const types = read('src/types.ts')
+  const backend = read('src/lib/supabaseBackend.ts')
+  const hiringCss = read('src/components/workerFicha.css')
+  console.log('\n— RH: documento único de contratación (D-R2-10) —')
+  check('asistente presente con los 6 pasos del original',
+    ['Datos personales', 'Salud y contacto', 'Puesto y currículum', 'Modalidad', 'Condiciones', 'Firmas'].every((s) => hiring.includes(s)))
+  check('asistente: título y textos del original',
+    hiring.includes('Contratación y contrato de trabajo') && hiring.includes('Datos enlazados automáticamente') && hiring.includes('Exportar PDF único') && hiring.includes('Guardar documento'))
+  check('asistente: autocompletado y guardas del original',
+    hiring.includes('hiringAutofill') && hiring.includes('contractDefaults') && hiring.includes('workerHoursSummary') && hiring.includes('Registra primero las firmas autorizadas del Administrador y del Director en RH.'))
+  check('asistente montado en la ficha fuera de Dirección (WorkerFichaCompleta)',
+    ficha.includes('WorkerHiringDocuments') && ficha.includes("worker.roleKind !== 'direccion'"))
+  check('RH: firmantes y guardado del documento conectados (WorkerRegistry)',
+    registry.includes('saveHiring') && registry.includes('onSaveHiring') && registry.includes("firstToken(x.nombre) === 'yadir'") && registry.includes("firstToken(x.nombre) === 'jesus'"))
+  check('tipos: WorkerHiringForm y WorkerWorkContract en el extendido',
+    types.includes('interface WorkerHiringForm') && types.includes('interface WorkerWorkContract') && types.includes('hiringForm?: WorkerHiringForm | null'))
+  check('Supabase: hiring_form/work_contract saneados en el extendido',
+    backend.includes('hiring_form') && backend.includes('work_contract') && backend.includes('stringRecordFromRaw'))
+  check('CSS del asistente (wf-hire-*)', hiringCss.includes('.wf-hire-steps') && hiringCss.includes('.wf-hire-step.is-on') && hiringCss.includes('.wf-hire-signimg'))
+}
+
 console.log(`\nverify:paridad — ${passed} ok, ${failed} fallos`)
 process.exit(failed ? 1 : 0)

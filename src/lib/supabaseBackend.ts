@@ -25,7 +25,7 @@
 // (el admin sí puede). La app no se bloquea por eso: tras cambiarla, entra;
 // el aviso volverá a salir en su próximo ingreso hasta que el admin lo marque.
 
-import type { AutomationRun, Bulletin, DayData, ElaborationIngredientHistoryEntry, ElaborationRecipe, ElaborationStore, ElaborationWasteLog, Expense, ExtraIncome, InventoryAdjustment, LocalPayment, MonthlyArchive, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionHistoryEntry, QueenEvolutionSnapshot, QueenLearningState, Receivable, ReceivablePhoto, Role, Session, SmsLog, SmsOutboxItem, StoredData, TransferMovement, VenueInventoryItem, WarehouseEntry, WarehouseProductMeta, Worker, WorkerExtended, WorkerPayment } from '../types'
+import type { AutomationRun, Bulletin, DayData, ElaborationIngredientHistoryEntry, ElaborationRecipe, ElaborationStore, ElaborationWasteLog, Expense, ExtraIncome, InventoryAdjustment, LocalPayment, MonthlyArchive, PackageReference, PayrollEmployee, PayrollRecord, QueenEvolutionHistoryEntry, QueenEvolutionSnapshot, QueenLearningState, Receivable, ReceivablePhoto, Role, Session, SmsLog, SmsOutboxItem, StoredData, TransferMovement, VenueInventoryItem, WarehouseEntry, WarehouseProductMeta, Worker, WorkerExtended, WorkerHiringForm, WorkerPayment, WorkerWorkContract } from '../types'
 import { EMPTY_DATA, type LoginResult } from './backend'
 import { getSupabase, supabaseBaseUrl } from './supabaseClient'
 import { enqueueOfflineOp, registerOfflineExecutor, type QueuedOp } from './offlineQueue'
@@ -497,6 +497,37 @@ interface RawExtendedWorker {
   contrato_cancelado_ciclo?: string | null
   ausencias?: Array<{ id?: string; fecha?: string; motivo?: string }> | null
   fecha_contratacion?: string | null
+  /** Documento único de contratación (asistente en 6 pasos): objetos
+   *  de texto completos, tal como se guardan desde la ficha. Las filas
+   *  escritas antes de existir el asistente no los traen: se leen
+   *  como null y el asistente nace del autocompletado. */
+  hiring_form?: Record<string, unknown> | null
+  work_contract?: Record<string, unknown> | null
+}
+
+const HIRING_FORM_KEYS = [
+  'fechaContratacion', 'nombre', 'primerApellido', 'segundoApellido', 'calle', 'numero', 'codigoPostal',
+  'carnet', 'municipio', 'provincia', 'sexo', 'edad', 'estudiosTerminados', 'campoEstudios', 'enfermedad',
+  'medicamentos', 'correo', 'telefono', 'estadoCivil', 'hijos', 'cantidadHijos', 'cuentaBancaria', 'idiomas',
+  'firmaTrabajador', 'institucion', 'direccionInstitucion', 'correoInstitucion', 'telefonoInstitucion',
+  'ocupacion', 'departamento', 'horasTrabajo', 'salario', 'anosExperiencia', 'evaluacion', 'curriculum',
+  'rhNombre', 'rhPrimerApellido', 'rhSegundoApellido', 'rhCargo', 'firmaRh', 'updatedAt',
+] as const
+const WORK_CONTRACT_KEYS = [
+  'nombreTrabajador', 'carnet', 'profesionOficio', 'direccion', 'municipio', 'provincia', 'tipoContrato',
+  'pruebaDesde', 'pruebaHasta', 'ocupacion', 'grupoEscala', 'escalaSalarial', 'categoriaOcupacional',
+  'lugarTrabajo', 'jornada', 'horario', 'fechaFirma', 'firmaAdministracion', 'firmaTrabajador', 'updatedAt',
+] as const
+
+/** Objeto de texto del extendido (formulario/contrato): solo pasan
+ *  las claves conocidas y solo como texto; cualquier otra forma se
+ *  lee como ausente, nunca rompe la carga de la ficha. */
+function stringRecordFromRaw<T extends object>(raw: unknown, keys: readonly string[]): T | null {
+  if (!raw || typeof raw !== 'object') return null
+  const src = raw as Record<string, unknown>
+  const out: Record<string, string> = {}
+  for (const k of keys) out[k] = typeof src[k] === 'string' ? (src[k] as string) : ''
+  return out as T
 }
 
 function parseWeekdays(raw: RawExtendedWorker['work_weekdays']): number[] {
@@ -525,6 +556,8 @@ function extendedFromRaw(r: RawExtendedWorker): WorkerExtended {
       ? r.ausencias.filter((a) => a && typeof a.fecha === 'string').map((a, i) => ({ id: String(a.id ?? `aus-${i}`), fecha: String(a.fecha), motivo: String(a.motivo ?? '') }))
       : [],
     fechaContratacion: r.fecha_contratacion ?? '',
+    hiringForm: stringRecordFromRaw<WorkerHiringForm>(r.hiring_form, HIRING_FORM_KEYS),
+    workContract: stringRecordFromRaw<WorkerWorkContract>(r.work_contract, WORK_CONTRACT_KEYS),
   }
 }
 
@@ -547,6 +580,8 @@ function extendedToRaw(e: WorkerExtended): RawExtendedWorker {
     contrato_cancelado_ciclo: e.contratoCanceladoCiclo,
     ausencias: (e.ausencias ?? []).map((a) => ({ id: a.id, fecha: a.fecha, motivo: a.motivo })),
     fecha_contratacion: e.fechaContratacion || null,
+    hiring_form: e.hiringForm ? { ...e.hiringForm } : undefined,
+    work_contract: e.workContract ? { ...e.workContract } : undefined,
   }
 }
 
