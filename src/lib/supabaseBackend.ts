@@ -33,6 +33,8 @@ import { normalizeDay, normalizeExpense, normalizePayroll, normalizeReceivable, 
 import { applyImportedPaidAccounts, buildWorkersRegistry, canonicalPersonKey, clientKeyOf, deriveSuppressedEntries, firstNameKeyOf, syncDerivedData } from './syncCore.mjs'
 import { venueItemFromRaw, warehouseEntryFromRaw, warehouseMetaFromRaw } from './modulosExtended'
 import { defaultElaborationStore, ELABORATION_SETTINGS_FALLBACK } from './elaboracionCore.mjs'
+import { normalizeMenuState } from './menuCore.mjs'
+import type { MenuState } from '../types'
 
 /** Sesión remota ya resuelta: el Session de la app + si debe cambiar la contraseña. */
 export interface RemoteSession {
@@ -677,6 +679,7 @@ export interface ExtendedSettings {
   elaboration: ElaborationStore
   extraIncomes: ExtraIncome[]
   inventoryAdjustments: InventoryAdjustment[]
+  menuState: MenuState
 }
 
 const EMPTY_EXTENDED: ExtendedSettings = {
@@ -686,6 +689,7 @@ const EMPTY_EXTENDED: ExtendedSettings = {
   elaboration: defaultElaborationStore(),
   extraIncomes: [],
   inventoryAdjustments: [],
+  menuState: { base: null, days: {}, availability: {}, profiles: {} },
 }
 
 async function fetchExtendedSettings(): Promise<ExtendedSettings> {
@@ -693,7 +697,7 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
   const { data, error } = await client
     .from('app_settings')
     .select('key, value')
-    .in('key', ['workers-extended', 'queen-evolution-history', 'almacen-extended', 'venue-inventory', 'backup-collections', 'elaboracion', 'extra-incomes', 'existencias-ajustes'])
+    .in('key', ['workers-extended', 'queen-evolution-history', 'almacen-extended', 'venue-inventory', 'backup-collections', 'elaboracion', 'extra-incomes', 'existencias-ajustes', 'menu-state'])
   if (error || !data) return EMPTY_EXTENDED
   const rows = data as Array<{ key: string; value: Record<string, unknown> | null }>
   const byKey = new Map(rows.map((r) => [r.key, r.value]))
@@ -706,6 +710,7 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
   const elabRow = byKey.get('elaboracion') as Partial<ElaborationStore> | undefined
   const extraRow = byKey.get('extra-incomes') as { items?: ExtraIncome[] } | undefined
   const adjRow = byKey.get('existencias-ajustes') as { items?: InventoryAdjustment[] } | undefined
+  const menuRow = byKey.get('menu-state') as Partial<MenuState> | undefined
   // Las cinco colecciones del respaldo, persistidas aquí al importar
   // (sbImportBackup): no tienen tabla propia en el clon.
   const colRow = byKey.get('backup-collections') as Partial<Pick<ExtendedSettings, 'receivablePhotos' | 'smsLogs' | 'smsOutbox' | 'monthlyArchives' | 'workerPayments' | 'workersHistorial'>> | undefined
@@ -734,6 +739,7 @@ async function fetchExtendedSettings(): Promise<ExtendedSettings> {
     workersHistorial: arr<import('../types').WorkerHistorialEntry>(colRow?.workersHistorial),
     extraIncomes: arr<ExtraIncome>(extraRow?.items),
     inventoryAdjustments: arr<InventoryAdjustment>(adjRow?.items),
+    menuState: normalizeMenuState(menuRow),
   }
 }
 
@@ -768,6 +774,15 @@ async function rawSbSaveElaborationStore(store: ElaborationStore): Promise<void>
  *  app_settings 'extra-incomes' — la misma clave de la que se lee. */
 async function rawSbSaveExtraIncomes(items: ExtraIncome[]): Promise<void> {
   await saveAppSetting('extra-incomes', { items }, 'los otros ingresos registrados')
+}
+
+/** Guarda el estado completo de la pestaña Menú (documentos por
+ *  día y base, disponibilidad por fecha y perfiles compartidos de
+ *  producto) en app_settings 'menu-state' — la misma clave de la
+ *  que se lee. Es presentación para el cliente: no toca precios
+ *  reales, existencias ni saldos. */
+async function rawSbSaveMenuState(state: MenuState): Promise<void> {
+  await saveAppSetting('menu-state', normalizeMenuState(state), 'el menú del día')
 }
 
 /** Guarda los ajustes manuales del libro (Existencias) en
@@ -1016,6 +1031,7 @@ async function rawFetchStoredData(): Promise<StoredData> {
     workersHistorial: extended.workersHistorial,
     extraIncomes: extended.extraIncomes,
     inventoryAdjustments: extended.inventoryAdjustments,
+    menuState: extended.menuState,
     aliases: settings.aliases ?? {},
     learnedKinds: settings.learnedKinds ?? {},
     cuentasOverrides: settings.cuentasOverrides ?? {},
@@ -1644,6 +1660,7 @@ const OFFLINE_IMPLS: Record<string, (...args: never[]) => Promise<void>> = {
   sbSaveWarehouseExtended: rawSbSaveWarehouseExtended,
   sbSaveElaborationStore: rawSbSaveElaborationStore,
   sbSaveExtraIncomes: rawSbSaveExtraIncomes,
+  sbSaveMenuState: rawSbSaveMenuState,
   sbSaveInventoryAdjustments: rawSbSaveInventoryAdjustments,
   sbSaveMonthlyArchives: rawSbSaveMonthlyArchives,
   sbSaveWorkersRegistry: rawSbSaveWorkersRegistry,
@@ -1676,6 +1693,9 @@ export async function sbSaveElaborationStore(store: ElaborationStore): Promise<v
 }
 export async function sbSaveExtraIncomes(items: ExtraIncome[]): Promise<void> {
   return withOfflineQueue('sbSaveExtraIncomes', [items], () => rawSbSaveExtraIncomes(items))
+}
+export async function sbSaveMenuState(state: MenuState): Promise<void> {
+  return withOfflineQueue('sbSaveMenuState', [state], () => rawSbSaveMenuState(state))
 }
 export async function sbSaveInventoryAdjustments(items: InventoryAdjustment[]): Promise<void> {
   return withOfflineQueue('sbSaveInventoryAdjustments', [items], () => rawSbSaveInventoryAdjustments(items))

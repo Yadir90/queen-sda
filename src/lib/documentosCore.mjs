@@ -1955,15 +1955,22 @@ export function nominaHtml(doc) {
 }
 
 export function menuHtml(menu) {
-  const body = menu.sections.map((sec) => `
+  const sectionsBody = menu.sections.map((sec) => `
   <div class="menu-sec">${esc(menuDeptOf(sec.section) === 'Elaboración' ? 'Cocina' : sec.section)}</div>
   ${sec.families.map((f) => `
   <div class="menu-fam">${esc(f.family)}</div>
   ${f.items.map((i) => `<div class="menu-item"><div><div class="nm">${esc(i.name)}</div>${i.description ? `<div class="ds">${esc(i.description)}</div>` : ''}</div><div class="pr">${fmtDocCUP(i.price)}</div></div>`).join('')}`).join('')}`).join('')
+  /* D-R6-02: el documento del menú editado en la pestaña lleva su
+     línea bajo el título y su pie (los «Textos del menú» del
+     original), cuando el dato los trae; el menú derivado de
+     Documentos no los trae y sale como siempre. */
+  const subtitleLine = menu.subtitle ? `<p style="text-align:center;font-family:Georgia,'Times New Roman',serif;font-size:13px;margin:2px 0 4px">${esc(menu.subtitle)}</p>` : ''
+  const footerLine = menu.footerText ? `<p style="text-align:center;font-size:10px;color:#5B6F63;border-top:1px solid #D7EEF3;padding-top:10px;margin-top:24px">${esc(menu.footerText)}</p>` : ''
+  const body = subtitleLine + (sectionsBody || '<p class="note">Sin productos con existencia para mostrar hoy.</p>') + footerLine
   return docShell({
     title: 'La Reina · Menú del día',
     subtitle: `${esc(menu.dateLabel)} · Precios en CUP`,
-    body: body || '<p class="note">Sin productos con existencia para mostrar hoy.</p>',
+    body,
     signatures: null,
     menu: true,
   })

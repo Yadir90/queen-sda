@@ -15,6 +15,7 @@
 import type { Bulletin, Expense, LocalPayment, PackageReference, PayrollEmployee, Profile, Role, Session, StoredData, TransferMovement } from '../types'
 import { normalizeDay, parseBackup } from './backupCore.mjs'
 import { defaultElaborationStore } from './elaboracionCore.mjs'
+import { normalizeMenuState } from './menuCore.mjs'
 import {
   applyImportedPaidAccounts, buildWorkersRegistry, canonicalPersonKey, clientKeyOf, deriveSuppressedEntries,
   firstNameKeyOf, syncDerivedData,
@@ -220,6 +221,7 @@ export const EMPTY_DATA: StoredData = {
   venueInventory: [],
   elaboration: defaultElaborationStore(),
   extraIncomes: [],
+  menuState: { base: null, days: {}, availability: {}, profiles: {} },
   inventoryAdjustments: [],
   receivablePhotos: [],
   smsLogs: [],
@@ -280,7 +282,7 @@ function runSync(data: StoredData, paidDays: StoredData['days'] = [], accountSyn
 export function loadData(): StoredData {
   const data = readJSON<StoredData>(K_DATA)
   if (!data || (data.version !== 1 && data.version !== 2)) return { ...EMPTY_DATA }
-  const merged: StoredData = { ...EMPTY_DATA, ...data, version: 2 }
+  const merged: StoredData = { ...EMPTY_DATA, ...data, version: 2, menuState: normalizeMenuState(data.menuState) }
   if (data.version === 1) {
     // Migración v1 → v2: se conservan días, cuentas y abonos locales;
     // la sincronización deriva gastos, registro de RH y conteos.
@@ -656,6 +658,18 @@ export function saveReceivables(receivables: StoredData['receivables']): StoredD
 export function saveElaborationStore(store: StoredData['elaboration']): StoredData {
   const current = loadData()
   const next = { ...current, elaboration: store }
+  saveData(next)
+  return next
+}
+
+/** Guarda el estado completo de la pestaña Menú (documentos por
+ *  día y base, disponibilidad por fecha y perfiles compartidos de
+ *  producto) en modo local. En modo Supabase vive en app_settings
+ *  'menu-state' (sbSaveMenuState). El menú es presentación: este
+ *  estado no toca precios reales, existencias ni saldos. */
+export function saveMenuState(menuState: StoredData['menuState']): StoredData {
+  const current = loadData()
+  const next = { ...current, menuState: normalizeMenuState(menuState) }
   saveData(next)
   return next
 }

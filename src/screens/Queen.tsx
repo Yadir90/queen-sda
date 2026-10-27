@@ -9,10 +9,9 @@ import {
   answerQueen, applyQueenLearnedCorrections, buildQueenAnticipations, buildQueenErrorBank,
   buildQueenEvolution, buildQueenHealth, buildQueenMemory, buildQueenObservations,
   buildQueenOperationModes, buildQueenSmsDue, buildQueenSuggestions, deriveQueenAnswerMeta,
-  fmtQueenCUP, queenLanguageStatus, queenQuestionPattern, QUEEN_HEALTH_COPY,
+  fmtQueenCUP, queenQuestionPattern, QUEEN_HEALTH_COPY,
   type QueenAnswer, type QueenLearnedCorrection,
 } from '../lib/queenCore.mjs'
-import type { QueenChatResult } from '../lib/supabaseBackend'
 import '../components/queenMirror.css'
 
 /* Consola de Queen — puerto de QueenTab + QueenThread + QueenComposer
@@ -30,8 +29,12 @@ import '../components/queenMirror.css'
    «queen-draft» (borrador), «queen-feedback-local-v1» (feedback),
    «queen-sda-corrections-v1» (correcciones aprendidas del feedback)
    y «queen-sda-suggestion-status-v1» (estados de la bandeja).
-   El determinista (queenCore) responde siempre; la capa de lenguaje
-   (Edge Function queen-chat) solo redacta en modo Supabase.
+   El determinista (queenCore) responde el chat. El panel visible
+   de la capa de lenguaje que esta copia llevó (párrafo de estado,
+   botón de redactar con IA y caja de redacción) se RETIRÓ por
+   orden del dueño (27-oct, D-R6-03): en el original esa capa
+   aparece cero veces en pantalla; la función queen-chat sigue
+   existiendo en el servidor, sin punto de entrada visible aquí.
    Queen es 100 % texto, como en el original. La voz (micrófono y
    lectura en voz alta) existió en esta copia durante unas horas
    del 26-oct como añadido del dueño y se ELIMINÓ el mismo día por
@@ -51,7 +54,6 @@ interface QueenMsg {
 type Panel = 'ninguno' | 'anticipacion' | 'sugerencias' | 'sms' | 'memoria'
 type SuggestionStatus = 'nuevo' | 'revision' | 'resuelto' | 'no-error'
 const SUGGESTION_LABEL: Record<SuggestionStatus, string> = { nuevo: 'Nuevo', revision: 'En revisión', resuelto: 'Resuelto', 'no-error': 'No es un error' }
-interface LanguageTry { state: 'idle' | 'busy' | 'done'; text?: string; provider?: string; reason?: string }
 
 function loadQueenState(): { msgs: QueenMsg[]; freq: Record<string, number> } {
   try {
@@ -215,10 +217,8 @@ function QueenComposer(props: {
 }
 
 /* ============ QueenTab (puerto del original) ============ */
-export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOnly = false }: {
+export default function QueenScreen({ data, chatOnly = false }: {
   data: StoredData
-  supabaseMode: boolean
-  onTestLanguage?: (question: string, figures: Array<{ label: string; value: number | string }>) => Promise<QueenChatResult>
   chatOnly?: boolean
 }) {
   const ref = todayISO()
@@ -230,7 +230,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
   const suggestions = useMemo(() => buildQueenSuggestions(data, ref), [data, ref])
   const smsDue = useMemo(() => buildQueenSmsDue(data, ref), [data, ref])
   const baseHealth = useMemo(() => buildQueenHealth(data, ref), [data, ref])
-  const lang = useMemo(() => queenLanguageStatus(supabaseMode), [supabaseMode])
 
   const [{ msgs, freq }, setState] = useState(loadQueenState)
   const [feedbackByKey, setFeedbackByKey] = useState<Record<string, NonNullable<QueenMsg['feedback']>>>(() => loadJSON('queen-feedback-local-v1', {}))
@@ -249,12 +248,10 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
   const [chatNotice, setChatNotice] = useState('')
   const [smsTab, setSmsTab] = useState<'enviados' | 'pendientes' | 'cancelados' | 'reenvios'>('pendientes')
   const [smsNotice, setSmsNotice] = useState('')
-  const [languageTry, setLanguageTry] = useState<LanguageTry>({ state: 'idle' })
   const [composerKey, setComposerKey] = useState(0)
   const sendingRef = useRef(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const lastAnswer = useRef<{ question: string; answer: QueenAnswer } | null>(null)
   const handleHasText = useCallback((h: boolean) => setHasText(h), [])
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
@@ -331,8 +328,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
       const rawAns = answerQueen(data, question, { refDate: ref })
       const ans = applyQueenLearnedCorrections(rawAns, question, learnedCorrections)
       const turnKey = `queen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-      lastAnswer.current = { question, answer: ans }
-      setLanguageTry({ state: 'idle' })
       setState({ msgs: [...withUser, { role: 'queen', text: ans.text, key: turnKey, ts: Date.now(), answer: ans }], freq: nextFreq })
       sendingRef.current = false
       setSending(false)
@@ -363,8 +358,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
     setReplyTarget(null)
     setPanel('ninguno')
     setClearArmed(false)
-    lastAnswer.current = null
-    setLanguageTry({ state: 'idle' })
     try { localStorage.removeItem('queen-chat'); localStorage.removeItem('queen-freq'); localStorage.removeItem('queen-feedback-local-v1'); localStorage.removeItem('queen-draft'); localStorage.removeItem('queen-voice-tts-v1'); localStorage.removeItem('queen-voice-conv-v1') } catch { /* noop */ }
     setComposerKey((k) => k + 1)
     setChatNotice('Historial completo borrado. No se tocó lo que Queen ha aprendido, ni las correcciones ya resueltas, ni ningún dato contable.')
@@ -374,14 +367,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
     setReplyTarget({ role: message.role, text: message.text, key: messageKey })
     setQuickOpen(false)
   }, [])
-
-  const tryLanguage = async () => {
-    if (!onTestLanguage || !lastAnswer.current) return
-    setLanguageTry({ state: 'busy' })
-    const res = await onTestLanguage(lastAnswer.current.question, lastAnswer.current.answer.figures)
-    if (res.ok && res.text) setLanguageTry({ state: 'done', text: res.text, provider: res.provider })
-    else setLanguageTry({ state: 'done', reason: res.reason ?? 'La capa de lenguaje no está configurada todavía.' })
-  }
 
   const visibleHealth = sending ? 'working' : baseHealth.state
   const healthCopy = QUEEN_HEALTH_COPY[visibleHealth]
@@ -737,25 +722,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
       {chatNotice && (<p className="queen-chat-notice" role="status">{chatNotice}</p>)}
 
       <QueenThread shown={shown} sending={sending} stageId={evo.stage.id} threadRef={listRef} onReply={handleThreadReply} onFeedback={recordFeedback} onAsk={(question) => send(question)} />
-
-      <div className="queen-lang" style={{ marginBottom: 12 }}>
-        <p className="small" style={{ margin: 0 }}>
-          <strong>Capa de lenguaje:</strong> {lang.configured ? 'configurada' : 'sin configurar'}. {lang.note} Queen no escribe desde el chat: su escritura está denegada en dinero, cuentas, IPV, ADN y permisos.
-        </p>
-        {lastAnswer.current && supabaseMode ? (
-          <button type="button" className="chip-btn" disabled={languageTry.state === 'busy'} onClick={() => void tryLanguage()}>
-            {languageTry.state === 'busy' ? 'Probando la capa…' : 'Redactar la última respuesta con IA'}
-          </button>
-        ) : null}
-        {languageTry.state === 'done' && languageTry.text ? (
-          <div className="ok-box" style={{ marginTop: 8 }}>
-            <strong>Redacción de la capa{languageTry.provider ? ` (${languageTry.provider})` : ''}:</strong>
-            <p style={{ margin: '4px 0 0' }}>{languageTry.text}</p>
-            <p className="small muted" style={{ margin: '4px 0 0' }}>Solo redacta sobre las cifras verificadas de arriba; no calcula nada nuevo.</p>
-          </div>
-        ) : null}
-        {languageTry.state === 'done' && languageTry.reason ? (<p className="small muted" style={{ margin: '8px 0 0' }}>{languageTry.reason}</p>) : null}
-      </div>
 
       {hasData && quickOpen && (
         <div className="queen-quick-menu is-open" onKeyDown={(event) => { if (event.key === 'Escape') setQuickOpen(false) }}>

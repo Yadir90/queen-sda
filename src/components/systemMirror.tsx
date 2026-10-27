@@ -217,13 +217,14 @@ export function OrganismMap({ parts, checkedLabel, checkedIso, flowModules, onli
 
 /* ================= Queen: cerebro + red neuronal ================= */
 
-export function QueenBrain({ segments, queenSegments, activeCapacity, suspendedCount, reviewedAt, focusLabel }: {
+export function QueenBrain({ segments, queenSegments, activeCapacity, suspendedCount, reviewedAt, focusLabel, focusPrefix = 'Foco actual' }: {
   segments: MirrorSegment[]
   queenSegments: MirrorSegment[]
   activeCapacity: number
   suspendedCount: number
   reviewedAt: string
   focusLabel: string
+  focusPrefix?: string
 }) {
   const [selectedId, setSelectedId] = useState('auditoria')
   const [legendId, setLegendId] = useState<string | null>(null)
@@ -260,8 +261,9 @@ export function QueenBrain({ segments, queenSegments, activeCapacity, suspendedC
               <i aria-hidden="true" />
               {isLegendVisible ? (
                 <b className="system-node-health-callout" aria-live="polite">
-                  <strong>{`${healthFor(segment)}%`}</strong>
-                  <span>salud</span>
+                  {dnaPowerMode(segment) === 'suspended'
+                    ? <><strong>Reposo</strong><span>suspensión</span></>
+                    : <><strong>{`${healthFor(segment)}%`}</strong><span>salud</span></>}
                 </b>
               ) : null}
               <span>{segment.area}</span>
@@ -276,8 +278,8 @@ export function QueenBrain({ segments, queenSegments, activeCapacity, suspendedC
         <p>Cada nodo es un módulo real del SDA. Tócalo una vez para mostrar su leyenda y vuelve a tocarlo para ocultarla.</p>
         <div className={`system-connectivity-pill system-node-info-pill dna-state-${selected.state}`} aria-label={`${selected.area}: ${selected.detail}`} aria-live="polite">
           <span><i aria-hidden="true" /> {selected.area}</span>
-          <strong>{DNA_STATE_COPY[selected.state].label}</strong>
-          <small>{selected.detail}</small>
+          <strong>{dnaPowerMode(selected) === 'suspended' ? 'En suspensión' : selected.state === 'repairing' ? 'Reactivándose' : 'Disponible'}</strong>
+          <small>{selected.detail}{dnaPowerMode(selected) === 'suspended' ? ' El procesador automático está en reposo y Queen lo reactivará en cuanto una tarea lo necesite.' : ''}</small>
           {selected.facts ? (
             <dl className="system-node-facts">
               {selected.facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
@@ -285,11 +287,11 @@ export function QueenBrain({ segments, queenSegments, activeCapacity, suspendedC
           ) : null}
           <div className="system-node-info-meta">
             <span>{`Salud ${selectedHealth}%`}</span>
-            <span>{`${selectedShare}% del consumo`}</span>
+            <span>{dnaPowerMode(selected) === 'suspended' ? 'Consumo en reposo' : `${selectedShare}% del consumo`}</span>
             <span>{reviewedAt}</span>
           </div>
         </div>
-        <p className="system-ai-active-zone" aria-live="polite"><span aria-hidden="true" /> Foco actual: <strong>{focusLabel}</strong></p>
+        <p className="system-ai-active-zone" aria-live="polite"><span aria-hidden="true" /> {focusPrefix}: <strong>{focusLabel}</strong></p>
         <div className="system-ai-capacity" aria-label={`Consumo activo de capacidad del sistema: ${activeCapacity}%`}>
           <div><span>Capacidad activa</span><strong>{activeCapacity}%</strong></div>
           <div className="system-ai-capacity-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={activeCapacity} aria-label="Consumo activo de capacidad del sistema">
@@ -454,13 +456,38 @@ export interface DnaMutation {
   source: string
 }
 
-export function DnaHelix({ segments, mutations, progress, globalLabel }: {
+/* SYSTEM_DNA_LABELS del original, tal cual: la etiqueta CORTA que se
+   lee en cada peldaño de la hélice (no el nombre largo del área). */
+export const SYSTEM_DNA_LABELS: Record<string, string> = {
+  interfaz: 'Interfaz', datos: 'Datos', memoria: 'Memoria', aprendizaje: 'Aprende',
+  pensamiento: 'Piensa', ipv: 'IPV', auditoria: 'Auditoría', cuentas: 'Cobros',
+  rh: 'RH', documentos: 'Docs', respaldos: 'Respaldos', limpieza: 'Limpieza',
+  autorreparacion: 'Repara', seguridad: 'Acceso', conexion: 'Conectividad',
+}
+/* Nodos suspendibles del original (SUSPENDABLE_SYSTEM_NODES): sin
+   tarea real quedan en reposo; su peldaño dice «reposo» y su píldora
+   «En suspensión». En el clon no hay actividades de servidor que los
+   pongan «working»: el modo sale solo del estado, como en el original
+   cuando no hay tarea para el nodo. */
+const SUSPENDABLE_DNA_NODES = new Set(['aprendizaje', 'ipv', 'auditoria', 'cuentas', 'rh', 'documentos', 'respaldos', 'limpieza', 'autorreparacion'])
+export type DnaPowerMode = 'active' | 'suspended'
+export const dnaPowerMode = (s: MirrorSegment): DnaPowerMode =>
+  SUSPENDABLE_DNA_NODES.has(s.id) && s.state !== 'error' && s.state !== 'repairing' ? 'suspended' : 'active'
+export const DNA_POWER_COPY: Record<DnaPowerMode, string> = { active: 'Disponible', suspended: 'En suspensión' }
+
+export function DnaHelix({ segments, progress, globalLabel }: {
   segments: MirrorSegment[]
-  mutations: DnaMutation[]
   progress: number
   globalLabel: string
 }) {
   const [selectedId, setSelectedId] = useState('datos')
+  /* «Ver respaldo» de los accesos directos del original selecciona
+     el nodo «respaldos» de esta cadena antes de hacer scroll. */
+  useEffect(() => {
+    const onSelect = (e: Event) => setSelectedId((e as CustomEvent<string>).detail)
+    window.addEventListener('sis-select-dna', onSelect)
+    return () => window.removeEventListener('sis-select-dna', onSelect)
+  }, [])
   const [legendId, setLegendId] = useState<string | null>(null)
   const selected = segments.find((s) => s.id === selectedId) ?? segments[0]
   const summary = { error: 0, repairing: 0, verifying: 0, healthy: 0 } as Record<MirrorState, number>
@@ -470,6 +497,11 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
   if (!selected) return null
   const selectedHealth = healthFor(selected)
   const selectedShare = SYSTEM_DNA_CAPACITY_SHARE[selected.id] ?? 0
+  const selectedPower = dnaPowerMode(selected)
+  const selectedStatusLabel = DNA_POWER_COPY[selectedPower]
+  const selectedDetail = selectedPower === 'suspended'
+    ? `${selected.detail} El procesador automático está en reposo y Queen lo reactivará en cuanto una tarea lo necesite.`
+    : selected.detail
   /* Doble hélice LITERAL del original (SystemDnaPanel): escenario
      system-dna-stage.system-dna-helix, spinner con el SVG de las dos
      cintas (paths exactos), dos luces viajeras con animateMotion en
@@ -487,10 +519,10 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
         <span className={`system-dna-total dna-state-${global}`}>
           {summary.error ? `${summary.error} con error` : summary.repairing ? `${summary.repairing} en reparación` : summary.verifying ? `${summary.verifying} verificando` : 'Todo correcto'}
         </span>
-        <div className={`system-connectivity-pill system-node-info-pill system-dna-selection-pill dna-state-${selected.state}`} aria-label={`Diagnóstico del ADN, ${selected.area}: ${selected.detail}`} aria-live="polite">
+        <div className={`system-connectivity-pill system-node-info-pill system-dna-selection-pill dna-state-${selected.state}${selectedPower === 'suspended' ? ' is-suspended' : ''}`} aria-label={`Diagnóstico del ADN, ${selected.area}: ${selectedStatusLabel}. ${selectedDetail}`} aria-live="polite">
           <span><i aria-hidden="true" /> {selected.area}</span>
-          <strong>{DNA_STATE_COPY[selected.state].label}</strong>
-          <small>{selected.detail}</small>
+          <strong>{selectedStatusLabel}</strong>
+          <small>{selectedDetail}</small>
           {selected.facts ? (
             <dl className="system-node-facts">
               {selected.facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
@@ -498,7 +530,7 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
           ) : null}
           <div className="system-node-info-meta">
             <span>{`Salud ${selectedHealth}%`}</span>
-            <span>{`${selectedShare}% del consumo`}</span>
+            <span>{selectedPower === 'suspended' ? 'Consumo en reposo' : `${selectedShare}% del consumo`}</span>
             <span>{globalLabel}</span>
           </div>
         </div>
@@ -525,6 +557,7 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
               const baseWidth = [132, 174, 218, 174, 132, 174, 218, 174][index % 8] ?? 174
               const isSel = legendId === segment.id
               const share = SYSTEM_DNA_CAPACITY_SHARE[segment.id] ?? 0
+              const power = dnaPowerMode(segment)
               return (
                 <button
                   key={segment.id}
@@ -533,10 +566,10 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
                   className={`dna-helix-base is-${changeType}${changeType === 'added' ? '' : ' has-problem'}${isSel ? ' is-selected' : ''}`}
                   style={{ '--dna-base-width': `${baseWidth}px`, '--dna-index': index } as CSSProperties}
                   onClick={() => toggle(segment.id)}
-                  aria-label={`${segment.area}: ${changeType === 'critical' ? 'corrección crítica' : changeType === 'modified' ? 'modificación' : 'adición estable'}. ${isSel ? 'Tocar otra vez para ocultar el detalle' : 'Tocar para ver el detalle'}`}
+                  aria-label={`${segment.area}: ${changeType === 'critical' ? 'corrección crítica' : changeType === 'modified' ? 'modificación' : 'adición estable'}. ${DNA_POWER_COPY[power]}. ${isSel ? 'Tocar otra vez para ocultar el detalle' : 'Tocar para ver dónde, qué cambió, cuándo y por qué'}`}
                 >
                   <i className="dna-helix-node dna-helix-node-a" aria-hidden="true" />
-                  <span className="dna-helix-rung"><b>{segment.area}</b><small>{`${share}%`}</small></span>
+                  <span className="dna-helix-rung"><b>{SYSTEM_DNA_LABELS[segment.id] ?? segment.area}</b><small>{power === 'suspended' ? 'reposo' : `${share}%`}</small></span>
                   <i className="dna-helix-node dna-helix-node-b" aria-hidden="true" />
                 </button>
               )
@@ -549,51 +582,47 @@ export function DnaHelix({ segments, mutations, progress, globalLabel }: {
         <div className="system-dna-progress-track" role="progressbar" aria-valuemin={1} aria-valuemax={100} aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
         <small>Avanza solo cuando cada área pasa de error a reparación, verificación y estado correcto.</small>
       </div>
-      <div className={`system-dna-detail dna-state-${selected.state}`}>
+      <div className={`system-dna-detail dna-state-${selected.state}`} aria-live="polite">
         <span className="system-dna-detail-dot" aria-hidden="true" />
         <div>
           <strong>{selected.area}</strong>
-          <span>{DNA_STATE_COPY[selected.state].label}</span>
-          <p>{selected.detail}</p>
+          <span>{selectedStatusLabel} · {DNA_STATE_COPY[selected.state].label}</span>
+          <p>{selectedDetail}</p>
+          {selected.facts ? (
+            <dl className="system-backup-facts" aria-label="Datos del nodo">
+              {selected.facts.map((fact) => <div key={fact.label}><dt>{fact.label}</dt><dd>{fact.value}</dd></div>)}
+            </dl>
+          ) : null}
+          <dl className="system-dna-meta system-dna-mutation-detail">
+            <div><dt>Dónde ocurrió</dt><dd>{selected.area}</dd></div>
+            <div><dt>Qué cambió</dt><dd>{selected.state === 'error' ? 'Corrección crítica pendiente' : selected.state === 'repairing' || selected.state === 'verifying' ? 'Regla en modificación o comprobación' : 'Base añadida y estable'}</dd></div>
+            <div><dt>Cuándo</dt><dd>Última lectura: hoy, {globalLabel}</dd></div>
+            <div><dt>Por qué</dt><dd>{selectedDetail}</dd></div>
+            <div><dt>Actividad</dt><dd>{selectedPower === 'suspended' ? '0% mientras está en reposo' : 'Disponible'}</dd></div>
+            <div><dt>Reinicio</dt><dd>{selectedPower === 'suspended' ? 'Automático al recibir trabajo' : 'No necesario'}</dd></div>
+          </dl>
         </div>
       </div>
-      {/* Panel de mutaciones con la geometría del original
-          (.dna-mutation-timeline, theme.css:7329): panel de altura
-          fija con cabecera propia y lista con scroll interno — la
-          versión anterior lo volcaba como lista abierta de miles de
-          píxeles de alto (defecto señalado por el dueño, 26-oct).
-          El contenido es el de esta copia (lo que el respaldo trae);
-          lo que el original guarda en su base y no viaja no se
-          inventa: la explicación vive tras el desplegable. */}
-      <section className="dna-mutation-timeline" aria-label="Línea de tiempo de mutaciones">
-        <header>
-          <div>
-            <strong id="dna-mutation-timeline-title">Línea de tiempo de mutaciones</strong>
-            <span>Cambios observados en la revisión actual</span>
-          </div>
-          <time>{globalLabel}</time>
-        </header>
-        {mutations.length ? (
-          <ol>
-            {mutations.map((m) => (
-              <li key={m.id}>
-                <i aria-hidden="true" />
-                <span>
-                  <strong>{m.title}</strong>
-                  <span>{m.detail} · Fuente: {m.source}</span>
-                </span>
-                <time dateTime={m.at ?? undefined}>{m.at ? fmtDate(m.at) : 'Sin fecha'}</time>
-              </li>
-            ))}
-          </ol>
-        ) : <p className="dna-mutation-empty">Sin mutaciones registradas en los datos cargados: el respaldo no trae decisiones, alias ni clasificaciones todavía.</p>}
+      {/* Línea de tiempo de mutaciones del original: los segmentos que
+          NO están en correcto (máx. 6), con su clase por estado y el
+          botón «Ver base»; sin ninguno, la fila «Cadena estable».
+          (La lista de cambios del respaldo que el clon volcaba aquí
+          no es el contenido de este panel en el original.) */}
+      <section className="dna-mutation-timeline" aria-labelledby="dna-mutation-timeline-title">
+        <header><div><strong id="dna-mutation-timeline-title">Línea de tiempo de mutaciones</strong><span>Cambios observados en la revisión actual</span></div><time>{globalLabel}</time></header>
+        <ol>
+          {segments.filter((s) => s.state !== 'healthy').slice(0, 6).map((s) => (
+            <li key={`mutation-${s.id}`} className={s.state === 'error' ? 'is-critical' : 'is-modified'}>
+              <i aria-hidden="true" /><div><strong>{s.area}</strong><span>{s.state === 'error' ? 'Corrección crítica' : 'Modificación en revisión'}</span></div><button type="button" onClick={() => toggle(s.id)}>Ver base</button>
+            </li>
+          ))}
+          {!segments.some((s) => s.state !== 'healthy') && <li className="is-added"><i aria-hidden="true" /><div><strong>Cadena estable</strong><span>No hay mutaciones pendientes en esta revisión.</span></div></li>}
+        </ol>
       </section>
-      <details className="dna-mutation-note">
-        <summary>Qué trae esta línea de tiempo</summary>
-        <p className="small muted">Cada cambio versionado que el respaldo de esta copia sí trae: directivas del dueño registradas en el código, decisiones por entrada, alias y clasificaciones aprendidas, y el snapshot de evolución guardado. Lo que el original guarda en su base y no viaja (versiones de ADN con checksum) no se inventa aquí.</p>
-      </details>
-      <div className="system-dna-legend" aria-label="Leyenda de estados del ADN">
-        {(['healthy', 'verifying', 'repairing', 'error'] as MirrorState[]).map((state) => <span key={state} className={`dna-state-${state}`}><i aria-hidden="true" />{DNA_STATE_COPY[state].short}</span>)}
+      <div className="system-dna-legend" aria-label="Leyenda de tipos de cambio">
+        <span className="dna-change-added"><i aria-hidden="true" />Verde · adición</span>
+        <span className="dna-change-modified"><i aria-hidden="true" />Amarillo · modificación</span>
+        <span className="dna-change-critical"><i aria-hidden="true" />Rojo · corrección crítica</span>
       </div>
     </div>
   )
@@ -865,11 +894,10 @@ export function CriticalSimulationPanel({ report, onRun }: { report: SimulationR
             <summary>Ver los {report.total} escenarios y cómo debe actuar Queen</summary>
             <ol>
               {report.results.map((r) => (
-                <li key={r.id} className={r.passed ? '' : 'is-failed'}>
-                  <div><i aria-hidden="true" /><span><small>{r.id}</small><strong>{r.title}</strong></span><b>{r.passed ? 'Correcto' : 'Pendiente'}</b></div>
-                  <p><strong>Evidencia real:</strong> {r.evidence}</p>
-                  <p><strong>Protocolo:</strong> {r.expected}</p>
-                  <p>{r.detail}</p>
+                <li key={r.id} className={r.passed ? 'is-passed' : 'is-failed'}>
+                  <div><i aria-hidden="true" /><span><small>{{ 'respaldo-ausente': 'Respaldos', 'cuadre-distinto': 'IPV y cuadre', huecos: 'IPV y cuadre', morosas: 'Cuentas', integridad: 'Integridad', boletines: 'Documentos', 'sin-conexion-nube': 'Conexión', 'queen-sin-medicion': 'Queen' }[r.id] ?? 'Sistema'}</small><strong>{r.title}</strong></span><b>{r.passed ? 'Superado' : 'Revisar'}</b></div>
+                  <p><strong>Señal:</strong> {r.evidence}</p>
+                  <p><strong>Procedimiento:</strong> {r.expected}</p>
                 </li>
               ))}
             </ol>
@@ -881,7 +909,7 @@ export function CriticalSimulationPanel({ report, onRun }: { report: SimulationR
         </>
       ) : (
         <div className="critical-simulation-empty">
-          <p>Aún no hay un entrenamiento crítico registrado en esta apertura. La simulación se ejecuta en este dispositivo, contra los datos reales cargados, y no toca producción.</p>
+          <p>Aún no hay un entrenamiento crítico registrado.</p>
           <button type="button" onClick={onRun}>Ejecutar simulación y entrenar</button>
         </div>
       )}
@@ -922,7 +950,6 @@ export function readStartupMetrics(): { phases: StartupEntry[]; modules: Startup
     phases.push({ key: 'boot-ttfb', label: 'Respuesta del servidor', detail: 'Tiempo hasta que llegó el primer byte del documento.', ms: nav.responseStart > 0 ? nav.responseStart : null, status: nav.responseStart > 0 ? (nav.responseStart <= 1800 ? 'ok' : 'warn') : 'pending' })
     phases.push({ key: 'boot-dom', label: 'Documento interpretado', detail: 'El navegador terminó de construir la página y la interfaz pudo empezar a pintarse.', ms: nav.domContentLoadedEventEnd > 0 ? nav.domContentLoadedEventEnd : null, status: nav.domContentLoadedEventEnd > 0 ? (nav.domContentLoadedEventEnd <= 3000 ? 'ok' : 'warn') : 'pending' })
     phases.push({ key: 'boot-load', label: 'Carga completa de la sesión', detail: 'Todos los recursos iniciales terminaron de llegar.', ms: nav.loadEventEnd > 0 ? nav.loadEventEnd : null, status: nav.loadEventEnd > 0 ? (nav.loadEventEnd <= 6000 ? 'ok' : 'warn') : 'pending' })
-    phases.push({ key: 'boot-now', label: 'Apertura de Sistema', detail: 'Tiempo desde el inicio de la navegación hasta que abriste Sistema en esta sesión (performance.now al montar la pantalla).', ms: performance.now(), status: 'ok' })
   }
   const byModule = new Map<string, { ms: number; bytes: number }>()
   for (const entry of performance.getEntriesByType('resource')) {
@@ -934,7 +961,7 @@ export function readStartupMetrics(): { phases: StartupEntry[]; modules: Startup
     current.bytes += resource.transferSize || resource.encodedBodySize || 0
     byModule.set(base, current)
   }
-  const MODULE_LABELS: Record<string, string> = { index: 'Núcleo de la interfaz', App: 'Núcleo de la interfaz', charts: 'Gráficos del sistema', xlsx: 'Motor de Excel (IPV)', exportPdf: 'Documentos y PDF', qa: 'Laboratorio visual' }
+  const MODULE_LABELS: Record<string, string> = { index: 'Núcleo de la interfaz', App: 'Núcleo de la interfaz', charts: 'Gráficos del sistema', xlsx: 'Motor de Excel (IPV)', exportPdf: 'Documentos y PDF', qa: 'Laboratorio visual', automatizacionesCore: 'Automatizaciones del sistema', queenCore: 'Núcleo de Queen', backend: 'Datos y sesión', systemMirror: 'Espejo de Sistema', systemCharts: 'Gráficos del sistema' }
   ;[...byModule.entries()].sort((a, b) => b[1].ms - a[1].ms).slice(0, 5).forEach(([base, data], index) => {
     modules.push({ key: `boot-mod-${index}-${base}`, label: `Módulo · ${MODULE_LABELS[base] ?? base}`, detail: data.bytes > 0 ? `${(data.bytes / 1024).toLocaleString('es-CU', { maximumFractionDigits: 0 })} KB transferidos en esta sesión.` : 'Servido desde la caché del navegador, sin transferencia nueva.', ms: data.ms > 0 ? data.ms : null, status: data.ms > 0 ? (data.ms <= 2500 ? 'ok' : 'warn') : 'pending' })
   })

@@ -79,7 +79,7 @@ export function buildQueenEvolution(data, refDate) {
   const anchorDate = data?.exportedAt ? String(data.exportedAt).slice(0, 10) : (days.length ? days[days.length - 1].date : refDate)
   const daysOperating = firstDay && anchorDate ? Math.max(1, diffDaysISO(firstDay, anchorDate) + 1) : 0
   const metrics = [
-    { key: 'directives', label: 'Directivas aprendidas', value: QUEEN_OWNER_DIRECTIVES.length, target: 30, weight: 20, measured: true, detail: 'Reglas del dueño registradas en el código del clon (puerto de las directivas del original).' },
+    { key: 'directives', label: 'Directivas aprendidas', value: QUEEN_OWNER_DIRECTIVES.length, target: 30, weight: 20, measured: true, detail: 'Reglas del dueño registradas y aplicadas en cada respuesta.' },
     { key: 'concepts', label: 'Conceptos aprendidos', value: conceptsCount, target: 25, weight: 15, measured: true, detail: 'Clasificaciones aprendidas (learnedKinds) y alias de identidad que viajan en el respaldo y la sincronización.' },
     { key: 'corrections', label: 'Correcciones aplicadas', value: correctionsCount, target: 300, weight: 20, measured: true, detail: 'Decisiones del dueño por entrada concreta (cuentasOverrides) que el respaldo trae aplicadas.' },
     { key: 'patterns', label: 'Patrones reconocidos', value: null, target: 15, weight: 10, measured: false, detail: 'Los patrones de uso viven en una tabla del original que no viaja en el respaldo: no se miden aquí.' },
@@ -397,30 +397,6 @@ export function buildQueenObservations(data, refDate) {
   const pendingBulletins = (data?.bulletins ?? []).filter((b) => b.status === 'pendiente').length
   if (pendingBulletins) out.push({ kind: 'boletines', level: 'info', text: `${fmtQueen(pendingBulletins)} boletines en cola, listos para descargar; todavía no hay servicio de correo conectado, así que ninguno se marca enviado sin envío real.` })
   return out
-}
-
-/* ============ Capa de lenguaje (Gemini / Cloudflare) ============
-   Estado honesto: la capa vive en la Edge Function queen-chat y
-   su configuración (el secreto del dueño) no es visible desde la
-   app. La app solo puede declarar si el canal está desplegado; el
-   intento real devuelve el motivo exacto de la función. */
-export function queenLanguageStatus(supabaseConfigured) {
-  /* D-R5-07 (27-oct): el estado anterior era una nota de obra FALSA
-     («sin configurar», «se despliega… en la puerta final», «la clave
-     la crea el dueño»): la Edge Function queen-chat ESTÁ desplegada
-     y su secreto GEMINI_API_KEY creado (declaración del dueño). El
-     estado real: con servidor (Supabase) el canal está configurado;
-     sin servidor, Queen responde en determinista. Sin narración de
-     fase en la interfaz. */
-  return {
-    deterministicReady: true,
-    configured: Boolean(supabaseConfigured),
-    channelDeployed: Boolean(supabaseConfigured),
-    providers: ['Gemini (gratis)', 'Cloudflare Workers AI (respaldo)'],
-    note: supabaseConfigured
-      ? 'Canal activo (Edge Function queen-chat): Gemini con respaldo de Cloudflare Workers AI. La capa redacta sobre las cifras verificadas del determinista; no calcula ni escribe datos.'
-      : 'Sin canal en este dispositivo: Queen responde en determinista. La capa de lenguaje vive en el servidor del sistema.',
-  }
 }
 
 /* ============ Conversación determinista (askQueen del clon) ============

@@ -47,7 +47,7 @@ export function DiagnosticRadar({ areas }: { areas: RadarArea[] }) {
   const shapePts = scored.map((a, i) => { const p = pt(i, Math.max(0, Math.min(100, a.score)) / 100); return `${p.x.toFixed(1)},${p.y.toFixed(1)}` }).join(' ')
   const excluded = areas.length - scored.length
   return (
-    <figure className="radar-figure">
+    <figure className="queen-diagnostic-radar">
       <svg viewBox="0 0 320 300" role="img" aria-label={`Radar de salud por áreas: ${scored.map((a) => `${a.label} ${a.score} de 100`).join('; ')}`}>
         {[0.25, 0.5, 0.75, 1].map((f) => <polygon key={f} points={ringPts(f)} fill="none" stroke="var(--border)" strokeWidth={f === 1 ? 1.4 : 1} />)}
         {scored.map((a, i) => { const p = pt(i, 1); return <line key={a.id} x1={cx} y1={cy} x2={p.x.toFixed(1)} y2={p.y.toFixed(1)} stroke="var(--border)" /> })}
@@ -61,6 +61,46 @@ export function DiagnosticRadar({ areas }: { areas: RadarArea[] }) {
 }
 
 /* ---------------- Reloj en vivo y mini-línea ---------------- */
+
+/* LiveClockCard del original (futureCharts.tsx): la tarjeta de fecha
+   y hora que abre la pestaña Sistema, SIEMPRE primera y fuera del
+   organizador (orden del dueño, 2026-10-19). Tic de 1 s con
+   resincronía al volver a primer plano; en segundo plano no se
+   repinta. Formato: fecha larga es-CU, día de semana y hora 12 h
+   con segundos en menor tamaño y am/pm. */
+export function LiveClockCard() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => {
+    const tick = () => { if (document.visibilityState !== 'hidden') setNow(new Date()) }
+    const timer = window.setInterval(tick, 1000)
+    document.addEventListener('visibilitychange', tick)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', tick)
+    }
+  }, [])
+  const fecha = new Intl.DateTimeFormat('es-CU', { day: 'numeric', month: 'long', year: 'numeric' }).format(now)
+  const semana = new Intl.DateTimeFormat('es-CU', { weekday: 'long' }).format(now)
+  const h24 = now.getHours()
+  const h12 = h24 % 12 === 0 ? 12 : h24 % 12
+  const mm = String(now.getMinutes()).padStart(2, '0')
+  const ss = String(now.getSeconds()).padStart(2, '0')
+  const ampm = h24 < 12 ? 'am' : 'pm'
+  return (
+    <section aria-label="Fecha y hora actual" data-visual-audit-ignore="true" className="premium-panel sistema-glance-enter system-live-clock">
+      <div className="system-live-clock-row">
+        <div>
+          <p className="system-live-kicker"><i aria-hidden="true" /> Fecha y hora actual · en vivo</p>
+          <p className="system-live-clock-date">{fecha}</p>
+          <p className="system-live-clock-weekday">{semana}</p>
+        </div>
+        <p className="system-live-clock-time" aria-hidden="true">
+          {h12}:{mm}<span className="lc-sec">:{ss}</span> <span className="lc-ampm">{ampm}</span>
+        </p>
+      </div>
+    </section>
+  )
+}
 
 export function LiveClock() {
   const [now, setNow] = useState(() => new Date())
@@ -260,17 +300,8 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
                 ))}
               </div>
             </div>
-          ) : <div className="chart-empty">Sin componentes que mostrar.</div>}
+          ) : <div className="chart-empty">Sin datos para representar en este período.</div>}
           <p className="system-chart-reading" role="status">{selectedHealth ? `${selectedHealth.name}: ${selectedHealth.value} componente${selectedHealth.value === 1 ? '' : 's'}.` : 'Toca un estado para aislar su lectura.'}</p>
-          <div className="rt-health-list">
-            {health.map((p) => (
-              <div className="rt-health-row" key={p.label}>
-                <i style={{ background: STATE_COLOR[p.state] }} />
-                <span className="grow">{p.label}<span className="muted">{p.detail}</span></span>
-                <span className="chip">{STATE_LABEL[p.state]}</span>
-              </div>
-            ))}
-          </div>
         </div>
       ) : null}
 
@@ -314,7 +345,7 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="system-chart-reading">Un fallo por jornada = cuadre distinto de cero (1) más merma con costo registrada ese día (1). Un valor 0 es una jornada registrada sin fallos; una fecha ausente no se dibuja.</p>
+              <p className="system-chart-reading">Un valor 0 es una jornada registrada sin fallos; una fecha ausente no se dibuja.</p>
             </>
           ) : <div className="chart-empty">Aún no hay jornadas completas para representar.</div>}
         </div>
@@ -374,7 +405,7 @@ export function SystemRealtimeCharts({ health, activities, events, readings, che
               <div className="system-hourgrid-legend" aria-label="Leyenda de lecturas por hora">
                 {hourGrid.legend.map((item) => <span key={item.level}><i style={{ background: hourLevelColor(item.level) }} />{item.label}</span>)}
               </div>
-              <p className="system-chart-reading">Cada bloque es una hora: su intensidad es el número de comprobaciones registradas en esa hora. Una hora sin lecturas queda en el tono vacío; no se rellena actividad que no se midió. Las jornadas sembradas del respaldo se agrupan a las 12:00 porque el respaldo trae la fecha, no la hora: esa columna marca jornadas, no una hora medida.</p>
+              <p className="system-chart-reading">Cada bloque es una hora: su intensidad es el número de comprobaciones registradas en esa hora. Una hora sin lecturas queda en el tono vacío; no se rellena actividad que no se midió.</p>
             </>
           ) : <div className="chart-empty">Aún no hay comprobaciones con hora registrada para dibujar la rejilla.</div>}
         </div>

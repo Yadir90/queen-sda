@@ -110,7 +110,7 @@ export default function QueenEvolutionPanel({ evo, health, serverHistory = [] }:
                 </li>
               ))}
             </ol>
-            <span className="small muted">Historial del servidor original (app_settings · queen-evolution-history).</span>
+            <span className="small muted">Historial de mediciones guardadas en el servidor.</span>
           </>
         ) : null}
       </div>
@@ -205,7 +205,7 @@ export default function QueenEvolutionPanel({ evo, health, serverHistory = [] }:
                 </li>
               ))}
             </ol>
-            <p className="small muted">Historial del servidor original (app_settings · queen-evolution-history): manda sobre el snapshot de esta copia.</p>
+            <p className="small muted">Historial de mediciones guardadas en el servidor: manda sobre el snapshot de esta copia.</p>
           </>
         ) : evo.snapshot ? (
           <ol className="queen-evolution-history">
@@ -213,7 +213,7 @@ export default function QueenEvolutionPanel({ evo, health, serverHistory = [] }:
               <span />
               <div>
                 <strong>{evo.snapshot.stageName} · {fmtNum1.format(evo.snapshot.score)} puntos</strong>
-                <p>Última medición guardada en esta copia, calculada de sus datos reales por queenCore.</p>
+                <p>Última medición guardada en esta copia, calculada de sus datos reales.</p>
                 {evo.snapshot.measuredAt ? <small>{fmtMedido(evo.snapshot.measuredAt)}</small> : null}
               </div>
             </li>

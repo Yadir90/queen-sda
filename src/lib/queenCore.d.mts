@@ -124,15 +124,6 @@ export function missingImportDates(data: QueenData, refDate: string): { gaps: st
 export interface QueenObservation { kind: string; level: 'info' | 'alert' | 'suggestion'; text: string }
 export function buildQueenObservations(data: QueenData, refDate: string): QueenObservation[]
 
-export interface QueenLanguageStatus {
-  deterministicReady: boolean
-  configured: boolean
-  channelDeployed: boolean
-  providers: string[]
-  note: string
-}
-export function queenLanguageStatus(supabaseConfigured: boolean): QueenLanguageStatus
-
 export const QUEEN_QUICK_QUESTIONS: string[]
 
 export interface QueenFigure { label: string; value: number | string }

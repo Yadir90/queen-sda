@@ -1,0 +1,249 @@
+/* Menú del día — puerto de las clases del MenuTab del original
+   (Tailwind sobre theme.css) a CSS propio (D-R6-02): mismos
+   radios, tamaños, colores de token y jerarquía. Tarjeta 24 px,
+   botones píldora de 44 px, campos de 12 px de radio y la vista
+   previa blanca en serif con los colores del logo (#084C5C,
+   #22B8CF, #0E7C93) tal como la pinta el original. */
+
+.menu-page { min-width: 0; }
+.menu-title-row { margin-bottom: 20px; }
+.menu-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  line-height: 1.15;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.menu-card {
+  border-radius: 24px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 16px;
+  margin-bottom: 16px;
+  min-width: 0;
+}
+.menu-card-title {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  margin: 0 0 8px;
+}
+
+.menu-actions-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end; }
+.menu-field-label { font-size: 14px; font-weight: 500; display: block; margin-bottom: 4px; }
+.menu-input {
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 12px;
+  font-size: 14px;
+  min-height: 44px;
+  font-family: inherit;
+}
+.menu-input:focus-visible { outline: 3px solid color-mix(in srgb, var(--turquoise) 45%, transparent); outline-offset: 1px; }
+
+.menu-btn {
+  border-radius: 999px;
+  padding: 0 16px;
+  min-height: 44px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-family: inherit;
+}
+.menu-btn:disabled { opacity: 0.5; cursor: default; }
+.menu-btn-deep { background: var(--deep); border: 1px solid var(--deep); color: #fff; }
+.menu-btn-outline-deep { border: 1px solid var(--deep); color: var(--deep); background: var(--surface); }
+.menu-btn-outline { border: 1px solid var(--border); color: var(--text); background: var(--surface); }
+.menu-btn-accent { background: var(--accent); border: 1px solid var(--accent); color: #fff; padding: 0 20px; }
+.menu-btn-sm { min-height: 36px; padding: 0 12px; font-size: 12px; font-weight: 700; }
+.menu-btn-sm.semibold { font-weight: 600; }
+.menu-btn-danger { color: var(--danger); }
+
+.menu-source-line { font-size: 12px; color: var(--dim); margin: 12px 0 0; line-height: 1.5; }
+.menu-source-line strong { color: var(--text); }
+.menu-source-line .menu-dirty { color: #92400e; }
+.menu-msg { font-size: 14px; color: var(--accent); margin: 8px 0 0; }
+.menu-error { font-size: 14px; color: var(--danger); margin: 8px 0 0; }
+
+/* ===== Historial ===== */
+.menu-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.menu-history-desc { font-size: 12px; color: var(--dim); margin: 4px 0 0; max-width: 560px; line-height: 1.5; }
+.menu-search { position: relative; margin-top: 12px; }
+.menu-search .menu-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--dim); display: inline-flex; }
+.menu-search input {
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px 14px 12px 40px;
+  font-size: 14px;
+  min-height: 48px;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.menu-history-note { font-size: 12px; color: var(--dim); margin: 12px 0 0; }
+.menu-history-empty { font-size: 14px; color: var(--dim); margin: 12px 0 0; }
+.menu-history-card { display: flex; align-items: center; gap: 12px; border-radius: 16px; border: 1px solid var(--border); padding: 12px 14px; }
+.menu-thumb {
+  width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: var(--font-display); font-weight: 700; color: #fff; font-size: 14px;
+  background: linear-gradient(135deg, #084C5C 0%, #12B5C9 58%, #16A34A 130%);
+  object-fit: cover;
+}
+.menu-thumb-sm { width: 40px; height: 40px; border-radius: 12px; font-size: 13px; }
+.menu-history-main { flex: 1; min-width: 0; }
+.menu-history-name { display: block; font-size: 14px; font-weight: 700; line-height: 1.25; }
+.menu-history-meta { display: block; font-size: 12px; color: var(--dim); margin-top: 2px; }
+.menu-history-desc2 { display: block; font-size: 12px; color: var(--dim); }
+.menu-reason-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 700; border-radius: 999px;
+  padding: 2px 8px; background: var(--warn-soft); color: #92400e; margin-top: 4px;
+}
+.menu-history-actions { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
+
+/* ===== Textos del menú ===== */
+.menu-texts-grid { display: grid; gap: 12px; }
+.menu-label-with-info { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.menu-label-with-info .menu-field-label { margin-bottom: 0; }
+.menu-field-label .menu-optional { color: var(--dim); font-weight: 400; }
+.menu-input-full { width: 100%; box-sizing: border-box; }
+
+/* ===== Editor ===== */
+.menu-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.menu-editor-head h3 { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 0; }
+.menu-section-block { margin-bottom: 20px; }
+.menu-section-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 0 0 8px; }
+.menu-family-block { margin-bottom: 12px; }
+.menu-family-label {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: var(--dim); margin: 0 0 6px;
+}
+.menu-item-card { padding: 14px; }
+.menu-item-grid { display: grid; gap: 8px; }
+.menu-item-top { display: flex; gap: 8px; align-items: center; }
+.menu-item-name {
+  flex: 1; min-width: 0;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 10px 12px; font-size: 14px; font-weight: 600; font-family: inherit;
+}
+.menu-item-desc {
+  width: 100%; box-sizing: border-box;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 10px 12px; font-size: 14px; font-family: inherit;
+}
+.menu-item-row2 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.menu-item-price {
+  width: 112px; max-width: 100%;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 10px 12px; font-size: 14px; font-variant-numeric: tabular-nums; font-family: inherit;
+}
+.menu-item-section-label { font-size: 12px; color: var(--dim); }
+.menu-item-select {
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 8px 12px; font-size: 12px; min-height: 40px; font-family: inherit;
+}
+.menu-item-section-input {
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  padding: 8px 12px; font-size: 12px; width: 176px; max-width: 100%; font-family: inherit;
+}
+.menu-item-actions { display: flex; gap: 4px; margin-left: auto; }
+.menu-eye-btn {
+  border-radius: 999px; border: 1px solid var(--deep); color: var(--deep); background: var(--surface);
+  padding: 0 12px; min-height: 36px; font-size: 12px; font-weight: 700;
+  display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-family: inherit;
+}
+.menu-eye-btn.is-hidden { border-color: var(--border); color: var(--dim); }
+.menu-eye-btn:disabled { opacity: 0.5; cursor: default; }
+.menu-item-note { font-size: 11px; color: var(--dim); margin: 0; }
+.menu-item-note.strong { font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+.menu-editor-loading { font-size: 14px; color: var(--dim); margin: 0; }
+
+/* ===== Añadir a mano ===== */
+.menu-manual-grid { display: grid; gap: 8px; }
+.menu-manual-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.menu-manual-section { flex: 1; min-width: 150px; }
+.menu-manual-price { width: 128px; }
+.menu-manual-submit { align-self: flex-start; }
+
+/* ===== Estado vacío ===== */
+.menu-empty {
+  border-radius: 22px; background: var(--surface); border: 1px solid var(--border);
+  padding: 20px; font-size: 14px;
+}
+.menu-empty strong { display: block; margin-bottom: 4px; }
+.menu-empty p { color: var(--dim); margin: 0; line-height: 1.5; }
+.menu-empty .menu-btn { margin-top: 12px; }
+
+/* ===== Vista previa (así sale el PDF) ===== */
+.menu-layout { min-width: 0; }
+.menu-preview-wrap { margin-top: 20px; min-width: 0; }
+.menu-preview-title { font-family: var(--font-display); font-weight: 700; font-size: 16px; margin: 0 0 8px; }
+.menu-preview {
+  border-radius: 24px; background: #fff; color: #1F2A26;
+  border: 1px solid var(--border); padding: 16px;
+  box-shadow: 0 10px 35px rgba(8, 76, 92, 0.10);
+}
+.menu-preview-head { text-align: center; }
+.menu-preview-logo { width: 56px; height: 56px; border-radius: 16px; object-fit: cover; margin: 0 auto; display: block; }
+.menu-preview-brand { font-family: Georgia, 'Times New Roman', serif; font-size: 24px; line-height: 1.15; font-weight: 700; color: #084C5C; margin: 12px 0 0; }
+.menu-preview-tag { font-size: 9px; font-weight: 700; letter-spacing: 0.3em; color: #0E7C93; margin: 4px 0 0; }
+.menu-preview-rule { width: 120px; height: 1px; background: #22B8CF; margin: 12px auto; }
+.menu-preview-doctitle { font-family: Georgia, 'Times New Roman', serif; font-size: 18px; font-weight: 700; color: #084C5C; margin: 0; }
+.menu-preview-date { font-size: 10px; color: #5B6F63; text-transform: capitalize; margin: 4px 0 0; }
+.menu-preview-subtitle { font-family: Georgia, 'Times New Roman', serif; font-size: 12px; margin: 4px 0 0; }
+.menu-preview-empty { font-family: Georgia, 'Times New Roman', serif; text-align: center; font-size: 13px; color: #5B6F63; margin: 32px 0 0; }
+.menu-preview-section { margin-top: 24px; }
+.menu-preview-section-title { font-family: Georgia, 'Times New Roman', serif; font-size: 15px; font-weight: 700; color: #084C5C; margin: 0; }
+.menu-preview-section-rule { height: 1px; background: #D7EEF3; margin: 4px 0 8px; }
+.menu-preview-family { margin-bottom: 8px; }
+.menu-preview-family-title {
+  font-family: Georgia, 'Times New Roman', serif; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.18em; color: #0E7C93; text-transform: uppercase; margin: 8px 0 4px;
+}
+.menu-preview-list { list-style: none; margin: 0; padding: 0; }
+.menu-preview-item { padding: 4px 0; }
+.menu-preview-item-row { display: flex; align-items: baseline; }
+.menu-preview-item-name { font-family: Georgia, 'Times New Roman', serif; font-weight: 700; font-size: 13px; min-width: 0; overflow-wrap: break-word; }
+.menu-preview-leader { flex: 1; min-width: 12px; border-bottom: 1px dotted #B9C6BE; margin: 0 8px; }
+.menu-preview-item-price { font-weight: 700; font-size: 13px; color: #084C5C; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.menu-preview-item-desc { font-family: Georgia, 'Times New Roman', serif; display: block; font-size: 10.5px; color: #5B6F63; margin-top: 2px; }
+.menu-preview-footer { text-align: center; font-size: 9px; color: #5B6F63; margin: 32px 0 0; border-top: 1px solid #D7EEF3; padding-top: 12px; }
+.menu-preview-note { font-size: 12px; color: var(--dim); margin: 12px 0 0; line-height: 1.5; }
+
+@media (min-width: 1280px) {
+  .menu-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .menu-preview-wrap { margin-top: 0; position: sticky; top: 16px; }
+  .menu-preview { padding: 32px; }
+  .menu-preview-logo { width: 72px; height: 72px; }
+  .menu-preview-brand { font-size: 30px; }
+}
+
+/* En oscuro, el original pinta el TEXTO --deep en menta claro
+   (#a7d7bc) y su BORDE en verde visible (#3d7a5e) — theme.css de
+   su App: «.text-[var(--deep)] { color:#a7d7bc !important }» y
+   «.border-[var(--deep)] { border-color:#3d7a5e !important }» —
+   porque #0b3d2e sobre la superficie oscura queda a ~1,3:1,
+   ilegible. El FONDO --deep (botón sólido con texto blanco) se
+   mantiene oscuro a propósito, igual que en el original. Aquí se
+   aplica a las dos piezas del Menú que usan --deep como texto y
+   borde (botón «Guardar como base»/«Historial» y el ojo). */
+@media (prefers-color-scheme: dark) {
+  .menu-btn-outline-deep { color: #a7d7bc; border-color: #3d7a5e; }
+  .menu-eye-btn { color: #a7d7bc; border-color: #3d7a5e; }
+  .menu-eye-btn.is-hidden { color: var(--dim); border-color: var(--border); }
+}

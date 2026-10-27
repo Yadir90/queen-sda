@@ -15,7 +15,8 @@
      - Aviso de IPV ausente: día con IPV = sin aviso; día sin IPV
        antes de las 22:30 = en espera sin alarma; desde las 22:30
        = ausente con alarma.
-     - Estado para Sistema: declara «pendiente de despliegue». */
+     - Estado para Sistema: declara la programación en la nube
+       (desplegadas el 26-oct; SIS-R6 corrigió el «pendiente» falso). */
 
 import { readFileSync } from 'node:fs'
 import { parseBackup } from '../src/lib/backupCore.mjs'
@@ -93,6 +94,13 @@ check('formato del original: {backupOf, exportedAt, data}',
   && nightly.backup.exportedAt === '2026-10-25'
   && nightly.backup.data && Array.isArray(nightly.backup.data.days))
 check('nombre de copia del día', nightly.filename === 'backup-sda-2026-10-25.json', nightly.filename)
+/* SIS-R6: en el instante real del cron (03:45Z = 23:45 Habana del día
+   anterior) la copia se nombra con la fecha de La Habana, como el
+   original (todayHavana); con la fecha UTC salía un día por delante. */
+const nightlyCron = buildNightlyBackup(data, new Date('2026-10-27T03:45:00Z'))
+check('instante real del cron 23:45 Habana: copia nombrada con la fecha habanera (26), no la UTC (27)',
+  nightlyCron.filename === 'backup-sda-2026-10-26.json' && nightlyCron.backup.exportedAt === '2026-10-26' && nightlyCron.verified,
+  `${nightlyCron.filename} · ${nightlyCron.backup.exportedAt}`)
 check('control: 23 días', nightly.control.days === 23, `=> ${nightly.control.days}`)
 check('control: ventas 2.662.090', nightly.control.ventas === 2662090, `=> ${nightly.control.ventas}`)
 check('control: bruta 667.141 y neta 645.576', nightly.control.gananciaBruta === 667141 && nightly.control.gananciaNeta === 645576)
@@ -204,7 +212,7 @@ check('día sin IPV a las 22:30: ausente, con alarma', late.state === 'ausente' 
 console.log('— Estado para Sistema —')
 const status = buildAutomationsStatus(data, [], null, { date: '2026-10-24', time: '12:00' })
 check('cinco tareas declaradas', status.tasks.length === 5 && AUTOMATION_TASKS.length === 5)
-check('estado honesto: pendiente de despliegue, nunca «activo» falso',
+check('estado veraz: programada en la nube (desplegada 26-oct), nunca «pendiente» falso',
   status.cloudStatus === AUTOMATION_CLOUD_PENDING
   && status.tasks.every((t) => t.cloudStatus === AUTOMATION_CLOUD_PENDING))
 check('sin corridas: Sistema lo dice, no lo inventa', status.backup.lastRunAt === null && status.bulletins.pending === 23)

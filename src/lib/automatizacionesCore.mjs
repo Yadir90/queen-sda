@@ -84,7 +84,11 @@ export const AUTOMATION_TASKS = [
 ]
 
 /** Estado honesto mientras las tareas no están desplegadas en la nube. */
-export const AUTOMATION_CLOUD_PENDING = 'Tarea en la nube pendiente de despliegue'
+/* SIS-R6 (27-oct): el estado «pendiente de despliegue» quedó falso
+   tras el despliegue del 26-oct (Edge Functions + pg_cron activos en
+   Supabase). El estado veraz es «programada en la nube»; las corridas
+   locales registradas en esta copia se declaran aparte, por tarea. */
+export const AUTOMATION_CLOUD_PENDING = 'Programada en la nube (Supabase)'
 
 function isoNow(now) {
   return now instanceof Date ? now.toISOString() : String(now ?? new Date().toISOString())
@@ -155,13 +159,18 @@ export function listCloneIntegrityIssues(data) {
  * Devuelve el objeto exportable, su control y la verificación.
  */
 export function buildNightlyBackup(data, now = new Date()) {
-  const exportedAt = isoNow(now)
-  const backup = buildBackupExport(data, exportedAt.slice(0, 10))
+  /* SIS-R6 (27-oct): la fecha del respaldo es la de LA HABANA, como en
+     el original (todayHavana): la corrida de las 23:45 Habana cae a
+     las 03:45Z del día UTC siguiente y con la fecha UTC la copia de
+     la noche del 26 salía nombrada «2026-10-27». exportedAt del
+     formato es una FECHA (la batería lo fija), no el instante. */
+  const havanaDate = dateOf(now)
+  const backup = buildBackupExport(data, havanaDate)
   const control = summarizeDays(Array.isArray(data?.days) ? data.days : [])
   const verification = verifyBackupRoundTrip(backup)
   return {
     backup,
-    filename: `backup-sda-${exportedAt.slice(0, 10)}.json`,
+    filename: `backup-sda-${havanaDate}.json`,
     control: {
       days: control.count, from: control.from, to: control.to,
       ventas: control.ventas, gananciaBruta: control.gananciaBruta,

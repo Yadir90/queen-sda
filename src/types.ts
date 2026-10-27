@@ -563,6 +563,10 @@ export interface StoredData {
   elaboration: ElaborationStore
   /** Otros ingresos registrados a mano en esta copia (Extras). */
   extraIncomes: ExtraIncome[]
+  /** Estado de la pestaña Menú (documentos por día y base,
+   *  disponibilidad por fecha y perfiles compartidos de producto);
+   *  en Supabase vive en app_settings 'menu-state'. */
+  menuState: MenuState
   /** Ajustes manuales del libro de existencias de esta copia
    *  (inicial/baja/traslado por producto y fecha, forma del original). */
   inventoryAdjustments: InventoryAdjustment[]
@@ -691,6 +695,82 @@ export interface WorkerPayment {
   monto: number
   concepto: string
   [key: string]: unknown
+}
+
+/* ===== Menú del día (D-R6-02): documento editable + estado =====
+ * Puerto del MenuDoc del original: el menú es presentación para
+ * el cliente; editarlo no toca precios reales ni existencias. El
+ * estado vive en app_settings 'menu-state' (Supabase) o en el
+ * StoredData local: documento por día, documento base reutilizable,
+ * decisiones de disponibilidad por fecha y el perfil compartido
+ * del producto (familia aprendida, descripción, archivo y ojo). */
+
+/** Ítem del menú TAL COMO SE GUARDA (forma del servidor original). */
+export interface MenuDocItem {
+  key: string
+  productKey: string | null
+  section: string
+  family: string
+  name: string
+  price: number | null
+  description: string
+  included: boolean
+}
+
+/** Documento del menú guardado (un día o la base). */
+export interface MenuDoc {
+  items: MenuDocItem[]
+  footerText: string
+  subtitle: string
+}
+
+/** Ítem en edición en la pantalla: el guardado + su precio en texto. */
+export interface MenuItem extends MenuDocItem {
+  priceText: string
+}
+
+/** Documento en edición en la pantalla. */
+export interface MenuDocState {
+  items: MenuItem[]
+  footerText: string
+  subtitle: string
+}
+
+/** Perfil compartido de un producto para el menú (original:
+ *  ProductProfile reducido a lo que el Menú usa): familia aprendida,
+ *  descripción breve del menú, archivo manual y ojo de visibilidad. */
+export interface MenuProductProfile {
+  family: string
+  description: string
+  archived: boolean
+  menuHidden: boolean
+}
+
+/** Estado completo persistente de la pestaña Menú. */
+export interface MenuState {
+  base: MenuDoc | null
+  days: Record<string, MenuDoc>
+  availability: Record<string, Record<string, boolean>>
+  profiles: Record<string, MenuProductProfile>
+}
+
+/** Producto del catálogo ligero del menú (original: MenuCatalogProduct). */
+export interface MenuCatalogProduct {
+  productKey: string
+  name: string
+  dept: string
+  um: string
+  currentStock: number
+  precioVentaVigente: number | null
+  precioCompraVigente: number | null
+  menuFamily: string
+  menuFamilyAuto: string
+  menuFamilyLearned: string | null
+  menuFamilySource: 'aprendida' | 'automatica' | 'por-clasificar'
+  menuDescription: string
+  catalogArchived: boolean
+  menuHidden: boolean
+  photoUrl: string | null
 }
 
 export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'inventario' | 'laboratorio' | 'documentos' | 'historial' | 'archivo' | 'entradas' | 'extras' | 'existencias' | 'cronologia' | 'ajustes' | 'menu' | 'importar'

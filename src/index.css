@@ -842,9 +842,11 @@ table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(-
 .hour-legend i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 
 /* Radar del diagnóstico */
-.radar-figure { margin: 4px auto 10px; max-width: 340px; }
-.radar-figure svg { width: 100%; height: auto; display: block; }
-.radar-figure figcaption { text-align: center; font-size: 11px; color: var(--dim); line-height: 1.45; margin-top: 2px; }
+/* SIS-R6: la figura del radar lleva la clase y las reglas del
+   original (.queen-diagnostic-radar, theme.css:10060-10062). */
+.queen-diagnostic-radar { display: grid; justify-items: center; margin-top: 14px; }
+.queen-diagnostic-radar svg { width: min(320px, 88vw); height: auto; display: block; }
+.queen-diagnostic-radar figcaption { margin-top: 2px; color: var(--dim); font-size: 11px; line-height: 1.45; text-align: center; }
 .diag-areas { display: grid; gap: 12px; margin-top: 6px; }
 .diag-area-head { display: flex; justify-content: space-between; gap: 10px; font-size: 0.88rem; margin-bottom: 5px; }
 .diag-bar { height: 10px; border-radius: 999px; background: var(--surface-tonal); overflow: hidden; }
@@ -1199,7 +1201,6 @@ button.hist-cell { cursor: pointer; }
 .queen-bubble.user { align-self: flex-end; background: var(--queen-chat-user-bg); border-bottom-right-radius: 6px; }
 .queen-bubble.queen { align-self: flex-start; background: var(--queen-chat-assistant-bg); border-bottom-left-radius: 6px; }
 .queen-verify { margin-top: 6px !important; font-size: 0.76rem; opacity: .88; border-top: 1px solid rgb(255 255 255 / .28); padding-top: 5px; }
-.queen-lang { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .queen-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); gap: 8px; margin-top: 12px; }
 .queen-metric { border: 1px solid var(--border); border-radius: 14px; padding: 8px 10px; display: flex; flex-direction: column; gap: 1px; background: var(--surface-alt); }
 .queen-metric strong { font-size: 1.02rem; }

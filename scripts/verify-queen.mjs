@@ -25,7 +25,7 @@ import { syncDerivedData } from '../src/lib/syncCore.mjs'
 import { buildProductsCatalog, buildPriceSuggestions } from '../src/lib/productosCore.mjs'
 import {
   answerQueen, buildQueenEvolution, buildQueenMemory, buildQueenErrorBank,
-  buildQueenObservations, buildQueenOperationModes, queenLanguageStatus,
+  buildQueenObservations, buildQueenOperationModes,
   QUEEN_OWNER_DIRECTIVES, QUEEN_PERMISSION_RULES, QUEEN_AUTONOMY_RULES,
   QUEEN_STAGES, pendingTotals,
 } from '../src/lib/queenCore.mjs'
@@ -201,13 +201,21 @@ const aWrite = answerQueen(data, 'Marca pagada la cuenta de Leidy y borra ese sa
 check('petición de escritura → denegada con su regla', aWrite.intent === 'escritura-denegada' && aWrite.text.includes('denegada'))
 check('el núcleo no exporta mutadores de negocio',
   !Object.keys(queenCore).some((k) => /^(set|add|delete|remove|update|save|mark|import)/i.test(k)))
-const langLocal = queenLanguageStatus(false)
-const langSb = queenLanguageStatus(true)
-/* D-R5-07: la expectativa anterior fijaba el estado FALSO de la nota
-   de obra («IA sin configurar» también en Supabase). Estado real:
-   con servidor, el canal queen-chat está desplegado y configurado. */
-check('capa de lenguaje: determinista siempre lista; con servidor el canal está configurado',
-  langLocal.deterministicReady && !langLocal.configured && langSb.configured && langSb.channelDeployed)
+/* D-R6-03: el panel visible «Capa de lenguaje» se RETIRÓ por orden
+   del dueño (27-oct): en el original esa capa aparece CERO veces en
+   pantalla. D-R5-07 corrigió el texto pero dejó el panel; aquí se
+   afirma la AUSENCIA completa — núcleo, pantalla y estilos — como
+   verify:voz afirma la ausencia de voz. La función queen-chat sigue
+   en el servidor, sin punto de entrada visible en la app. */
+check('el núcleo ya no exporta queenLanguageStatus', !('queenLanguageStatus' in queenCore))
+const queenScreen = readFileSync(new URL('../src/screens/Queen.tsx', import.meta.url), 'utf8')
+const indexCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8')
+check('la pantalla de Queen no contiene el panel de lenguaje',
+  !queenScreen.includes('queen-lang') && !queenScreen.includes('Capa de lenguaje:')
+  && !queenScreen.includes('Redactar la última respuesta') && !queenScreen.includes('Redacción de la capa')
+  && !queenScreen.includes('queenLanguageStatus') && !queenScreen.includes('onTestLanguage')
+  && !queenScreen.includes('languageTry') && !queenScreen.includes('tryLanguage'))
+check('los estilos ya no definen .queen-lang', !indexCss.includes('.queen-lang'))
 
 console.log(`\nverify:queen — ${passed} ok, ${failed} fallos`)
 if (failed) process.exit(1)

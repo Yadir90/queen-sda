@@ -3,7 +3,7 @@ import type { AutomationRun, Bulletin, Section, Session, StoredData } from './ty
 import {
   EMPTY_DATA, TEMP_PASSWORD, changePassword, ensureProfiles, getSession, listProfiles, loadData, login, logout, profileMustChange, saveAutomationState, saveBulletins, saveQueenEvolution, startLocalSession, supabaseConfigured,
 } from './lib/backend'
-import { recoveryParamsFromUrl, sbChangePassword, sbFetchStoredData, sbLoadActivityLog, sbLogin, sbLogout, sbOnPasswordRecovery, sbQueenChat, sbRequestPasswordReset, sbRestoreSession, sbSaveActivityLog, sbSaveAutomationState, sbSaveBulletins, sbSaveQueenState } from './lib/supabaseBackend'
+import { recoveryParamsFromUrl, sbChangePassword, sbFetchStoredData, sbLoadActivityLog, sbLogin, sbLogout, sbOnPasswordRecovery, sbRequestPasswordReset, sbRestoreSession, sbSaveActivityLog, sbSaveAutomationState, sbSaveBulletins, sbSaveQueenState } from './lib/supabaseBackend'
 import { canModifyIn, sectionAccess } from './lib/permissions'
 import { loadActivityLog, logActivity, logImpersonationEvent, mergeActivityLog, setActivityActor, setActivityRemoteSaver, setImpersonationMarker, subscribeActivityLog, type ActivityEntry } from './lib/activityLog'
 import { diffActivity } from './lib/activityDiff'
@@ -884,7 +884,7 @@ export default function App() {
       const { backup, filename, control, verified } = buildNightlyBackup(data, now)
       if (verified) downloadText(JSON.stringify(backup, null, 2), filename, 'application/json;charset=utf-8')
       const detail = verified
-        ? `Respaldo ${filename} generado en este dispositivo y verificado por reimportación de control (${control.days} días, ventas ${control.ventas}, cuadre ${control.cuadreTotal}); se descargó el archivo. La copia automática en la nube queda pendiente de despliegue.`
+        ? `Respaldo ${filename} generado en este dispositivo y verificado por reimportación de control (${control.days} días, ventas ${control.ventas}, cuadre ${control.cuadreTotal}); se descargó el archivo. La copia automática en la nube corre programada a las 23:45.`
         : 'El respaldo generado NO pasó la verificación de reimportación: no se descargó ni se dio por bueno.'
       await record(createAutomationRun('respaldo', verified ? 'ok' : 'error', detail, now))
       return detail
@@ -1136,8 +1136,6 @@ export default function App() {
           {section === 'queen' ? (
             <QueenScreen
               data={data}
-              supabaseMode={SB_MODE}
-              onTestLanguage={SB_MODE ? sbQueenChat : undefined}
               chatOnly={accessOf('queen') === 'chat'}
             />
           ) : null}
@@ -1151,7 +1149,7 @@ export default function App() {
           {section === 'inventario' ? <Inventario data={data} isAdmin={canEdit('inventario')} onChanged={refresh} /> : null}
           {section === 'laboratorio' ? <Laboratorio data={data} /> : null}
           {section === 'documentos' ? <Documentos data={data} today={ref} isAdmin={isAdmin} /> : null}
-          {section === 'menu' ? <Menu data={data} today={ref} isAdmin={isAdmin} onNavigate={setSection} /> : null}
+          {section === 'menu' ? <Menu data={data} today={ref} isAdmin={canEdit('menu')} onChanged={refresh} onNavigate={setSection} /> : null}
           {section === 'importar' ? <Importar data={data} canWrite={accessOf('importar') === 'write'} onChanged={refresh} /> : null}
           {section === 'historial' ? (
             <Historial data={data} bulletins={bulletins} today={ref} isAdmin={canEdit('historial')} onBulletinsChange={handleBulletinsChange} />

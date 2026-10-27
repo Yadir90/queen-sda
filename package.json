@@ -32,6 +32,7 @@
     "verify:productos": "node scripts/verify-productos.mjs",
     "verify:documentos": "node scripts/verify-documentos.mjs",
     "verify:queen": "node scripts/verify-queen.mjs",
+    "verify:menu": "node scripts/verify-menu.mjs",
     "verify:automatizaciones": "node scripts/verify-automatizaciones.mjs",
     "verify:reglas": "node scripts/verify-reglas.mjs",
     "verify:sync": "node scripts/verify-shared-sync.mjs",
