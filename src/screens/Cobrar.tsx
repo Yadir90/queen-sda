@@ -360,7 +360,8 @@ function fmtSmsTime(sentAt: string): string {
    por persona (borde interior izquierdo de 3px), «Debe X de Y», marca
    de antigüedad que envejece con el plazo propio; tocar abre su
    cronología, deslizar → prepara el pago, deslizar ← detalles. */
-function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onReceipt, onEditAccount, onToggleMorosa, onDeleteAccount }: {
+function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onReceipt, onEditAccount, onToggleMorosa, onDeleteAccount, groupedTitle }: {
+  groupedTitle?: string
   rec: Receivable
   saldo: number
   payments: ReturnType<typeof effectivePayments>
@@ -443,7 +444,7 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
         {paid ? <ClientAvatar name={rec.client} clientKey={rec.clientKey} /> : null}
         <span className="account-info">
           <span className="acc-name-row">
-            <span className="acc-name">{rec.client}</span>
+            <span className="acc-name">{groupedTitle ?? rec.client}</span>
             {rec.origin === 'ipv' ? <span className="acc-badge ipv">Del IPV</span> : <span className="acc-badge manual">Manual</span>}
             <span className="acc-cat-chip" style={catChip.style}>{catChip.text}</span>
           </span>
@@ -479,8 +480,7 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
       ) : null}
       {isAdmin ? (
         <div className="acc-actions">
-          {!paid ? <button type="button" className="btn account-pay-btn" onClick={() => onPay(rec, saldo)}>Abonar</button> : null}
-          <ActionMenu label={`Acciones de la cuenta de ${rec.client}`}>
+          <ActionMenu label={`Acciones de ${rec.client}`}>
             {!paid ? (
               <button type="button" onClick={() => onPay(rec, saldo)}>
                 <Icon name="receipt" size={14} /> Registrar pago
@@ -868,9 +868,13 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           </div>
         </div>
         <div className="account-list">
-          {g.items.map(({ rec, saldo }) => (
-            <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} onEditAccount={editAccount} onToggleMorosa={toggleMorosa} onDeleteAccount={deleteAccount} />
-          ))}
+          {g.items.map(({ rec, saldo }) => {
+            const refSufijo = /[-–]\s*(.+)$/.exec(rec.client)?.[1]?.trim()
+            const tituloPartida = refSufijo && rec.client !== g.display ? refSufijo : `Partida del ${fmtDate(rec.date)}`
+            return (
+              <AccountCard key={rec.id} rec={rec} saldo={saldo} payments={effectivePayments(rec, data.localPayments)} smsLogs={data.smsLogs.filter((l) => String(l.receivableId) === String(rec.id))} isAdmin={isAdmin} onPay={preparePay} onReceipt={setReceiptPreview} onEditAccount={editAccount} onToggleMorosa={toggleMorosa} onDeleteAccount={deleteAccount} groupedTitle={tituloPartida} />
+            )
+          })}
         </div>
       </section>
     )
