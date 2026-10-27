@@ -34,7 +34,10 @@
 //     barra 2.255.690, cocina 406.400, inversión 1.696.425, merma
 //     21.565, total cobrado 121.710, efectivo en caja al cierre del
 //     23 506.860, zelle 0, consumo de la casa 171.080, resultado
-//     391.571, resultado en efectivo 211.991.
+//     de PANTALLA 383.071 (neta − gastos, sin extras: composición
+//     validada de la pantalla del original; la documental, con
+//     extras, es 391.571 y se verifica aparte), resultado en
+//     efectivo 211.991.
 //   · Quincenas de CONTABILIDAD (naturales): 1–15 ventas 1.601.500 /
 //     bruta 420.891 / neta 418.916; 16–fin ventas 1.060.590; la suma
 //     de ambas = ventas del mes. (Distintas de los ciclos de RH.)
@@ -192,7 +195,8 @@ check('consumo de la casa', eco.consumo.total, 171080)
 check('consumo Jesús', eco.consumo.jesus, 132870)
 check('consumo Dayami', eco.consumo.dayami, 16760)
 check('consumo Alejandro', eco.consumo.alejandro, 21450)
-check('resultado (neta − gastos + extras)', eco.resultado, 391571)
+check('resultado de pantalla (neta − gastos, sin extras)', eco.resultado, 383071)
+check('composición documental (resultado + extras)', eco.resultado + eco.ingresosExtras, 391571)
 check('resultado en efectivo', eco.resultadoEfectivo, 211991)
 check('fondo de ventas del mes (10 %)', eco.reservas.fondoVentasMes, 266209)
 

@@ -97,6 +97,10 @@ export interface DayRhEmployee {
 
 export interface DayData {
   date: string
+  /** Instante de importación del IPV (ms): lo trae normalizeDay del
+   *  respaldo o lo rescata dayFromRow de la fila (imported_at); la
+   *  línea de estado del boletín lo necesita. */
+  importedAtMs?: number | null
   ventasDia: number
   gananciaBruta: number
   gananciaNeta: number

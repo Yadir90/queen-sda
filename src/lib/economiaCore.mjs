@@ -22,10 +22,14 @@
 //   ÚLTIMO día importado del mes (no una suma).
 // - Total cobrado del mes = suma de los PAGOS de cuentas cuya fecha de
 //   pago cae en el mes (abonos del respaldo + abonos de Cobrar).
-// - Resultado (utilidad neta económica) = ganancia neta − gastos +
-//   ingresos extras. Resultado en efectivo = resultado sin extras −
-//   consumo de la casa (cuentas pendientes de Jesús/Dayami/Alejandro
-//   nacidas en el mes: ese dinero nunca entró en caja).
+// - Resultado (el de la PANTALLA del original) = ganancia neta −
+//   gastos, SIN ingresos extras (octubre: 420.591). Los extras van en
+//   su propia línea. La composición DOCUMENTAL del original (boletín
+//   e informes) sí los suma — neta − gastos + extras = 429.091 — y se
+//   arma en documentosCore al tomar el resultado, no aquí. Resultado
+//   en efectivo = resultado − consumo de la casa (cuentas pendientes
+//   de Jesús/Dayami/Alejandro nacidas en el mes: ese dinero nunca
+//   entró en caja).
 // - Fondos/reservas: 10 % de las ventas del mes y 15 % de la ganancia
 //   neta del trimestre (los medidores de Inicio del original).
 // - Quincena de CONTABILIDAD = quincena natural del mes (1–15 y
@@ -301,7 +305,7 @@ export function monthEconomy(data, monthKey, today) {
   const consumoCasa = consumoRows.reduce((s, x) => s + x.saldo, 0)
   const consumo = { total: consumoCasa, jesus: consumoDe('jesus'), dayami: consumoDe('dayami'), alejandro: consumoDe('alejandro') }
 
-  const resultado = neta - gastos + ingresosExtras
+  const resultado = neta - gastos
   const resultadoEfectivo = neta - gastos - consumoCasa
 
   // Fondos/reservas (los medidores del original).

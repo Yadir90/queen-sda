@@ -223,13 +223,53 @@ async function loadRemoteSession(userId: string, emailFallback: string): Promise
   return { session, mustChange: prof?.must_change_password ?? true }
 }
 
-/** Restaura la sesión guardada por Supabase Auth en este dispositivo, si la hay. */
+/** ¿Queda una sesión de Supabase guardada en el almacenamiento de este
+ *  dispositivo? Lectura directa: distingue «no hay sesión» (cerrada o
+ *  nunca iniciada) de «hay sesión pero ahora no se pudo verificar». */
+function hasStoredSbSession(): boolean {
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i)
+      if (k && k.startsWith('sb-') && k.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(k)
+        if (raw && raw.includes('refresh_token')) return true
+      }
+    }
+  } catch { /* sin almacenamiento accesible */ }
+  return false
+}
+
+/**
+ * Restaura la sesión guardada por Supabase Auth en este dispositivo.
+ *
+ * Regla del dueño (26-oct 19:09): la sesión se mantiene hasta que ÉL la
+ * cierre. Al volver tras minutos u horas con la app cerrada o en segundo
+ * plano, el token de acceso suele estar caducado y el refresco puede
+ * fallar en el primer intento (la red del teléfono aún despertando):
+ * UNA sesión guardada nunca se descarta por un fallo transitorio. Se
+ * reintenta con esperas crecientes y un refresco explícito; solo «no
+ * hay nada guardado» devuelve null (sin sesión). Si tras los reintentos
+ * sigue habiendo sesión guardada sin verificar, se lanza
+ * Error('restore-transient') para que la app muestre «reintentar» en
+ * vez de la pantalla de acceso (defecto «me echa cada 5 minutos»).
+ */
 export async function sbRestoreSession(): Promise<RemoteSession | null> {
   const client = sb()
-  const { data } = await client.auth.getSession()
-  const user = data.session?.user
-  if (!user) return null
-  return loadRemoteSession(user.id, user.email ?? '')
+  const delays = [0, 900, 2200, 4500]
+  for (let attempt = 0; attempt < delays.length; attempt++) {
+    if (delays[attempt]) await new Promise((r) => setTimeout(r, delays[attempt]))
+    try {
+      const { data } = await client.auth.getSession()
+      const user = data.session?.user
+      if (user) return loadRemoteSession(user.id, user.email ?? '')
+      if (!hasStoredSbSession()) return null
+      const { data: refreshed } = await client.auth.refreshSession()
+      const ruser = refreshed.session?.user
+      if (ruser) return loadRemoteSession(ruser.id, ruser.email ?? '')
+    } catch { /* fallo transitorio de red/verificación: se reintenta */ }
+  }
+  if (hasStoredSbSession()) throw new Error('restore-transient')
+  return null
 }
 
 /** Ingreso con correo y contraseña contra Supabase Auth. */
@@ -320,7 +360,17 @@ export async function sbChangePassword(newPassword: string): Promise<{ ok: boole
 // ---------- Datos del negocio (tablas con RLS) ----------
 
 function dayFromRow(row: DayRow): DayData {
-  if (hasContent(row.payload)) return normalizeDay(row.payload)
+  if (hasContent(row.payload)) {
+    const day = normalizeDay(row.payload)
+    // La fecha de importación vive en la fila (imported_at), no en
+    // el payload: sin rescatarla, la línea de estado del boletín
+    // («IPV importado el…») pierde su fecha en modo Supabase.
+    if (day.importedAtMs == null && row.imported_at) {
+      const ms = Date.parse(row.imported_at)
+      if (Number.isFinite(ms)) day.importedAtMs = ms
+    }
+    return day
+  }
   return {
     date: row.date,
     ventasDia: num(row.ventas_dia),
@@ -855,7 +905,12 @@ async function rawFetchStoredData(): Promise<StoredData> {
     client.from('queen_state').select('id, payload'),
     client.from('automation_state').select('id, payload'),
   ])
-  if (daysRes.error || recRes.error || payRes.error) {
+  // Las tablas del núcleo (días, cuentas, pagos, GASTOS, trabajadores
+  // y nómina) son del esquema base: si su lectura falla, la app NO
+  // sirve ceros en silencio — un error aquí se convirtió una vez en
+  // «Gastos del mes: 0 CUP» en el Informe generado en producción
+  // (defecto del 26-oct). Se propaga el error y la carcasa avisa.
+  if (daysRes.error || recRes.error || payRes.error || expRes.error || workRes.error || payrollRes.error) {
     throw new Error('No se pudieron leer los datos de Supabase. Revisa tu conexión e inténtalo de nuevo.')
   }
 
@@ -886,11 +941,9 @@ async function rawFetchStoredData(): Promise<StoredData> {
   const transferMovements = movRes.error
     ? []
     : ((movRes.data ?? []) as TransferRow[]).map(movementFromRow).sort((a, b) => a.date.localeCompare(b.date) || historyOrder(a.id) - historyOrder(b.id))
-  const expenses = expRes.error ? [] : ((expRes.data ?? []) as ExpenseRow[]).map(expenseFromRow)
-  const rawWorkers = workRes.error ? [] : ((workRes.data ?? []) as WorkerRow[]).map(workerFromRow)
-  const payrollHistory = payrollRes.error
-    ? []
-    : ((payrollRes.data ?? []) as PayrollRow[]).map(payrollFromRow).sort((a, b) => b.cycleStart.localeCompare(a.cycleStart))
+  const expenses = ((expRes.data ?? []) as ExpenseRow[]).map(expenseFromRow)
+  const rawWorkers = ((workRes.data ?? []) as WorkerRow[]).map(workerFromRow)
+  const payrollHistory = ((payrollRes.data ?? []) as PayrollRow[]).map(payrollFromRow).sort((a, b) => b.cycleStart.localeCompare(a.cycleStart))
   // Las referencias de paquetes de Elaboración pueden no tener tabla
   // aún en el proyecto: se leen como vacías y la app sigue.
   const packageReferences: PackageReference[] = pkgRes.error

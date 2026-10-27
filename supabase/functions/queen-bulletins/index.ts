@@ -25,12 +25,24 @@ import {
 import {
   createAutomationRun, dispatchPendingBulletins, pruneAutomationRuns,
 } from '../_shared/automatizacionesCore.mjs'
+import {
+  buildBulletinPdfBase64, buildBulletinPdfBase64FromStructured,
+} from '../_shared/documentosCore.mjs'
 
-function buildTransport() {
+function buildTransport(data) {
   const apiKey = Deno.env.get('RESEND_API_KEY') ?? ''
   const from = Deno.env.get('BULLETIN_FROM') ?? ''
   if (!apiKey || !from) return null
   return async (bulletin) => {
+    /* El boletín del original adjunta el PDF del día y su pie lo
+       anuncia: un boletín sin adjunto no se envía. El PDF sale del
+       `structured` guardado con el propio boletín (los mismos
+       datos que su cuerpo); solo si un boletín viejo no lo trae
+       se recompone desde el estado guardado. */
+    const pdf = bulletin.structured
+      ? buildBulletinPdfBase64FromStructured(bulletin.structured)
+      : buildBulletinPdfBase64(data, bulletin.date)
+    if (!pdf) throw new Error(`No se pudo generar el PDF adjunto del boletín del ${bulletin.date}: no se envía sin él.`)
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -40,6 +52,10 @@ function buildTransport() {
         subject: bulletin.subject,
         html: bulletin.html,
         text: bulletin.text,
+        attachments: [{
+          filename: bulletin.pdfFilename ?? `contabilidad-${bulletin.date}.pdf`,
+          content: pdf,
+        }],
       }),
     })
     if (!res.ok) throw new Error(`El servicio de correo rechazó el boletín del ${bulletin.date} (${res.status}).`)
@@ -52,7 +68,7 @@ Deno.serve(async (req) => {
   try {
     const now = new Date()
     const data = await loadStoredData()
-    const transport = buildTransport()
+    const transport = buildTransport(data)
     const result = await dispatchPendingBulletins(data.bulletins, { transport, now })
     if (result.sentIds.length) await saveBulletins(result.bulletins)
     const run = createAutomationRun(

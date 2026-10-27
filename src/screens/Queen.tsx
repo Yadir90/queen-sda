@@ -396,6 +396,10 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
         last.text,
         () => { setSpeaking(false); if (convRef.current) startListening() },
         () => setSpeaking(true),
+        // Vigía de TTS: si el motor de voz del dispositivo no
+        // empieza a sonar, se avisa con la causa — antes la lectura
+        // moría en silencio y el dueño solo veía que «no habla».
+        () => setVoiceMsg('Queen escribió su respuesta, pero la voz de este dispositivo no empezó a sonar. Revisa que el teléfono tenga una voz en español instalada y el motor de texto a voz activo (Ajustes → Idioma → Salida de texto a voz). La respuesta está escrita arriba.'),
       )
     } else if (convRef.current) {
       startListening()

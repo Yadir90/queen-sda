@@ -834,12 +834,48 @@ export function syncDerivedData(state) {
   }
   const desiredGastos = new Map()
   for (const e of entries) if (e.classification === 'gasto') desiredGastos.set(e.sourceKey, e)
+  const entriesByKey = new Map(entries.map((e) => [e.sourceKey, e]))
   const seenGastos = new Set()
   for (let i = expenses.length - 1; i >= 0; i--) {
     const exp = expenses[i]
     if (exp.origin !== 'ipv-cuentas') continue
     const want = exp.sourceKey ? desiredGastos.get(exp.sourceKey) : undefined
     if (!want) {
+      /* La fila sigue viva en el Desglose pero esta pasada NO trae
+         ninguna señal de clasificación (ni decisión del dueño, ni
+         marca «gasto», ni concepto aprendido): su «pendiente» es
+         AUSENCIA de aprendizaje, no una reclasificación. El gasto
+         guardado es un registro duradero — nació de una decisión —
+         y no se destruye por falta de contexto: se conserva y se
+         refrescan sus campos desde la fila viva (si el IPV cambió
+         el importe, el gasto sigue al IPV). Solo se borra cuando
+         hay señal positiva: la fila ya no está en los días, o quedó
+         clasificada como cuenta, o el dueño la devolvió a
+         «pendiente» con una decisión expresa (overridden). Sin esta
+         guarda, un estado sin el aprendizaje sembrado (la semilla
+         SQL de producción nunca escribió learnedKinds/overrides)
+         borraba en silencio gastos reales del IPV — «SAZON» 160 y
+         «MANTENIMIENTO MALECON» 1.250 de octubre de 2026 — y con
+         ellos se movían Economía, el boletín y los informes. */
+      const entry = exp.sourceKey ? entriesByKey.get(exp.sourceKey) : undefined
+      if (
+        entry
+        && entry.classification === 'pendiente'
+        && !entry.overridden
+        && !entry.gastoObs
+        && entry.defaultClassification === 'pendiente'
+      ) {
+        seenGastos.add(exp.sourceKey)
+        const fields = gastoFields(entry)
+        if (
+          exp.date !== fields.date || exp.concept !== fields.concept || exp.category !== fields.category
+          || exp.dept !== fields.dept || round(exp.total) !== fields.total || (exp.note ?? '') !== fields.note
+        ) {
+          Object.assign(exp, fields)
+          updatedExpenseIds.push(exp.id)
+        }
+        continue
+      }
       expenses.splice(i, 1)
       deletedExpenseIds.push(exp.id)
       continue
@@ -1225,4 +1261,246 @@ export function deriveCyclePayroll(days, cycleStart, { adjustment = null, unpaid
 /** Nómina REGISTRADA de un ciclo (historial), si existe. */
 export function recordedPayroll(payrollHistory, cycleStart) {
   return (payrollHistory ?? []).find((p) => p.cycleStart === cycleStart) ?? null
+}
+
+// ---------- Rotación y días esperados (puerto del original) ----------
+// Puerto fiel de detectarRotacionInfo / diasEsperadosCiclo /
+// excusadosCeroDias / rhBulletinValues / valoresBoletin del SDA
+// original (server/src/actions.ts), que el boletín diario usa para
+// los días previstos de cada trabajador y el aviso de 0 días.
+// Diferencias declaradas del puerto: las marcas del clon son un
+// objeto {clave: {fecha: 0|1}} (buildMarksByWorker) en vez de Map;
+// la corrección de turno manual de la ficha (turnoCorreccion para
+// cargos de turno) no se porta — no es reproducible desde el
+// respaldo, igual que en la comparativa validada del boletín.
+
+const NOMBRES_DIA_Q = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']
+const dowQ = (iso) => new Date(`${iso}T12:00:00`).getDay()
+
+function diasFijosDeFilaQ(worker) {
+  const raw = Array.isArray(worker?.workWeekdays) ? worker.workWeekdays : (worker?.workWeekday != null ? [worker.workWeekday] : [])
+  return raw.filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+}
+
+export function detectarRotacionInfo(obs, today, opts = {}) {
+  const ventana = opts.ventana
+  const descansoSemanal = opts.descansoSemanal ?? null
+  const diasFijos = (opts.diasFijos ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6)
+  if (diasFijos.length) {
+    const setFijos = new Set(diasFijos)
+    const expectedU = (iso) => setFijos.has(dowQ(iso))
+    let diasEsperadosVentana = null
+    let tocoEnVentana = null
+    if (ventana) {
+      const observadas = new Set(obs.map((o) => o.fecha))
+      diasEsperadosVentana = 0
+      tocoEnVentana = false
+      for (let f = ventana.start; f <= ventana.end; f = addDaysISO(f, 1)) {
+        if (expectedU(f)) {
+          diasEsperadosVentana++
+          if (observadas.has(f)) tocoEnVentana = true
+        }
+      }
+    }
+    const proximos = []
+    for (let i = 0; i <= 21 && proximos.length < 5; i++) {
+      const f = addDaysISO(today, i)
+      if (expectedU(f)) proximos.push(f)
+    }
+    return {
+      rotacion: { tipo: 'turnos-semanal', etiqueta: `Trabaja ${diasFijos.map((d) => NOMBRES_DIA_Q[d]).join(', ')} (asignado en su ficha).`, trabajaHoy: expectedU(today), proximos },
+      diasEsperadosVentana,
+      tocoEnVentana,
+    }
+  }
+  if (!obs.length) {
+    return { rotacion: { tipo: 'sin-marcas', etiqueta: 'Sin marcas por día en los IPV importados.', trabajaHoy: null, proximos: [] }, diasEsperadosVentana: null, tocoEnVentana: null }
+  }
+  const first = obs[0].fecha
+  const idx = (iso) => diffDays(first, iso)
+  const ons = obs.filter((o) => o.on).length
+  const ratio = ons / obs.length
+  let expected = null
+  let tipo = 'irregular'
+  let etiqueta = ''
+  const periodica = (periodo, trabaja) => {
+    for (let fase = 0; fase < periodo; fase++) {
+      const ok = obs.every((o) => ((((idx(o.fecha) + fase) % periodo) + periodo) % periodo < trabaja) === o.on)
+      if (ok && ons > 0 && ons < obs.length) {
+        return (iso) => ((((idx(iso) + fase) % periodo) + periodo) % periodo < trabaja)
+      }
+    }
+    return null
+  }
+  if (obs.length >= 4) {
+    const p3 = periodica(3, 1)
+    if (p3) { tipo = 'rotacion-1x2'; expected = p3; etiqueta = 'Rotación detectada: trabaja 1 día y descansa 2, rotando.' }
+  }
+  if (!expected && obs.length >= 6) {
+    const p6 = periodica(6, 3)
+    if (p6) { tipo = 'rotacion-3x3'; expected = p6; etiqueta = 'Rotación detectada: trabaja 3 días y descansa 3.' }
+  }
+  if (!expected && obs.length >= 10) {
+    const patron14 = [true, true, false, false, true, true, true, false, false, true, true, false, false, false]
+    for (let fase = 0; fase < 14 && !expected; fase++) {
+      const ok = obs.every((o) => patron14[(((idx(o.fecha) + fase) % 14) + 14) % 14] === o.on)
+      if (ok && ons > 0 && ons < obs.length) {
+        tipo = 'turnos-alternos'
+        expected = (iso) => patron14[(((idx(iso) + fase) % 14) + 14) % 14]
+        etiqueta = 'Turno alterno detectado: una semana trabaja el bloque largo y la siguiente el bloque corto, alternando con el otro turno.'
+      }
+    }
+  }
+  if (!expected && obs.length >= 7) {
+    const porDia = new Map()
+    let consistente = true
+    for (const o of obs) {
+      const d = dowQ(o.fecha)
+      if (porDia.has(d) && porDia.get(d) !== o.on) { consistente = false; break }
+      porDia.set(d, o.on)
+    }
+    const diasOn = [...porDia.entries()].filter(([, v]) => v).map(([d]) => d)
+    const diasOff = [...porDia.entries()].filter(([, v]) => !v).map(([d]) => d)
+    if (consistente && diasOn.length && diasOff.length && porDia.size >= 5) {
+      tipo = 'turnos-semanal'
+      const set = new Set(diasOn)
+      expected = (iso) => set.has(dowQ(iso))
+      etiqueta = 'Turno detectado por días de la semana.'
+    }
+  }
+  if (!expected && obs.length >= 5 && ratio >= 0.8) {
+    tipo = 'casi-diario'
+    const descanso = new Set(obs.filter((o) => !o.on).map((o) => dowQ(o.fecha)))
+    expected = (iso) => !descanso.has(dowQ(iso))
+    etiqueta = descanso.size
+      ? `Detectado: trabaja casi a diario; su día de descanso suele ser el ${[...descanso].map((d) => NOMBRES_DIA_Q[d]).join(' y el ')}.`
+      : 'Detectado: trabaja casi todos los días de la quincena.'
+  }
+  if (!expected) {
+    return { rotacion: { tipo: 'irregular', etiqueta: `Sin patrón claro todavía: ${ons} de ${obs.length} días marcados como trabajados en la foto; sigo detectando con cada IPV nuevo.`, trabajaHoy: null, proximos: [] }, diasEsperadosVentana: null, tocoEnVentana: null }
+  }
+  if (descansoSemanal != null) {
+    const base = expected
+    expected = (iso) => {
+      const v = base(iso)
+      if (v === null) return null
+      return v && dowQ(iso) !== descansoSemanal
+    }
+  }
+  let diasEsperadosVentana = null
+  let tocoEnVentana = null
+  if (ventana) {
+    const observadas = new Set(obs.map((o) => o.fecha))
+    diasEsperadosVentana = 0
+    tocoEnVentana = false
+    for (let f = ventana.start; f <= ventana.end; f = addDaysISO(f, 1)) {
+      if (expected(f)) {
+        diasEsperadosVentana++
+        if (observadas.has(f)) tocoEnVentana = true
+      }
+    }
+  }
+  const proximos = []
+  for (let i = 0; i <= 21 && proximos.length < 5; i++) {
+    const f = addDaysISO(today, i)
+    if (expected(f)) proximos.push(f)
+  }
+  return { rotacion: { tipo, etiqueta, trabajaHoy: expected(today), proximos }, diasEsperadosVentana, tocoEnVentana }
+}
+
+/** Divisor real del salario de una quincena (puerto de
+ *  diasEsperadosCiclo del original, sin la corrección de turno
+ *  manual declarada arriba). marksByWorker: el objeto de
+ *  buildMarksByWorker del clon. */
+export function diasEsperadosCiclo(worker, workerKey, marksByWorker, absenceDates, cycleStart, cycleEnd, today) {
+  const descansoRaw = worker?.restWeekday
+  const descansoSemanal = typeof descansoRaw === 'number' && Number.isFinite(descansoRaw)
+    ? Math.max(0, Math.min(6, Math.round(descansoRaw)))
+    : null
+  const diasFijos = diasFijosDeFilaQ(worker ?? {})
+  const globalMap = marksByWorker?.[workerKey] ?? {}
+  const obs = Object.entries(globalMap)
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .filter(([date]) => date <= today && !(absenceDates?.has(date)))
+    .map(([fecha, value]) => ({ fecha, on: value > 0 }))
+  const detected = detectarRotacionInfo(obs, today, {
+    ventana: { start: cycleStart, end: cycleEnd },
+    descansoSemanal,
+    diasFijos,
+  })
+  let expected = detected.diasEsperadosVentana
+  if (expected == null) {
+    expected = 15
+    if (diasFijos.length) {
+      const fixed = new Set(diasFijos)
+      expected = 0
+      for (let i = 0; i < 15; i++) {
+        if (fixed.has(dowQ(addDaysISO(cycleStart, i)))) expected++
+      }
+    } else if (descansoSemanal != null) {
+      let rests = 0
+      for (let i = 0; i < 15; i++) {
+        if (dowQ(addDaysISO(cycleStart, i)) === descansoSemanal) rests++
+      }
+      expected = 15 - rests
+    }
+  }
+  return Math.max(1, expected)
+}
+
+/** Claves excusadas del aviso de 0 días (puerto de excusadosCeroDias
+ *  con asignaciones y ausencias vacías cuando el respaldo no las
+ *  trae: a quien su rotación aún no le trajo el primer día del ciclo
+ *  no se le marca). */
+export function excusadosCeroDias(days, asignaciones, ventanaStart, ventanaEnd, referencia, ausenciasPorClave) {
+  const marksByWorker = buildMarksByWorker(days)
+  const out = new Set()
+  const keys = new Set([...Object.keys(marksByWorker), ...(asignaciones ? [...asignaciones.keys()] : []), ...(ausenciasPorClave ? [...ausenciasPorClave.keys()] : [])])
+  for (const k of keys) {
+    const ausFechas = ausenciasPorClave?.get(k)
+    if (ausFechas && [...ausFechas].some((f) => f >= ventanaStart && f <= ventanaEnd && f <= referencia)) {
+      out.add(k)
+      continue
+    }
+    const asign = asignaciones?.get(k)
+    const globalMap = marksByWorker[k] ?? {}
+    const ausSet = ausFechas ?? new Set()
+    const obs = Object.entries(globalMap)
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .filter(([f]) => f <= referencia && !ausSet.has(f))
+      .map(([fecha, v]) => ({ fecha, on: v > 0 }))
+    const info = detectarRotacionInfo(obs, referencia, {
+      ventana: { start: ventanaStart, end: ventanaEnd },
+      descansoSemanal: asign?.descanso ?? null,
+      diasFijos: asign?.unicos ?? [],
+    })
+    if (info.tocoEnVentana === false) out.add(k)
+  }
+  return out
+}
+
+/** Valores del boletín para un empleado de la foto RH (puerto de
+ *  rhBulletinValues + valoresBoletin del original). */
+export function rhBulletinValues(employee, expectedDays) {
+  const salarioQuincenal = Math.max(0, Number(employee.totalCobrar) || 0)
+  const diasTrabajados = Math.max(0, Number(employee.dias) || 0)
+  if (expectedDays == null) {
+    const salarioDiario = Math.max(0, Number(employee.salarioDiario) || 0)
+    return {
+      salarioQuincenal,
+      diasEsperados: 0,
+      valorDia: salarioDiario,
+      acumulado: Math.round(salarioDiario * diasTrabajados),
+    }
+  }
+  const diasEsperados = Math.max(1, Number(expectedDays) || 1)
+  const valorDia = salarioQuincenal > 0
+    ? salarioQuincenal / diasEsperados
+    : Math.max(0, Number(employee.salarioDiario) || 0)
+  return {
+    salarioQuincenal,
+    diasEsperados,
+    valorDia,
+    acumulado: Math.round(valorDia * diasTrabajados),
+  }
 }

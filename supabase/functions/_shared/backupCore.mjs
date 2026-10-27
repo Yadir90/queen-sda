@@ -180,6 +180,21 @@ export function normalizeDay(d) {
       observacion: String(c?.observacion ?? ''),
     }))
   }
+  // Divisas del arqueo (USD/EUR) y banderas de guardado: el boletín
+  // diario del original trae el detalle «cantidad × tasa = CUP» de
+  // cada divisa y declara cuándo el arqueo no quedó guardado; sin
+  // conservar estos campos aquí, esa sección era irreproducible.
+  day.fondos.arqueoGuardado = Boolean(fondos.arqueoGuardado)
+  day.fondos.mlcGuardado = Boolean(fondos.mlcGuardado)
+  if (Array.isArray(fondos.mlc)) {
+    day.fondos.mlc = fondos.mlc.map((m) => ({
+      cantidad: num(m?.cantidad),
+      denominacion: num(m?.denominacion),
+      moneda: String(m?.moneda ?? ''),
+      tasa: num(m?.tasa),
+      conversionCup: num(m?.conversionCup),
+    }))
+  }
   // Desglose por denominación del arqueo: lo usa el boletín diario.
   if (Array.isArray(fondos.billetes)) {
     day.fondos.billetes = fondos.billetes.map((b) => ({

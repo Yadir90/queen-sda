@@ -350,7 +350,7 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
               {cierreRow('Ingresos extras', eco.ingresosExtrasCount > 0 ? `${fmtCUP(eco.ingresosExtras)} (${fmtInt(eco.ingresosExtrasCount)} registro(s))` : noData('ningún ingreso extra en los IPV del mes'))}
               {cierreRow('Billar (venta de mesas)', eco.billar.dias > 0 ? `${fmtCUP(eco.billar.venta)} · utilidad ${fmtCUP(eco.billar.utilidad)}` : noData('ningún IPV del mes trae la tabla de billar'))}
               {cierreRow('Gastos', `${fmtCUP(eco.gastos)} (${fmtInt(eco.gastosCount)} registro(s))`)}
-              {cierreRow('Utilidad neta (resultado: neta − gastos + extras)', fmtCUP(eco.resultado))}
+              {cierreRow('Utilidad neta (resultado: neta − gastos)', fmtCUP(eco.resultado))}
               {cierreRow('Resultado en efectivo (sin el consumo de la casa)', fmtCUP(eco.resultadoEfectivo))}
               {cierreRow('Venta en barra (bebidas y cantina)', eco.deptSeen ? fmtCUP(eco.barra) : noData('los IPV del mes no traen departamentos'))}
               {cierreRow('Venta en cocina (elaboración y pizzas)', eco.deptSeen ? fmtCUP(eco.cocina) : noData('los IPV del mes no traen departamentos'))}

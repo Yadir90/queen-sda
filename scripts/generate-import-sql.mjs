@@ -2,9 +2,20 @@
 //
 // Uso: node scripts/generate-import-sql.mjs [ruta-al-respaldo] [ruta-sql-salida]
 // Lee el respaldo real del SDA y genera supabase/import-backup-2026-10-24.sql:
-// inserts IDEMPOTENTES (on conflict do update) para public.days,
-// public.receivables y public.transfer_movements (el historial de la
-// tarjeta del negocio que trae el respaldo). Las columnas salen del MISMO parser de la app
+// inserts IDEMPOTENTES (on conflict do update) para TODAS las tablas
+// que la app lee al arrancar: public.days, public.receivables,
+// public.transfer_movements (el historial de la tarjeta del negocio
+// que trae el respaldo), public.expenses, public.workers,
+// public.payroll_history y la fila 'core' de public.app_settings
+// (ancla, alias, aprendizaje y overrides de cuentas).
+//
+// HISTORIAL (defecto grave, 26-oct): la primera versión de este
+// generador solo escribía días, cuentas y movimientos. La tabla de
+// gastos quedó vacía en producción y el Informe de Economía y la
+// presentación generados por la app viva salieron con «Gastos del
+// mes: 0 CUP» (faltaban los 275.505 enteros) — la semilla tiene que
+// escribir todo lo que la app lee, o la app lee ceros en silencio.
+// Las columnas salen del MISMO parser de la app
 // (src/lib/backupCore.mjs) y el payload jsonb de cada fila es el registro
 // original completo del respaldo — cero datos inventados.
 //
@@ -16,6 +27,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 import { parseBackup } from '../src/lib/backupCore.mjs'
+import { canonicalPersonKey, clientKeyOf, deriveSuppressedEntries, firstNameKeyOf } from '../src/lib/syncCore.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const backupPath = process.argv[2]
@@ -28,8 +40,8 @@ const outPath = process.argv[3]
 // Totales de control por respaldo (verificados contra fuente
 // independiente: ver scripts/verify-import.mjs).
 const EXPECTED_BY_FILE = {
-  'backup-sda-2026-10-24.json': { count: 23, from: '2026-10-01', to: '2026-10-23', ventas: 2662090, gananciaBruta: 667141, gananciaNeta: 645576, cuadreTotal: 0, receivables: 115, cardMovements: 20, cardBalance: 32625, bankPassed: 107625 },
-  'backup-sda-2026-10-26.json': { count: 24, from: '2026-10-01', to: '2026-10-24', ventas: 2786190, gananciaBruta: 718191, gananciaNeta: 696096, cuadreTotal: 0, receivables: 119, cardMovements: 21, cardBalance: 33725, bankPassed: 107625 },
+  'backup-sda-2026-10-24.json': { count: 23, from: '2026-10-01', to: '2026-10-23', ventas: 2662090, gananciaBruta: 667141, gananciaNeta: 645576, cuadreTotal: 0, receivables: 115, cardMovements: 20, cardBalance: 32625, bankPassed: 107625, gastosCount: 51, gastosTotal: 262505, workersCount: 25, payrollTotal: 168500 },
+  'backup-sda-2026-10-26.json': { count: 24, from: '2026-10-01', to: '2026-10-24', ventas: 2786190, gananciaBruta: 718191, gananciaNeta: 696096, cuadreTotal: 0, receivables: 119, cardMovements: 21, cardBalance: 33725, bankPassed: 107625, gastosCount: 51, gastosTotal: 275505, workersCount: 25, payrollTotal: 181500 },
 }
 const EXPECTED = EXPECTED_BY_FILE[backupPath.split('/').pop()]
 if (!EXPECTED) { console.error(`Sin totales de control registrados para ${backupPath}: no se genera a ciegas.`); process.exit(1) }
@@ -54,6 +66,10 @@ const checks = [
     EXPECTED.cardBalance,
   ],
   ['pasado al banco derivado', parsed.transferMovements.filter((m) => !m.excluded && !m.superseded && m.source === 'pase' && m.paseKind === 'banco').reduce((s, m) => s + Math.abs(m.amount), 0), EXPECTED.bankPassed],
+  ['n.º de gastos', parsed.expenses.length, EXPECTED.gastosCount],
+  ['total de gastos', parsed.expenses.reduce((s, e) => s + Number(e.total ?? 0), 0), EXPECTED.gastosTotal],
+  ['n.º de trabajadores', parsed.workers.length, EXPECTED.workersCount],
+  ['total de nómina registrada', parsed.payrollHistory.reduce((s, p) => s + Number(p.total ?? (p.employees ?? []).reduce((x, e) => x + Number(e.totalCobrar ?? 0), 0)), 0), EXPECTED.payrollTotal],
 ]
 let failed = 0
 for (const [label, got, want] of checks) {
@@ -107,11 +123,63 @@ const movRows = parsed.transferMovements.map((m) => {
   return `(${sqlText(m.id)}, ${sqlDate(m.date)}, ${sqlText(m.type)}, ${sqlText(m.source)}, ${sqlNum(m.amount)}, ${sqlText(m.detail)}, ${m.excluded ? 'true' : 'false'}, ${m.superseded ? 'true' : 'false'}, ${intOrNull(m.paseId)}, ${intOrNull(m.manualId)}, ${intOrNull(m.paymentCreditId)}, ${intOrNull(m.extraId)}, ${intOrNull(m.transferExpenseId)}, ${sqlTextOrNull(m.paseKind)}, ${sqlJson(m)})`
 })
 
+const sqlDateOrNull = (v) => (v === null || v === undefined || v === '' ? 'NULL' : sqlDate(v))
+
+const rawExpById = new Map((raw.data.expenses ?? []).map((e) => [String(e.id), e]))
+const expenseRows = parsed.expenses.map((e) => {
+  const payload = rawExpById.get(String(e.id)) ?? e
+  return `(${sqlText(e.id)}, ${sqlDate(e.date)}, ${sqlText(e.concept)}, ${sqlText(e.category)}, ${sqlText(e.dept)}, ${sqlNum(e.quantity ?? 1)}, ${sqlNum(e.unitValue ?? 0)}, ${sqlNum(e.total)}, ${sqlText(e.origin ?? 'manual')}, ${sqlTextOrNull(e.sourceKey)}, ${sqlDateOrNull(e.cycleStart)}, ${sqlText(e.note ?? '')}, ${sqlJson(payload)})`
+})
+
+const rawWorkerByKey = new Map((raw.data.workers ?? []).map((w) => [String(w.key), w]))
+const workerRows = parsed.workers.map((w) => {
+  const payload = rawWorkerByKey.get(String(w.key)) ?? w
+  return `(${sqlText(w.key)}, ${sqlText(w.nombre)}, ${sqlText(w.ocupacion ?? '')}, ${sqlText(w.carnet ?? '')}, ${sqlText(w.cuentaBancaria ?? '')}, ${sqlText(w.movil ?? '')}, ${sqlText(w.notas ?? '')}, ${sqlText(w.origen ?? 'ipv')}, ${sqlText(w.roleKind ?? 'trabajador')}, ${sqlJson(payload)})`
+})
+
+const rawPayrollByStart = new Map((raw.data.payrollHistory ?? []).map((p) => [String(p.cycleStart), p]))
+const payrollRows = parsed.payrollHistory.map((p) => {
+  const payload = rawPayrollByStart.get(String(p.cycleStart)) ?? p
+  const total = Number(p.total ?? (p.employees ?? []).reduce((x, e) => x + Number(e.totalCobrar ?? 0), 0))
+  return `(${sqlDate(p.cycleStart)}, ${sqlDate(p.cycleEnd)}, ${sqlDate(p.payDate)}, ${sqlNum(total)}, ${sqlJson(payload)})`
+})
+
+// La fila 'core' de app_settings: sin ella la app arranca en Supabase
+// sin ancla ni aprendizaje — y la sincronización clasifica las
+// cuentas del Desglose sin las decisiones del dueño (la otra mitad
+// del defecto de los gastos). suppressedEntries se deriva igual que
+// en la app al importar (deriveSuppressedEntries con las personas
+// conocidas del propio respaldo).
+const knownPersons = (() => {
+  const set = new Set()
+  for (const r of parsed.receivables) {
+    set.add(canonicalPersonKey(r.clientKey, r.client))
+    if (r.origin === 'ipv') set.add(clientKeyOf(r.client))
+  }
+  for (const w of parsed.workers) {
+    set.add(canonicalPersonKey(w.key, w.nombre))
+    const first = firstNameKeyOf(w.nombre)
+    if (first) set.add(first)
+  }
+  return set
+})()
+const coreSettings = {
+  anchorDate: parsed.anchorDate ?? undefined,
+  aliases: {},
+  learnedKinds: parsed.learnedKinds,
+  cuentasOverrides: parsed.cuentasOverrides,
+  suppressedEntries: deriveSuppressedEntries(parsed.days, parsed.entrySourceKeys, {
+    learnedKinds: parsed.learnedKinds, overrides: parsed.cuentasOverrides, knownPersons,
+  }),
+  unpaidWorkers: [],
+  payrollAdjustments: {},
+}
+
 // ---------- documento SQL ----------
 const lines = []
 lines.push('-- Queen SDA — Sistema de Automatización de Datos V2.0 · Restaurante-bar La Reina')
 lines.push('-- Importación inicial a Supabase desde el respaldo real del SDA.')
-lines.push(`-- Fuente: respaldo exportado el ${raw.exportedAt ?? '—'} (${raw.backupOf ?? 'SDA La Reina'}), archivo backup-sda-2026-10-24.json.`)
+lines.push(`-- Fuente: respaldo exportado el ${raw.exportedAt ?? '—'} (${raw.backupOf ?? 'SDA La Reina'}), archivo ${backupPath.split('/').pop()}.`)
 lines.push('-- Generado por scripts/generate-import-sql.mjs usando el parser de la app')
 lines.push('-- (src/lib/backupCore.mjs): las columnas salen del parser y el payload')
 lines.push('-- jsonb de cada fila es el registro ORIGINAL completo del respaldo.')
@@ -181,6 +249,62 @@ lines.push('  pase_kind = excluded.pase_kind,')
 lines.push('  payload = excluded.payload,')
 lines.push('  imported_at = now();')
 lines.push('')
+lines.push(`-- ===== Gastos (${expenseRows.length}) =====`)
+lines.push('-- SIN esta tabla la app lee gastos = [] y el Informe sale con')
+lines.push('-- «Gastos del mes: 0» (defecto del 26-oct en producción).')
+lines.push('insert into public.expenses (id, date, concept, category, dept, quantity, unit_value, total, origin, source_key, cycle_start, note, payload) values')
+lines.push(expenseRows.map((r, i) => r + (i < expenseRows.length - 1 ? ',' : '')).join('\n'))
+lines.push('on conflict (id) do update set')
+lines.push('  date = excluded.date,')
+lines.push('  concept = excluded.concept,')
+lines.push('  category = excluded.category,')
+lines.push('  dept = excluded.dept,')
+lines.push('  quantity = excluded.quantity,')
+lines.push('  unit_value = excluded.unit_value,')
+lines.push('  total = excluded.total,')
+lines.push('  origin = excluded.origin,')
+lines.push('  source_key = excluded.source_key,')
+lines.push('  cycle_start = excluded.cycle_start,')
+lines.push('  note = excluded.note,')
+lines.push('  payload = excluded.payload,')
+lines.push('  imported_at = now();')
+lines.push('')
+lines.push(`-- ===== Trabajadores (${workerRows.length}) =====`)
+lines.push('insert into public.workers (key, nombre, ocupacion, carnet, cuenta_bancaria, movil, notas, origen, role_kind, payload) values')
+lines.push(workerRows.map((r, i) => r + (i < workerRows.length - 1 ? ',' : '')).join('\n'))
+lines.push('on conflict (key) do update set')
+lines.push('  nombre = excluded.nombre,')
+lines.push('  ocupacion = excluded.ocupacion,')
+lines.push('  carnet = excluded.carnet,')
+lines.push('  cuenta_bancaria = excluded.cuenta_bancaria,')
+lines.push('  movil = excluded.movil,')
+lines.push('  notas = excluded.notas,')
+lines.push('  origen = excluded.origen,')
+lines.push('  role_kind = excluded.role_kind,')
+lines.push('  payload = excluded.payload,')
+lines.push('  imported_at = now();')
+lines.push('')
+lines.push(`-- ===== Nómina registrada (${payrollRows.length} ciclos) =====`)
+lines.push('insert into public.payroll_history (cycle_start, cycle_end, pay_date, total, payload) values')
+lines.push(payrollRows.map((r, i) => r + (i < payrollRows.length - 1 ? ',' : '')).join('\n'))
+lines.push('on conflict (cycle_start) do update set')
+lines.push('  cycle_end = excluded.cycle_end,')
+lines.push('  pay_date = excluded.pay_date,')
+lines.push('  total = excluded.total,')
+lines.push('  payload = excluded.payload,')
+lines.push('  imported_at = now();')
+lines.push('')
+lines.push('-- ===== Ajustes del núcleo (app_settings «core») =====')
+lines.push('-- Ancla de ciclos RH + aprendizaje de cuentas del Desglose +')
+lines.push('-- overrides del dueño: sin esta fila la sync clasifica sin')
+lines.push('-- sus decisiones y los gastos del IPV quedan a merced de la')
+lines.push('-- heurística.')
+lines.push('insert into public.app_settings (key, value) values')
+lines.push(`('core', ${sqlJson(coreSettings)})`)
+lines.push('on conflict (key) do update set')
+lines.push('  value = excluded.value,')
+lines.push('  updated_at = now();')
+lines.push('')
 lines.push('commit;')
 lines.push('')
 lines.push('-- ===== Verificación tras importar (ejecutar y contrastar con el control) =====')
@@ -196,9 +320,15 @@ lines.push("       sum(case when not excluded and not superseded then amount els
 lines.push('from public.transfer_movements;')
 lines.push("select sum(abs(amount)) as pasado_al_banco from public.transfer_movements")
 lines.push("where source = 'pase' and pase_kind = 'banco' and not excluded and not superseded;")
+lines.push(`-- Control gastos: ${EXPECTED.gastosCount} · total ${EXPECTED.gastosTotal} · trabajadores ${EXPECTED.workersCount} · nómina registrada ${EXPECTED.payrollTotal}`)
+lines.push('select count(*) as gastos, sum(total) as total_gastos from public.expenses;')
+lines.push('select count(*) as trabajadores from public.workers;')
+lines.push('select count(*) as ciclos, sum(total) as total_nomina from public.payroll_history;')
+lines.push("select value ->> 'anchorDate' as ancla, (select count(*) from jsonb_object_keys(value -> 'learnedKinds')) as aprendidos from public.app_settings where key = 'core';")
 lines.push('')
 
 writeFileSync(outPath, lines.join('\n'), 'utf8')
 console.log(`SQL generado: ${outPath}`)
 console.log(`Días escritos: ${dayRows.length} · Cuentas escritas: ${recRows.length} · Movimientos de la tarjeta: ${movRows.length} · Abonos embebidos (en payload): ${embeddedPayments}`)
+console.log(`Gastos escritos: ${expenseRows.length} (total ${parsed.expenses.reduce((s, e) => s + Number(e.total ?? 0), 0)}) · Trabajadores: ${workerRows.length} · Ciclos de nómina: ${payrollRows.length} · app_settings «core»: ancla ${coreSettings.anchorDate ?? '—'}, ${Object.keys(coreSettings.learnedKinds).length} aprendidos, ${Object.keys(coreSettings.cuentasOverrides).length} overrides`)
 console.log(`Totales de control OK: ventas ${s.ventas} · bruta ${s.gananciaBruta} · neta ${s.gananciaNeta} · cuadre ${s.cuadreTotal}`)

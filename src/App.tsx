@@ -7,7 +7,7 @@ import { recoveryParamsFromUrl, sbChangePassword, sbFetchStoredData, sbLoadActiv
 import { canModifyIn, sectionAccess } from './lib/permissions'
 import { loadActivityLog, logActivity, logImpersonationEvent, mergeActivityLog, setActivityActor, setActivityRemoteSaver, setImpersonationMarker, subscribeActivityLog, type ActivityEntry } from './lib/activityLog'
 import { diffActivity } from './lib/activityDiff'
-import { clearQuickAccess, getQuickAccess, hasQuickAccess, verifyQuickPin } from './lib/quickAccess'
+import { clearQuickAccess, getQuickAccess, verifyQuickPin } from './lib/quickAccess'
 import { requireBiometricUnlock } from './lib/webauthn'
 import { buildQueenEvolution } from './lib/queenCore.mjs'
 import { ensureBulletinsForDays } from './lib/documentosCore.mjs'
@@ -114,9 +114,9 @@ function LoginScreen({ onLogin, onImpersonate }: {
      primero se escoge quién entra (foto y nombre) y después su
      vía: contraseña siempre; PIN de este dispositivo en modo
      local; y «entrar como» para el administrador con SU PIN o SU
-     biometría. La biometría de apertura vive en la pantalla de
-     bloqueo de la sesión guardada (LockScreen), como se diseñó en
-     la Pieza H: sin sesión guardada no hay nada que desbloquear. */
+     biometría. (La pantalla de bloqueo al abrir se retiró el 26-oct
+     por la regla del dueño de las 19:09: la sesión guardada entra
+     directa y solo se sale con «Cerrar sesión».) */
   const profiles = useMemo(() => listProfiles(), [])
   const adminProfile = profiles.find((p) => p.role === 'admin')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -566,110 +566,11 @@ function ConnectionStatus() {
   )
 }
 
-/* Pantalla de bloqueo del acceso rápido (decisión del dueño,
-   2026-10-26 14:33): si este dispositivo tiene acceso rápido
-   activado para el usuario de la sesión guardada, al abrir la app
-   se ofrecen las vías rápidas — PIN y biometría — y siempre la
-   contraseña (que manda: si la sesión ya no es válida o es otro
-   dispositivo, se entra por el acceso normal). El PIN vive hasheado
-   con sal en el dispositivo (lib/quickAccess) con intentos
-   limitados; la biometría reutiliza la ceremonia verificada en el
-   servidor (lib/webauthn.requireBiometricUnlock). */
-function LockScreen({ session, onUnlock, onUsePassword }: {
-  session: Session
-  onUnlock: () => void
-  onUsePassword: () => void
-}) {
-  const quick = getQuickAccess(session.profileId)
-  const [pin, setPin] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [pinGone, setPinGone] = useState(false)
-  const pinEnabled = !!quick?.pinEnabled && !pinGone
-  const bioEnabled = !!quick?.biometricEnabled && SB_MODE
-
-  const submitPin = async (e: FormEvent) => {
-    e.preventDefault()
-    setBusy(true)
-    setError(null)
-    try {
-      const check = await verifyQuickPin(session.profileId, pin)
-      if (check.ok) { onUnlock(); return }
-      /* Los intentos fallidos también se registran (precisión del
-         dueño, 15:10): un PIN atacado es justo lo que hay que
-         poder rastrear desde Cronología. */
-      if (check.reason === 'locked') {
-        setPinGone(true)
-        logActivity('fallido', 'PIN de desbloqueo desactivado tras demasiados intentos fallidos en este dispositivo', { actor: session })
-        setError('Demasiados intentos fallidos: el PIN quedó desactivado en este dispositivo. Entra con tu contraseña y, si quieres, crea un PIN nuevo en Ajustes → Seguridad.')
-      } else if (check.reason === 'wrong') {
-        logActivity('fallido', `Intento de desbloqueo con PIN incorrecto (quedan ${check.attemptsLeft} intentos)`, { actor: session })
-        setError(`PIN incorrecto. Te quedan ${check.attemptsLeft} intento${check.attemptsLeft === 1 ? '' : 's'} antes de que se desactive.`)
-      } else {
-        setPinGone(true)
-        setError('Este dispositivo ya no tiene PIN activo. Entra con tu contraseña.')
-      }
-    } finally {
-      setBusy(false)
-      setPin('')
-    }
-  }
-
-  const useBiometric = async () => {
-    setBusy(true)
-    setError(null)
-    try {
-      const unlock = await requireBiometricUnlock()
-      if (unlock.ok) { onUnlock(); return }
-      logActivity('fallido', 'Intento de desbloqueo biométrico no completado', { actor: session })
-      setError(unlock.reason ?? 'La verificación biométrica no se completó.')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="auth-wrap">
-      <section className="card auth-card">
-        <div className="auth-mark"><img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" /></div>
-        <h1>{SYSTEM_NAME}</h1>
-        <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
-        <h2 style={{ fontSize: '1.05rem', marginBottom: 4 }}>Hola, {session.name}</h2>
-        <p className="small" style={{ marginBottom: 14 }}>
-          Tu sesión sigue guardada en este dispositivo ({session.role === 'admin' ? 'Administrador' : 'Solo lectura'}).
-          Desbloquéala con tu acceso rápido o entra con tu contraseña.
-        </p>
-        {error ? <div className="error-box" style={{ marginBottom: 12 }}>{error}</div> : null}
-        {pinEnabled ? (
-          <form onSubmit={(e) => void submitPin(e)}>
-            <div className="field">
-              <label htmlFor="lock-pin">PIN de este dispositivo</label>
-              <input
-                id="lock-pin" type="password" inputMode="numeric" autoComplete="off"
-                pattern="[0-9]*" maxLength={6} className="auth-pin-input"
-                value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} required
-              />
-            </div>
-            <button className="btn primary block" type="submit" disabled={busy || pin.length < 4}>
-              {busy ? 'Comprobando…' : 'Desbloquear con PIN'}
-            </button>
-          </form>
-        ) : null}
-        {bioEnabled ? (
-          <button type="button" className="btn block" style={{ marginTop: pinEnabled ? 10 : 0 }} disabled={busy} onClick={() => void useBiometric()}>
-            <Icon name="fingerprint" size={16} /> Usar huella o cara
-          </button>
-        ) : null}
-        <button type="button" className="auth-forgot" onClick={onUsePassword}>Entrar con contraseña</button>
-        <button type="button" className="auth-forgot" onClick={onUsePassword}>Cambiar de usuario</button>
-      </section>
-    </div>
-  )
-}
-
 export default function App() {
   const [session, setSession] = useState<Session | null>(null)
-  const [locked, setLocked] = useState(false)
+  /* Hay sesión guardada pero no se pudo verificar al arrancar (red):
+     se muestra «reintentar» en vez de echar al acceso. */
+  const [bootError, setBootError] = useState(false)
   const [mustChange, setMustChange] = useState(false)
   /* Recuperación de contraseña en curso (llegada por el enlace del
      correo): mientras esté activa manda sobre el acceso normal. */
@@ -706,12 +607,17 @@ export default function App() {
           if (!cancelled && remote) {
             setSession(remote.session)
             setMustChange(remote.mustChange)
-            /* Acceso rápido: la sesión restaurada en un dispositivo
-               con desbloqueo activado pasa primero por el bloqueo. */
-            if (hasQuickAccess(remote.session.profileId)) setLocked(true)
+            /* La sesión restaurada entra DIRECTA (regla del dueño,
+               26-oct 19:09: la sesión se mantiene hasta que él la
+               cierre): nada de pantalla de bloqueo al abrir. El PIN y
+               la biometría quedan para las acciones sensibles y para
+               las vías del selector cuando no hay sesión guardada. */
           }
-        } catch {
-          // Sin sesión restaurable: se queda la pantalla de acceso.
+        } catch (e) {
+          /* Sesión guardada pero no verificable ahora (red): NO se
+             echa al usuario a la pantalla de acceso; se le ofrece
+             reintentar con su sesión intacta. */
+          if (!cancelled && e instanceof Error && e.message === 'restore-transient') setBootError(true)
         }
         if (!cancelled) setReady(true)
       })()
@@ -722,7 +628,8 @@ export default function App() {
     if (s) {
       setSession(s)
       setMustChange(profileMustChange(s.profileId))
-      if (hasQuickAccess(s.profileId)) setLocked(true)
+      /* Sin bloqueo al abrir: la sesión local tampoco caduca ni se
+         interpone pantalla alguna (misma regla del dueño, 19:09). */
     }
     setReady(true)
   }, [])
@@ -828,7 +735,6 @@ export default function App() {
     logImpersonationEvent(adminName, `${adminName.split(' ')[0]} entró a la cuenta de ${target.name} («entrar como»)`)
     setImpersonation({ byName: adminName, adminSession: fromAdminSession })
     setSession({ profileId: target.id, name: target.name, email: target.email, role: target.role })
-    setLocked(false)
     setMustChange(false)
     setSection('inicio')
   }
@@ -848,19 +754,17 @@ export default function App() {
   }
 
   const endSession = (clearQuick: boolean) => {
-    /* Cerrar sesión apaga el acceso rápido de este dispositivo
-       (decisión del dueño): el próximo ingreso será con contraseña
-       y habrá que volver a activarlo en Ajustes. El «Entrar con
-       contraseña» de la pantalla de bloqueo NO lo apaga: solo deja
-       la sesión guardada y pasa por el acceso completo. Dentro de
-       una cuenta ajena («entrar como») cerrar sesión NO apaga el
-       acceso rápido de esa persona: no es su dispositivo. */
+    /* Cerrar sesión es la ÚNICA salida (regla del dueño, 26-oct
+       19:09) y apaga el acceso rápido de este dispositivo: el próximo
+       ingreso será con contraseña y habrá que volver a activarlo en
+       Ajustes. Dentro de una cuenta ajena («entrar como») cerrar
+       sesión NO apaga el acceso rápido de esa persona: no es su
+       dispositivo. */
     if (clearQuick && session && !impersonation) clearQuickAccess(session.profileId)
     setImpersonation(null)
     if (SB_MODE) void sbLogout().catch(() => { /* la sesión local ya quedó cerrada */ })
     logout()
     setSession(null)
-    setLocked(false)
     setMustChange(false)
     setSection('inicio')
     setRemoteError(null)
@@ -1101,8 +1005,20 @@ export default function App() {
       />
     )
   }
+  if (!session && bootError) return (
+    <div className="auth-wrap">
+      <section className="card auth-card">
+        <div className="auth-mark"><img src={BRAND_LOGO_URL} alt="Logo azul de La Reina: corona, barco y olas" className="auth-logo" /></div>
+        <h1>{SYSTEM_NAME}</h1>
+        <p className="auth-sub">Sistema de Automatización de Datos V2.0<br />{PLACE}</p>
+        <div className="error-box" style={{ marginBottom: 12 }}>
+          Tu sesión sigue guardada en este dispositivo, pero la conexión no dejó verificarla al abrir. No tienes que entrar de nuevo: comprueba la conexión y toca «Reintentar».
+        </div>
+        <button type="button" className="btn primary block" onClick={() => window.location.reload()}>Reintentar</button>
+      </section>
+    </div>
+  )
   if (!session) return <LoginScreen onLogin={(s, mc, via) => { setSession(s); setMustChange(mc); logActivity('sesion', `Inicio de sesión con ${via ?? 'contraseña'}`, { actor: s }) }} onImpersonate={(target, adminName) => enterAs(target, adminName)} />
-  if (locked) return <LockScreen session={session} onUnlock={() => { setLocked(false); logActivity('sesion', 'Desbloqueo rápido en este dispositivo (PIN o biometría)', { actor: session }) }} onUsePassword={() => endSession(false)} />
   if (mustChange) return <ChangePasswordScreen session={session} onDone={() => setMustChange(false)} onLogout={doLogout} />
 
   const initials = session.name.split(' ').filter(Boolean).slice(0, 2).map((w) => w[0]).join('').toUpperCase()

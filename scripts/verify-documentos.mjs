@@ -217,7 +217,7 @@ check('acumulados del mes: ventas 2.025.360', b22 && b22.structured.mes.ventas =
 check('acumulados del mes: bruta 565.191', b22 && b22.structured.mes.bruta === 565191, b22 && String(b22.structured.mes.bruta))
 check('acumulados del mes: neta 558.901', b22 && b22.structured.mes.neta === 558901, b22 && String(b22.structured.mes.neta))
 check('boletín sin gráficos (sin <svg ni <canvas)', b22 && !/<svg|<canvas/i.test(b22.html))
-check('boletín con barras de progreso', b22 && b22.html.includes('Fondo de ventas del mes'))
+check('boletín con barras de progreso (medidores del original: «Fondos acumulados» y «Ventas mensuales»)', b22 && b22.html.includes('Fondos acumulados') && b22.html.includes('Ventas mensuales'))
 check('boletín claro/oscuro (prefers-color-scheme)', b22 && b22.html.includes('prefers-color-scheme: dark'))
 check('boletín con denominaciones del arqueo', b22 && b22.text.includes('Desglose por denominación'))
 check('departamentos del día con su venta real', b22 && b22.structured.deptTotals['Bebidas alcohólicas'] === 60560 && b22.structured.deptTotals['Elaboración'] === 21500 && Object.values(b22.structured.deptTotals).reduce((s, v) => s + v, 0) === 88060,

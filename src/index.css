@@ -919,7 +919,7 @@ table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(-
 .acc-sms-line { margin-top: 8px; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; background: var(--surface-tonal); padding: 4px 10px; font-size: 11px; font-weight: 600; color: var(--text); }
 .acc-sms-none { margin-top: 8px; font-size: 11px; font-weight: 500; color: var(--dim); }
 .acc-sms-none svg { vertical-align: -2px; margin-right: 4px; }
-.acc-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+.acc-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
 .account-card.is-morosa { border-color: var(--danger); }
 .account-card.is-paid { border-color: var(--paid-border); }
 .account-main { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: 0; color: var(--text); text-align: left; padding: 0; cursor: pointer; font: inherit; }

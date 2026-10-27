@@ -104,7 +104,10 @@ export default function ArchivoScreen({ data, bulletins, isAdmin, onChanged, onN
         isCurrent: false,
         daysCount,
         ventas: eco.ventas,
-        resultado: eco.resultado,
+        // El archivo del original guarda la composición documental
+        // (neta − gastos + extras: 429.091 en octubre), no la de la
+        // pantalla de Economía (420.591).
+        resultado: eco.resultado + eco.ingresosExtras,
         gananciaBruta: eco.bruta,
         gananciaNeta: eco.neta,
         gastos: eco.gastos,

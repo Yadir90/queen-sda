@@ -40,6 +40,7 @@ interface SpeechRecognitionLike {
   onresult: ((event: SpeechRecognitionEventLike) => void) | null
   onerror: ((event: SpeechRecognitionErrorEventLike) => void) | null
   onend: (() => void) | null
+  onstart: (() => void) | null
   start: () => void
   stop: () => void
   abort: () => void
@@ -79,9 +80,17 @@ export interface RecognitionCallbacks {
   onEnd: () => void
 }
 
+/* Diagnóstico de voz (26-oct, tras la captura del dueño: la escucha
+   moría AL ARRANCAR con «aborted» sin que la app abortara nada —
+   sonda de ciclo de vida: la app hace 1 construct y 1 start(), el
+   aborto lo dispara la PLATAFORMA). Si el micrófono sí se puede
+   abrir pero el reconocimiento aborta dos veces antes de su
+   onstart, el que falla es el servicio de voz del dispositivo
+   (en Android, el de la app de Google): se nombra con su salida. */
+const SERVICE_FAIL_TEXT = 'El micrófono funciona, pero el servicio de voz de este dispositivo no arrancó: en Android ese servicio lo da la app de Google. Activa o actualiza la app de Google (o «Servicios de voz de Google») en Ajustes → Aplicaciones, y vuelve a tocar el micrófono. Mientras tanto, el chat de texto sigue disponible.'
 const ERROR_TEXT: Record<string, string> = {
   'not-allowed': 'El micrófono no tiene permiso en este navegador. Toca el candado junto a la dirección y permite el micrófono para esta página; el chat de texto sigue disponible.',
-  'service-not-allowed': 'El servicio de voz del navegador no está permitido en este dispositivo. El chat de texto sigue disponible.',
+  'service-not-allowed': SERVICE_FAIL_TEXT,
   'audio-capture': 'No se encontró micrófono en este dispositivo. El chat de texto sigue disponible.',
   'no-speech': 'No te escuché. Toca el micrófono e inténtalo de nuevo.',
   network: 'La voz del navegador necesita conexión a internet para reconocer lo que dices. Revisa la conexión e inténtalo de nuevo; el chat de texto sigue disponible.',
@@ -104,6 +113,15 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
   let recognition: SpeechRecognitionLike | null = null
   let stopped = false
   let ended = false
+  /* Si la instancia llegó a disparar onstart: un «aborted» posterior
+     es una interrupción a mitad de sesión; un «aborted» ANTES del
+     onstart es un fallo de arranque de la plataforma. */
+  let started = false
+  let abortRetried = false
+  /* La sonda de micrófono es asíncrona: mientras corre, el onend
+     que sigue al onerror NO puede cerrar la sesión con el aviso de
+     «terminó sin captar nada» — la causa real llega de la sonda. */
+  let diagnosing = false
   let langIndex = 0
   const langs = ['es-ES', 'es']
   let finalText = ''
@@ -121,12 +139,35 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
   const finish = () => {
     if (ended) return
     ended = true
-    if (!stopped && !reported && !delivered) report(SILENT_END_TEXT)
+    if (!stopped && !reported && !delivered && !diagnosing) report(SILENT_END_TEXT)
     callbacks.onEnd()
+  }
+
+  /* Sonda de micrófono: si getUserMedia abre el audio, el micrófono
+     y su permiso están bien y el fallo es del servicio de voz; si
+     la sonda falla, su error dice cuál es la causa real. Las pistas
+     se detienen al instante: la sonda no graba nada. */
+  const diagnosePreStartAbort = () => {
+    diagnosing = true
+    const fail = (message: string) => { report(message); finish() }
+    const md = typeof navigator !== 'undefined' ? navigator.mediaDevices : undefined
+    if (!md?.getUserMedia) { fail(ABORTED_TEXT); return }
+    md.getUserMedia({ audio: true }).then((stream) => {
+      stream.getTracks().forEach((track) => { try { track.stop() } catch { /* noop */ } })
+      if (!stopped) fail(SERVICE_FAIL_TEXT)
+    }).catch((err: unknown) => {
+      if (stopped) return
+      const name = err instanceof DOMException ? err.name : ''
+      if (name === 'NotAllowedError' || name === 'SecurityError') fail(ERROR_TEXT['not-allowed']!)
+      else if (name === 'NotFoundError' || name === 'OverconstrainedError') fail(ERROR_TEXT['audio-capture']!)
+      else fail(ABORTED_TEXT)
+    })
   }
 
   const launch = () => {
     recognition = new Ctor()
+    started = false
+    recognition.onstart = () => { started = true }
     recognition.lang = langs[langIndex]
     recognition.continuous = false
     recognition.interimResults = true
@@ -156,14 +197,28 @@ export function startRecognition(callbacks: RecognitionCallbacks): RecognitionHa
       if (event.error === 'language-not-supported' && langIndex < langs.length - 1 && !stopped) {
         langIndex += 1
         const old = recognition
-        if (old) { old.onresult = null; old.onerror = null; old.onend = null }
+        if (old) { old.onresult = null; old.onerror = null; old.onend = null; old.onstart = null }
         try { old?.abort() } catch { /* noop */ }
         launch()
         return
       }
       // «aborted» solo es silencioso cuando lo pidió el usuario
-      // (stop/abort del asa); si llega solo, es un fallo de arranque
-      // y se avisa como cualquier otro error.
+      // (stop/abort del asa). Si llega solo ANTES del onstart, es
+      // el fallo de arranque de la plataforma (captura del dueño,
+      // 26-oct 18:57): se reintenta UNA vez con instancia nueva y,
+      // si vuelve a abortar, la sonda de micrófono discrimina la
+      // causa y el aviso la nombra — nunca la genérica.
+      if (event.error === 'aborted' && !stopped && !started) {
+        if (!abortRetried) {
+          abortRetried = true
+          const old = recognition
+          if (old) { old.onresult = null; old.onerror = null; old.onend = null; old.onstart = null }
+          setTimeout(() => { if (!stopped && !ended) launch() }, 250)
+          return
+        }
+        diagnosePreStartAbort()
+        return
+      }
       if (event.error === 'aborted' && !stopped) { report(ABORTED_TEXT); finish(); return }
       if (event.error === 'aborted') { finish(); return }
       report(ERROR_TEXT[event.error] ?? `La escucha se detuvo (${event.error}). El chat de texto sigue disponible.`)
@@ -206,7 +261,7 @@ let resumeTimer: ReturnType<typeof setInterval> | null = null
  *  onStart se llama cuando la voz REAL empieza a sonar
  *  (utterance.onstart): el orbe de voz anima «hablando» solo entre
  *  onStart y onDone — sincronizado con la lectura, no decorativo. */
-export function speakQueen(text: string, onDone?: () => void, onStart?: () => void): void {
+export function speakQueen(text: string, onDone?: () => void, onStart?: () => void, onStuck?: () => void): void {
   if (!synthesisSupported() || !text.trim()) { onDone?.(); return }
   const synth = window.speechSynthesis
   stopQueenSpeech()
@@ -222,9 +277,35 @@ export function speakQueen(text: string, onDone?: () => void, onStart?: () => vo
     if (resumeTimer) { clearInterval(resumeTimer); resumeTimer = null }
     onDone?.()
   }
-  utterance.onstart = () => { onStart?.() }
+  let startFired = false
+  let stuckReported = false
+  const reportStuck = () => {
+    if (stuckReported || !onStuck) return
+    stuckReported = true
+    onStuck()
+  }
+  utterance.onstart = () => { startFired = true; onStart?.() }
   utterance.onend = finish
-  utterance.onerror = finish
+  /* Un error del motor (p. ej. «synthesis-failed» sin voces) cerraba
+     la lectura en silencio vía finish(): también es «no habla» y
+     se avisa por el mismo canal. «interrupted»/«canceled» son el
+     corte deliberado al hablar de nuevo o al salir: no se avisan. */
+  utterance.onerror = (event) => {
+    if (event.error !== 'interrupted' && event.error !== 'canceled') reportStuck()
+    finish()
+  }
+  /* Vigía de arranque: si el motor de voz del dispositivo acepta la
+     lectura pero no empieza a sonar (sin voz en español instalada,
+     motor detenido), onstart nunca llega y la app callaba hasta el
+     cierre silencioso de los 10 s. A los 1,5 s sin onstart y sin
+     que el sintetizador declare estar hablando, se avisa con la
+     causa nombrada; la lectura sigue su curso por si arranca
+     tarde. */
+  if (onStuck) {
+    setTimeout(() => {
+      if (!done && !startFired && !synth.speaking) reportStuck()
+    }, 1500)
+  }
   // Chrome de escritorio corta las lecturas largas (~15 s): un
   // resume periódico las mantiene vivas mientras Queen habla.
   resumeTimer = setInterval(() => {

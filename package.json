@@ -37,7 +37,12 @@
     "verify:sync": "node scripts/verify-shared-sync.mjs",
     "verify:paridad": "node scripts/verify-paridad.mjs",
     "verify:inventario": "node scripts/verify-inventario.mjs",
-    "audit:visual": "node scripts/audit-visual.mjs"
+    "audit:visual": "node scripts/audit-visual.mjs",
+    "verify:sesion": "node scripts/probe-session.mjs http://127.0.0.1:8908/",
+    "verify:cuadre": "node scripts/verify-cuadre.mjs",
+    "verify:via-real": "node scripts/verify-via-real.mjs",
+    "verify:boletin": "node scripts/verify-boletin.mjs",
+    "verify:voz": "node scripts/verify-voz.mjs"
   },
   "type": "module",
   "version": "1.0.0"
