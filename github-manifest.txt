@@ -183,3 +183,11 @@ scripts/verify-boletin.mjs
 src/screens/Importar.tsx
 src/screens/Menu.tsx
 # Actualización 2026-10-27 (empaquetado Ronda 5): +4 rutas (src/screens/Menu.tsx, src/screens/Importar.tsx, scripts/probe-r5.mjs, scripts/verify-boletin.mjs — esta última existía en disco desde la Ronda 4 con su línea pegada al comentario «161.» y nunca había llegado a GitHub) y −2 rutas eliminadas del árbol en D-R5-02 (src/lib/queenVoice.ts, src/components/QueenVoiceOrb.tsx): push-files no borra, sus copias remotas quedan como registro histórico hasta un borrado expreso. Rutas listadas: 177 — 169 de texto empujables por push-files; los 8 binarios solo viajan en el zip.
+scripts/probe-sistema.mjs
+scripts/probe-menu-queen-r6.mjs
+scripts/verify-menu.mjs
+src/components/menuMirror.css
+src/lib/menuCore.d.mts
+src/lib/menuCore.mjs
+supabase/functions/_shared/menuCore.mjs
+# Actualización 2026-10-27 (empaquetado Ronda 6): +7 rutas nuevas (núcleo del Menú reconstruido: src/lib/menuCore.mjs + su .d.mts + gemelo supabase/functions/_shared/menuCore.mjs; estilos src/components/menuMirror.css; batería scripts/verify-menu.mjs y sondas scripts/probe-sistema.mjs y scripts/probe-menu-queen-r6.mjs). Rutas listadas: 184 — 176 de texto empujables por push-files; los 8 binarios solo viajan en el zip.
