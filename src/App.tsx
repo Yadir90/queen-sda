@@ -43,6 +43,8 @@ const Almacen = lazy(() => import('./screens/Almacen'))
 const Inventario = lazy(() => import('./screens/Inventario'))
 const Laboratorio = lazy(() => import('./screens/Laboratorio'))
 const Documentos = lazy(() => import('./screens/Documentos'))
+const Menu = lazy(() => import('./screens/Menu'))
+const Importar = lazy(() => import('./screens/Importar'))
 const Historial = lazy(() => import('./screens/Historial'))
 const QueenScreen = lazy(() => import('./screens/Queen'))
 const Archivo = lazy(() => import('./screens/Archivo'))
@@ -1127,7 +1129,7 @@ export default function App() {
               re-dispara la entrada al cambiar de pestaña, como el
               remontaje del original. */}
           <div className="md-page" key={section}>
-          {section === 'inicio' ? <Inicio data={data} isAdmin={canEdit('inicio')} onImportClick={() => setSection('sistema')} onNavigate={setSection} /> : null}
+          {section === 'inicio' ? <Inicio data={data} isAdmin={canEdit('inicio')} onImportClick={() => setSection('importar')} onNavigate={setSection} /> : null}
           {section === 'dias' ? <Dias data={data} isAdmin={canEdit('dias')} onChanged={refresh} /> : null}
           {section === 'cuentas' ? <Cuentas data={data} isAdmin={canEdit('cuentas')} onChanged={refresh} /> : null}
           {section === 'cobrar' ? <Cobrar data={data} isAdmin={canEdit('cobrar')} onChanged={refresh} /> : null}
@@ -1149,6 +1151,8 @@ export default function App() {
           {section === 'inventario' ? <Inventario data={data} isAdmin={canEdit('inventario')} onChanged={refresh} /> : null}
           {section === 'laboratorio' ? <Laboratorio data={data} /> : null}
           {section === 'documentos' ? <Documentos data={data} today={ref} isAdmin={isAdmin} /> : null}
+          {section === 'menu' ? <Menu data={data} today={ref} isAdmin={isAdmin} onNavigate={setSection} /> : null}
+          {section === 'importar' ? <Importar data={data} canWrite={accessOf('importar') === 'write'} onChanged={refresh} /> : null}
           {section === 'historial' ? (
             <Historial data={data} bulletins={bulletins} today={ref} isAdmin={canEdit('historial')} onBulletinsChange={handleBulletinsChange} />
           ) : null}

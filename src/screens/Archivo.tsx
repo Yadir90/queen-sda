@@ -453,9 +453,8 @@ export default function ArchivoScreen({ data, bulletins, isAdmin, onChanged, onN
             )}
             <p className="small muted" style={{ marginBottom: 0 }}>
               Las acciones de cada boletín (descargar, regenerar, enviar) viven en Historial. Los documentos del
-              mes del original (su PDF y las facturas de gastos y entradas) los genera el constructor de
-              documentos del original, que no se portó a esta copia: aquí el mes se consulta completo, sin
-              documentos fingidos.
+              mes (informe, nómina, menú y las facturas de gastos y entradas) se generan desde Documentos:
+              aquí el mes se consulta completo, sin documentos fingidos.
             </p>
           </Card>
         </div>

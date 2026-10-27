@@ -3,8 +3,32 @@
 import type { LocalPayment, Receivable } from '../types'
 
 /* Formato numérico centralizado es-ES, como el periods.ts del original
-   (antes las pantallas usaban es-CU y los núcleos es-ES: D-35). */
-const fmtNum = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 })
+   (antes las pantallas usaban es-CU y los núcleos es-ES: D-35).
+   D-R5-05 (26-oct): la agrupación de miles NO va por Intl.NumberFormat:
+   el ICU de Android usa minimumGroupingDigits=2 para es-ES y los
+   importes de 4 cifras salían SIN separador en el teléfono del dueño
+   («8500 CUP» junto a «275.505 CUP» en la misma lista). Agrupación
+   manual determinista con «.», igual en todos los dispositivos. */
+function fmtGroupedEs(value: number): string {
+  const n = Math.round(value)
+  const sign = n < 0 ? '-' : ''
+  return sign + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+}
+const fmtNum = { format: (v: number) => fmtGroupedEs(v) }
+
+/** Decimal es-ES con la misma agrupación manual de fmtGroupedEs y la
+ *  coma decimal (hasta maxDec decimales, sin ceros de relleno). */
+export function fmtDecEs(value: number, maxDec: number): string {
+  const n = Number.isFinite(Number(value)) ? Number(value) : 0
+  const neg = n < 0
+  const abs = Math.abs(n)
+  let entero = Math.floor(abs)
+  let dec = Math.round((abs - entero) * 10 ** maxDec)
+  if (dec >= 10 ** maxDec) { entero += 1; dec = 0 }
+  let decStr = String(dec).padStart(maxDec, '0')
+  while (decStr.length > 0 && decStr.endsWith('0')) decStr = decStr.slice(0, -1)
+  return `${neg ? '-' : ''}${fmtGroupedEs(entero)}${decStr ? ',' + decStr : ''}`
+}
 
 /* ===== Zona horaria gobernante: America/Havana (D-04) =====
    Puerto literal de los helpers del original (havanaNow de su App.tsx y

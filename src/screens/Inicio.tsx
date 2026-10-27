@@ -512,9 +512,9 @@ export default function Inicio({ data, isAdmin, onImportClick, onNavigate }: { d
           />
         </div>
       </Card>
-      <Card>
-        <MonthHeatMap days={monthHeat} monthKey={curMonth} todayISO={today} compact />
-      </Card>
+      {/* El MonthHeatMap ES su tarjeta (FutureCard del original, con
+          su nota «Cómo leerlo»): sin Card envolvente (D-R5-06). */}
+      <MonthHeatMap days={monthHeat} monthKey={curMonth} todayISO={today} compact />
 
       {/* 7 · «El día y su cierre» (DayTimeline + NightCloseConsole del
           original, tras «El negocio en gráficos» como en el original).

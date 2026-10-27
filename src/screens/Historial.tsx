@@ -119,8 +119,7 @@ export default function Historial({ data, bulletins, today, isAdmin, onBulletins
           <p className="eyebrow">Archivo mensual (del respaldo)</p>
           <h2>Meses del archivo</h2>
           <p className="small muted">
-            Los resúmenes mensuales que trae el respaldo (monthlyArchives, oleada 2: antes se descartaban al
-            importar y salían vacíos al reexportar). Se muestran tal como viajan, sin recalcularlos.
+            Los resúmenes mensuales que trae el respaldo (monthlyArchives). Se muestran tal como viajan, sin recalcularlos.
           </p>
           <div className="list">
             {data.monthlyArchives.map((a) => (

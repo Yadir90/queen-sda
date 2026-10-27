@@ -230,7 +230,7 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
                 <div className="row"><span>Diferencia</span><strong>{conc.diferencia == null ? '—' : fmtCUP(conc.diferencia)}</strong></div>
               </div>
               {conc.diferencia == null ? (
-                <p className="small muted">Ese día no tiene IPV importado en esta copia: no se puede conciliar contra el IPV, y no se inventa la cifra que falta.</p>
+                <p className="small muted">Ese día no tiene IPV importado: no se puede conciliar contra el IPV, y no se inventa la cifra que falta.</p>
               ) : conc.diferencia === 0 ? (
                 <div className="ok-box" style={{ marginTop: 12, marginBottom: 0 }}>Cuadra: cada entrada de ese día está identificada (IPV, pago de cuenta u otra entrada registrada).</div>
               ) : (
@@ -323,9 +323,9 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
                         {m.source === 'pase' && m.paseKind ? ` · ${m.paseKind === 'banco' ? 'al banco' : 'efectivo'}` : ''}
                         {' · '}Saldo tras el movimiento: {fmtCUP(balanceAfter.get(m.id) ?? 0)}
                       </span>
-                      {m.superseded ? <span className="chip">Anulado en el sistema original</span> : null}
+                      {m.superseded ? <span className="chip">Anulado</span> : null}
                       {m.excluded ? <span className="chip">No es de La Reina</span> : null}
-                      {m.local ? <span className="chip">Registrado en esta copia</span> : null}
+                      {m.local ? <span className="chip">Registrado aquí</span> : null}
                     </div>
                     <span className={`mov-amount ${m.amount >= 0 ? 'pos' : 'neg'}`}>
                       {m.amount >= 0 ? '+' : '−'}{fmtCUP(Math.abs(m.amount))}
@@ -389,7 +389,7 @@ export default function Transferencias({ data, isAdmin, onChanged }: { data: Sto
               })}
             </div>
             <p className="small muted" style={{ marginBottom: 0 }}>
-              Verificado contra: el historial de la tarjeta del respaldo del SDA y los movimientos registrados en esta copia. Sin verificar: los SMS de PAGOxMOVIL (esta copia no los lee; la conciliación compara contra el IPV y los pagos registrados).
+              Verificado contra: el historial de la tarjeta del respaldo del SDA y los movimientos registrados. Sin verificar: los SMS de PAGOxMOVIL (no se leen; la conciliación compara contra el IPV y los pagos registrados).
             </p>
           </Card>
         </>

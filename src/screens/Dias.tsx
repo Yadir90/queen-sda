@@ -217,8 +217,8 @@ export default function Dias({ data, isAdmin, onChanged }: { data: StoredData; i
           <h3 style={{ margin: 0 }}>IPV de hoy listo para llenar</h3>
           <p className="sub" style={{ margin: '4px 0 0' }}>
             {todayImported
-              ? `El IPV de hoy (${fmtDate(today)}) ya está importado en esta copia.`
-              : 'En esta copia puedes subir el Excel del IPV del día tal como salió de la plantilla, o traer los días con el respaldo del SDA.'}
+              ? `El IPV de hoy (${fmtDate(today)}) ya está importado.`
+              : 'Puedes subir el Excel del IPV del día tal como salió de la plantilla, o traer los días con el respaldo del SDA.'}
           </p>
         </div>
         {isAdmin ? (

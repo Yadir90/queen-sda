@@ -76,7 +76,20 @@ export const DOC_AURORA = {
 
 /* ============ Formato (original: fmtQ, es-ES con puntos) ============ */
 
-const nf = new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 })
+/* D-R5-05: agrupación manual determinista (el Intl es-ES de Android no
+   separa los importes de 4 cifras: minimumGroupingDigits=2). */
+const nf = { format: (v) => { const n = Math.round(Number(v) || 0); return (n < 0 ? '-' : '') + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') } }
+function fmtDecEs(v, maxDec) {
+  const n = Number.isFinite(Number(v)) ? Number(v) : 0
+  const neg = n < 0
+  const abs = Math.abs(n)
+  let entero = Math.floor(abs)
+  let dec = Math.round((abs - entero) * 10 ** maxDec)
+  if (dec >= 10 ** maxDec) { entero += 1; dec = 0 }
+  let decStr = String(dec).padStart(maxDec, '0')
+  while (decStr.length > 0 && decStr.endsWith('0')) decStr = decStr.slice(0, -1)
+  return `${neg ? '-' : ''}${nf.format(entero)}${decStr ? ',' + decStr : ''}`
+}
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 export function fmtDoc(v) { return nf.format(Math.round(num(v))) }
 export function fmtDocCUP(v) { return `${fmtDoc(v)} CUP` }
@@ -853,7 +866,7 @@ export function fmtRH(v) {
   while (decStr.length > 1 && decStr.endsWith('0')) decStr = decStr.slice(0, -1)
   return `${neg ? '-' : ''}${fmtDoc(entero)},${decStr}`
 }
-const fmtCant = (v) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(num(v))
+const fmtCant = (v) => fmtDecEs(num(v), 2)
 const fmtPctD = (v) => (Math.round(num(v) * 10) / 10).toFixed(1)
 const fmtPctC = (v) => fmtPctD(v).replace('.', ',')
 

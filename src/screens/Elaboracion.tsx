@@ -78,8 +78,10 @@ interface RecipeDraft {
   ingredients: ElaborationIngredient[]
 }
 
-/* fmt del original: redondea a entero y agrupa en es-ES (su fmtNum). */
-const fmt = (v: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 0 }).format(Math.round(v))
+/* fmt del original: redondea a entero y agrupa en es-ES (su fmtNum).
+   D-R5-05: vía fmtInt (agrupación manual; el Intl de Android no separa
+   las 4 cifras). */
+const fmt = (v: number) => fmtInt(v)
 
 function trendChip(p: DerivedPackage) {
   if (p.trend === 'subio') return <span className="chip warn">Subió {p.changePct != null ? `${Math.round(p.changePct * 10) / 10} %` : ''}</span>
@@ -503,7 +505,7 @@ export default function Elaboracion({ data, isAdmin, onChanged }: { data: Stored
     })
     const suggestion = dishWasteSuggestion(selected.name)
     setDraft({ ...draft, ingredients: merged.length ? merged : draft.ingredients, wastePct: suggestion?.suggested ?? draft.wastePct })
-    setSuggestionNote(`Queen revisó los ingredientes contra el historial de fichas, las referencias de paquetes y el catálogo del IPV de esta copia.${suggestion ? ` Merma sugerida: ${fmt(suggestion.suggested)}% — tipo ${suggestion.category} (${fmt(suggestion.min)}–${fmt(suggestion.max)}%).` : ''} El colchón y el margen son Ajustes globales: no se cambian en esta ficha.`)
+    setSuggestionNote(`Queen revisó los ingredientes contra el historial de fichas, las referencias de paquetes y el catálogo del IPV.${suggestion ? ` Merma sugerida: ${fmt(suggestion.suggested)}% — tipo ${suggestion.category} (${fmt(suggestion.min)}–${fmt(suggestion.max)}%).` : ''} El colchón y el margen son Ajustes globales: no se cambian en esta ficha.`)
   }
 
   /* Exportaciones XLSX reales (ipvRoundTrip): la individual descarga

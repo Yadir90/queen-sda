@@ -23,7 +23,9 @@ import { buildProductsCatalog, buildPriceSuggestions, detectPriceChanges } from 
 import { recordedPayroll } from './syncCore.mjs'
 
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
-const nf = new Intl.NumberFormat('es-ES')
+/* D-R5-05: agrupación manual determinista (el Intl es-ES de Android no
+   separa los importes de 4 cifras: minimumGroupingDigits=2). */
+const nf = { format: (v) => { const n = Math.round(Number(v) || 0); return (n < 0 ? '-' : '') + String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') } }
 export function fmtQueen(v) { return nf.format(Math.round(num(v))) }
 export function fmtQueenCUP(v) { return `${fmtQueen(v)} CUP` }
 
@@ -216,7 +218,7 @@ export function buildQueenOperationModes(data) {
     {
       key: 'operacion',
       title: 'Modo operación — escribe solo con tu «sí»',
-      description: 'Cuando algo toca dinero, cuentas o registros, Queen propone y espera tu confirmación en la pantalla correspondiente. En esta copia el chat no ejecuta ninguna escritura de negocio.',
+      description: 'Cuando algo toca dinero, cuentas o registros, Queen propone y espera tu confirmación en la pantalla correspondiente. El chat no ejecuta ninguna escritura de negocio.',
       canDo: ['Proponer correcciones, reclasificaciones y fusiones con su verificación contra el IPV', 'Señalar el efecto automático ya auditado (salida de almacén con costo verificado → gasto) en su pantalla'],
       cannotDo: ['Aplicar sola un cambio sensible sin tu «sí»', 'Borrar cuentas pagadas ni historial confirmado', 'Tocar un saldo ante la duda: primero verifica contra el IPV y te pregunta'],
       liveSignal: `${authorizeCount} acciones exigen tu autorización y ${autonomousCount} corren automáticas bajo auditoría, de ${QUEEN_AUTONOMY_RULES.length} reglas de autonomía registradas.`,
@@ -227,7 +229,7 @@ export function buildQueenOperationModes(data) {
       description: 'De noche el sistema se cuida solo: pruebas inmunes y de comportamiento, consolidación de memoria y ciclo de aprendizaje sobre los fallos del día. Ningún dato de negocio cambia en este modo.',
       canDo: ['Correr las pruebas nocturnas y reportar solo los fallos', 'Consolidar la memoria y convertir los fallos del día en lecciones aplicadas', 'Cuidar la interfaz, los respaldos y la salud técnica'],
       cannotDo: ['Modificar ventas, cuentas, gastos ni nómina', 'Enviar boletines fuera de su flujo programado', 'Aplicar una lección que contradiga una regla tuya sin dejarla pendiente de tu palabra'],
-      liveSignal: 'Consolidación de memoria y batería de comportamiento: sin registro en esta copia — corren en el sistema original y sus resultados no viajan en el respaldo.',
+      liveSignal: 'Consolidación de memoria y batería de comportamiento: sin registro en los datos cargados.',
     },
   ]
 }
@@ -320,10 +322,10 @@ export function buildQueenMemory(data) {
     decisionsCount: decisions.length,
     decisionsSample: decisions.slice(0, 12).map(([key, kind]) => ({ key, kind })),
     notTraveling: [
-      'Memoria tipada (corta, episódica y semántica) del original: vive en su base y no se exporta en el respaldo.',
-      'Lecciones del ciclo nocturno y patrones de uso: no viajan; esta copia no declara ninguno.',
-      'Banco de errores histórico del original: no viaja; el banco de esta copia nace de los errores verificados en los datos cargados.',
-      'Versiones de personalidad de Queen: no viajan en el respaldo.',
+      'Memoria tipada (corta, episódica y semántica): no se exporta en el respaldo.',
+      'Lecciones del ciclo nocturno y patrones de uso: no vienen en el respaldo; no se declara ninguno.',
+      'Banco de errores histórico: no viene en el respaldo; el banco nace de los errores verificados en los datos cargados.',
+      'Versiones de personalidad de Queen: no vienen en el respaldo.',
     ],
   }
 }
@@ -393,7 +395,7 @@ export function buildQueenObservations(data, refDate) {
   const enRiesgo = sug.items.filter((i) => i.status === 'perdida' || i.status === 'riesgo')
   if (enRiesgo.length) out.push({ kind: 'riesgo', level: 'suggestion', text: `${fmtQueen(enRiesgo.length)} productos con margen en riesgo o en pérdida según su costo y precio vigentes; la sugerencia de precio está en su ficha, sin cambiar ningún precio sola.` })
   const pendingBulletins = (data?.bulletins ?? []).filter((b) => b.status === 'pendiente').length
-  if (pendingBulletins) out.push({ kind: 'boletines', level: 'info', text: `${fmtQueen(pendingBulletins)} boletines en cola, listos para descargar; en esta copia todavía no hay servicio de correo conectado, así que ninguno se marca enviado sin envío real.` })
+  if (pendingBulletins) out.push({ kind: 'boletines', level: 'info', text: `${fmtQueen(pendingBulletins)} boletines en cola, listos para descargar; todavía no hay servicio de correo conectado, así que ninguno se marca enviado sin envío real.` })
   return out
 }
 
@@ -403,14 +405,21 @@ export function buildQueenObservations(data, refDate) {
    app. La app solo puede declarar si el canal está desplegado; el
    intento real devuelve el motivo exacto de la función. */
 export function queenLanguageStatus(supabaseConfigured) {
+  /* D-R5-07 (27-oct): el estado anterior era una nota de obra FALSA
+     («sin configurar», «se despliega… en la puerta final», «la clave
+     la crea el dueño»): la Edge Function queen-chat ESTÁ desplegada
+     y su secreto GEMINI_API_KEY creado (declaración del dueño). El
+     estado real: con servidor (Supabase) el canal está configurado;
+     sin servidor, Queen responde en determinista. Sin narración de
+     fase en la interfaz. */
   return {
     deterministicReady: true,
-    configured: false,
+    configured: Boolean(supabaseConfigured),
     channelDeployed: Boolean(supabaseConfigured),
     providers: ['Gemini (gratis)', 'Cloudflare Workers AI (respaldo)'],
     note: supabaseConfigured
-      ? 'El canal (Edge Function queen-chat) se despliega con el resto del sistema en la puerta final y la clave gratuita de Gemini la crea el dueño como secreto de la función: nunca viaja en la app. Hasta confirmarlo, la conversación libre no se da por activa.'
-      : 'En modo local no hay canal de lenguaje: Queen responde solo en determinista. La capa de Gemini se activa en el modo Supabase al desplegar la función queen-chat con el secreto del dueño.',
+      ? 'Canal activo (Edge Function queen-chat): Gemini con respaldo de Cloudflare Workers AI. La capa redacta sobre las cifras verificadas del determinista; no calcula ni escribe datos.'
+      : 'Sin canal en este dispositivo: Queen responde en determinista. La capa de lenguaje vive en el servidor del sistema.',
   }
 }
 
@@ -517,7 +526,7 @@ export function answerQueen(data, question, opts = {}) {
     return answer('evolucion',
       `Estoy en la etapa ${evo.stage.name} (${evo.stage.id}), con un índice de ${evo.score} sobre 100 calculado solo con las señales que viajan en el respaldo. ${evo.stage.description} ${evo.note}`,
       figuresOf([['Etapa', evo.stage.name], ['Índice', evo.score], ...evo.metrics.filter((m) => m.measured).map((m) => [m.label, m.value])]),
-      ['Memoria de Queen cargada en esta copia (directivas, conceptos, decisiones y días)'],
+      ['Memoria de Queen cargada (directivas, conceptos, decisiones y días)'],
       evo.metrics.filter((m) => !m.measured).map((m) => m.label))
   }
 
@@ -545,7 +554,7 @@ export function answerQueen(data, question, opts = {}) {
   if (/^como vamos\b/.test(q)) return answerQueen(data, '¿Cómo va el mes?', opts)
 
   if (!hasData) {
-    return noData('sin-datos', 'todavía no hay datos importados en esta copia (ni días de IPV ni cuentas)')
+    return noData('sin-datos', 'todavía no hay datos importados (ni días de IPV ni cuentas)')
   }
 
   const totals = pendingTotals(data, refDate)
@@ -636,7 +645,7 @@ export function answerQueen(data, question, opts = {}) {
     return answer('dias-faltan',
       gaps.length
         ? `Dentro del rango importado faltan ${fmtQueen(gaps.length)} días sin IPV: ${gaps.map(fmtFechaQueen).join(', ')}. El último IPV cargado es el ${fmtFechaQueen(lastDay)}.`
-        : `No hay huecos dentro del rango importado: hay IPV de cada día entre el ${fmtFechaQueen(days[0].date)} y el ${fmtFechaQueen(days[days.length - 1].date)}. Lo posterior a esa fecha no consta todavía en esta copia.`,
+        : `No hay huecos dentro del rango importado: hay IPV de cada día entre el ${fmtFechaQueen(days[0].date)} y el ${fmtFechaQueen(days[days.length - 1].date)}. Lo posterior a esa fecha no consta todavía.`,
       figuresOf([['Días importados', days.length], ['Huecos en el rango', gaps.length]]),
       ['Días de IPV importados'], ['Los días posteriores al último IPV importado'])
   }
@@ -677,7 +686,7 @@ export function answerQueen(data, question, opts = {}) {
           ? `La conciliación del ${fmtFechaQueen(date)} cuadra: entradas registradas ${fmtQueenCUP(conc.registradas)} = IPV ${fmtQueenCUP(conc.ipv)} + pagos de cuentas ${fmtQueenCUP(conc.pagosCuenta)} + otras entradas ${fmtQueenCUP(conc.otras)}.`
           : `La conciliación del ${fmtFechaQueen(date)} tiene diferencia de ${fmtQueenCUP(conc.diferencia ?? 0)}: registradas ${fmtQueenCUP(conc.registradas)} contra identificadas ${fmtQueenCUP(conc.identificadas ?? 0)} (IPV ${fmtQueenCUP(conc.ipv ?? 0)} + pagos de cuentas ${fmtQueenCUP(conc.pagosCuenta)} + otras ${fmtQueenCUP(conc.otras)}). Es un descuadre a señalar antes de dar el día por cuadrado.`,
         figuresOf([['Entradas registradas', conc.registradas], ['Diferencia', conc.diferencia ?? 0]]),
-        [`Historial de la tarjeta e IPV del ${fmtFechaQueen(date)}`], ['El saldo físico por SMS no vive en esta copia'])
+        [`Historial de la tarjeta e IPV del ${fmtFechaQueen(date)}`], ['El saldo físico por SMS (no se lee)'])
     }
     return answer('tarjeta',
       `El saldo derivado de la tarjeta del negocio es ${fmtQueenCUP(ts.balance)} según su historial registrado (${fmtQueen(ts.effectiveCount)} movimientos efectivos); lo pasado al banco suma ${fmtQueenCUP(ts.totalBankPassed)}. La comisión del banco es fija: 210 CUP por pase, nunca un porcentaje.`,

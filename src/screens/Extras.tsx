@@ -261,7 +261,7 @@ export default function ExtrasTab({ data, isAdmin, onChanged }: { data: StoredDa
             ) : null}
             <p className="small muted" style={{ marginTop: 10, marginBottom: 0 }}>
               Los ingresos del IPV no se editan aquí: son la foto del archivo importado. Los registrados a mano
-              viven en esta copia (en el original, en su servidor) y se agregan solos al IPV de vuelta de su fecha.
+              viven en el sistema y se agregan solos al IPV de vuelta de su fecha.
             </p>
           </Card>
         </>

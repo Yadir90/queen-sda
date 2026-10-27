@@ -11,7 +11,8 @@
  *    ADMINISTRADOR, como hasta ahora.
  *  - Respaldos: quedan SOLO del administrador, con su candado.
  *  - Queen: el rol lectura conversa con Queen igual que el
- *    administrador (preguntar, consultar, análisis, voz). Ninguna
+ *    administrador (preguntar, consultar, análisis — solo texto;
+ *    la voz se eliminó el 26-oct, D-R5-02). Ninguna
  *    acción de Queen sobre dinero, cuentas, saldos o ajustes se
  *    abre con esto: esas siguen exigiendo al administrador.
  *  - Modificar (editar, borrar, ajustes): solo el administrador.
@@ -35,7 +36,7 @@ export function exportNeedsBiometric(role: Role | null | undefined): boolean {
   return role === 'admin'
 }
 
-/** Conversar con Queen (texto y voz, consultas y análisis):
+/** Conversar con Queen (solo texto, consultas y análisis):
  *  cualquier sesión iniciada. */
 export function canUseQueen(role: Role | null | undefined): boolean {
   return role === 'admin' || role === 'lectura'
@@ -53,12 +54,14 @@ export function canModify(role: Role | null | undefined): boolean {
  *    aparecen a ningún otro usuario —ni en la navegación ni por
  *    acceso directo— sea cual sea su perfil.
  *  - YAN tiene matriz propia por sección (sustituye al rol lectura
- *    genérico): solo lectura en Inicio, Transferencias, Menú
- *    (= Documentos), Almacén, Entradas y RH; Queen solo el chat;
+ *    genérico): solo lectura en Inicio, Transferencias, Menú,
+ *    Documentos, Almacén, Entradas y RH; Queen solo el chat;
  *    lectura y escritura en Gastos/Economía, Inventario,
  *    Laboratorio, Otros ingresos (= Extras), Existencias,
- *    Productos, Elaboración y Cobrar; sin acceso a las seis
- *    pestañas de administrador.
+ *    Productos, Elaboración, Cobrar e Importar; sin acceso a las
+ *    seis pestañas de administrador. (D-R5-03: Menú e Importar son
+ *    secciones propias desde el 26-oct; antes Menú caía en
+ *    Documentos e Importar en Sistema.)
  *  - Jesús y Dayami: lectura general en el resto, como antes.
  * La imposición en el servidor (RLS) queda para el despliegue: esta
  * matriz es de interfaz, como el resto de roles de la copia. */
@@ -72,6 +75,7 @@ const YAN_MATRIX: Partial<Record<Section, SectionAccess>> = {
   inicio: 'read',
   transferencias: 'read',
   documentos: 'read',
+  menu: 'read',
   almacen: 'read',
   entradas: 'read',
   rh: 'read',
@@ -85,6 +89,7 @@ const YAN_MATRIX: Partial<Record<Section, SectionAccess>> = {
   elaboracion: 'write',
   cobrar: 'write',
   cuentas: 'write',
+  importar: 'write',
   ajustes: 'none',
   archivo: 'none',
   cronologia: 'none',

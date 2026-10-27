@@ -337,7 +337,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
           <h3 className="ajustes-h3">
             Perfil del administrador{' '}
             <InfoHelp label="Cómo funciona el Perfil">
-              Este es el perfil del administrador del sistema, Yadir. Su nombre y su foto se muestran en el encabezado. La contraseña sigue siendo la llave para iniciar sesión. En esta copia, la segunda capa para exportar documentos y cambiar ajustes es la huella o la cara registrada en este dispositivo; el PIN de abajo es el de acceso rápido de este aparato.
+              Este es el perfil del administrador del sistema, Yadir. Su nombre y su foto se muestran en el encabezado. La contraseña sigue siendo la llave para iniciar sesión. La segunda capa para exportar documentos y cambiar ajustes es la huella o la cara registrada en este dispositivo; el PIN de abajo es el de acceso rápido de este aparato.
             </InfoHelp>
           </h3>
           <div className="ajustes-profile-head">
@@ -451,7 +451,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
 
           {/* ===== Huella o cara (añadido del dueño en esta copia) ===== */}
           <p className="small muted" style={{ margin: '12px 0 0' }}>
-            <strong>Acceso rápido en este dispositivo:</strong> este PIN desbloquea tu sesión guardada solo en este equipo, con intentos limitados, y se apaga al cerrar sesión. El PIN-candado del sistema original no existe como candado aparte en esta copia: su función la cumple la biometría sí está en esta copia como candado de las acciones sensibles (exportar y cambiar ajustes), en la subsección siguiente.
+            <strong>Acceso rápido en este dispositivo:</strong> este PIN desbloquea tu sesión guardada solo en este equipo, con intentos limitados, y se apaga al cerrar sesión. La huella o la cara hacen además de candado de las acciones sensibles (exportar y cambiar ajustes), en la subsección siguiente.
           </p>
 
           <div className="ajustes-subsection" aria-label="Huella o cara en este dispositivo">
@@ -459,7 +459,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
               <div>
                 <h4 className="ajustes-h4">Huella o cara en este dispositivo</h4>
                 <p className="small muted" style={{ margin: '2px 0 0' }}>
-                  Añadido de esta copia (26-oct): la huella o la cara autorizan la sesión y las acciones sensibles — exportar documentos y guardar cambios en Ajustes — según el dispositivo. La verifica el propio teléfono: nada biométrico sale de él; el servidor guarda solo la clave pública y comprueba cada desbloqueo con un reto de un solo uso.
+                  La huella o la cara autorizan la sesión y las acciones sensibles — exportar documentos y guardar cambios en Ajustes — según el dispositivo. La verifica el propio teléfono: nada biométrico sale de él; el servidor guarda solo la clave pública y comprueba cada desbloqueo con un reto de un solo uso.
                 </p>
               </div>
               <span className={`chip ${bioCreds && bioCreds.length > 0 ? 'ok' : ''}`}>{bioCreds && bioCreds.length > 0 ? 'Registrada' : 'Sin registrar'}</span>
@@ -546,7 +546,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
             <button type="button" className="btn primary ajustes-pill" onClick={() => onNavigate('historial')}>Ver historial</button>
           </div>
           <p className="small muted" style={{ marginBottom: 0 }}>
-            Los documentos se exportan desde Documentos: cualquier perfil puede exportarlos (decisión del dueño, 2026-10-26), excepto el respaldo del sistema, que queda solo para el administrador.
+            Los documentos se exportan desde Documentos: cualquier perfil puede exportarlos, excepto el respaldo del sistema, que queda solo para el administrador.
           </p>
         </div>
       </Card>
@@ -601,7 +601,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
         {!sbMode ? (
           <>
             <p className="small muted">
-              {fmtInt(data.days.length)} días importados en esta copia
+              {fmtInt(data.days.length)} días importados
               {data.importedAt ? ` · última importación ${fmtDate(data.importedAt.slice(0, 10))}` : ''}
               {data.exportedAt ? ` · respaldo de origen exportado el ${fmtDate(data.exportedAt.slice(0, 10))}` : ''}.
               Se vacían los días, las cuentas y los abonos guardados en ESTE dispositivo. El sistema original y el servidor no se tocan.
@@ -643,7 +643,7 @@ export default function AjustesTab({ data, session, isAdmin, onChanged, onNaviga
         <Card className="ajustes-card">
           <h3 className="ajustes-h3">Entrar como otro usuario</h3>
           <p className="small muted">
-            Capacidad solo del administrador (decisión del dueño, 2026-10-26): entras a la cuenta de Jesús,
+            Capacidad solo del administrador: entras a la cuenta de Jesús,
             Dayami o Yan autorizándote con TU PIN o TU huella — sin saber sus contraseñas. La entrada queda
             registrada en Cronología con tu nombre y la hora, todo lo que hagas dentro se atribuye a ti
             dentro de esa cuenta, y arriba verás siempre la banda «Estás viendo como…» con la salida de

@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent
 import type { StoredData } from '../types'
 import { Icon } from '../components/icons'
 import { QueenOrb, QueenReactorMark, QUEEN_REACTOR_STAGES } from '../components/QueenReactor'
-import QueenVoiceOrb from '../components/QueenVoiceOrb'
 import { MediaImage } from '../components/MediaImage'
 import { fmtInt, todayISO } from '../lib/utils'
 import { logActivity } from '../lib/activityLog'
@@ -14,10 +13,6 @@ import {
   type QueenAnswer, type QueenLearnedCorrection,
 } from '../lib/queenCore.mjs'
 import type { QueenChatResult } from '../lib/supabaseBackend'
-import {
-  recognitionSupported, synthesisSupported, startRecognition,
-  speakQueen, stopQueenSpeech, type RecognitionHandle,
-} from '../lib/queenVoice'
 import '../components/queenMirror.css'
 
 /* Consola de Queen — puerto de QueenTab + QueenThread + QueenComposer
@@ -37,11 +32,11 @@ import '../components/queenMirror.css'
    y «queen-sda-suggestion-status-v1» (estados de la bandeja).
    El determinista (queenCore) responde siempre; la capa de lenguaje
    (Edge Function queen-chat) solo redacta en modo Supabase.
-   AÑADIDO DEL DUEÑO en esta copia (2026-10-26): la VOZ en tiempo
-   real (lib/queenVoice) — micrófono Web Speech en español sobre
-   este mismo chat y lectura de las respuestas con la voz del
-   dispositivo. No es paridad: en el sistema original Queen es
-   100 % texto. La voz nunca bloquea el chat de texto. */
+   Queen es 100 % texto, como en el original. La voz (micrófono y
+   lectura en voz alta) existió en esta copia durante unas horas
+   del 26-oct como añadido del dueño y se ELIMINÓ el mismo día por
+   su orden expresa («no funciona» en su A16): D-R5-02. No queda
+   ningún punto de entrada de voz en el árbol. */
 
 interface QueenReplyRef { role: 'user' | 'queen'; text: string; key: string }
 interface QueenMsg {
@@ -173,8 +168,6 @@ function QueenComposer(props: {
   onHasTextChange: (hasText: boolean) => void
   replyTo: QueenReplyRef | null
   onCancelReply: () => void
-  /** Voz (añadido del dueño): null si el navegador no reconoce voz. */
-  voice: { listening: boolean; speaking: boolean; onMicToggle: () => void } | null
 }) {
   const [text, setText] = useState(() => { try { return localStorage.getItem('queen-draft') ?? '' } catch { return '' } })
   const inputRef = useRef<HTMLInputElement>(null)
@@ -213,13 +206,6 @@ function QueenComposer(props: {
         <label htmlFor="queen-input" style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}>Pregúntale a Queen</label>
         <input ref={inputRef} id="queen-input" type="text" lang="es" spellCheck value={text} maxLength={1000} className="queen-composer-input" placeholder="Mensaje a Queen"
           onChange={(e) => { setText(e.target.value); try { localStorage.setItem('queen-draft', e.target.value) } catch { /* noop */ } reportHas(e.target.value) }} />
-        {props.voice && (
-          <button type="button" disabled={props.sending} onClick={props.voice.onMicToggle} aria-pressed={props.voice.listening}
-            aria-label={props.voice.speaking ? 'Queen está hablando' : props.voice.listening ? 'Detener la escucha y enviar lo dicho' : 'Hablar con Queen por micrófono'}
-            title={props.voice.speaking ? 'Queen está hablando…' : props.voice.listening ? 'Escuchando… toca para enviar' : 'Hablar'} className={`queen-composer-tool queen-mic-btn${props.voice.listening ? ' is-listening' : ''}${props.voice.speaking ? ' is-speaking' : ''}`}>
-            <QueenVoiceOrb size={30} state={props.voice.speaking ? 'speaking' : props.voice.listening ? 'listening' : 'idle'} />
-          </button>
-        )}
         <button type="submit" disabled={props.sending || !text.trim()} aria-label={props.sending ? 'Queen está pensando' : 'Enviar mensaje a Queen'} title="Enviar" className="queen-send-btn">
           <Icon name="send" size={19} />
         </button>
@@ -272,139 +258,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
   const handleHasText = useCallback((h: boolean) => setHasText(h), [])
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
-  /* ===== Voz en tiempo real (AÑADIDO DEL DUEÑO, 2026-10-26) =====
-     Capa sobre este mismo chat: el micrófono transcribe y el texto
-     se envía con el send de siempre; la lectura en voz alta lee la
-     respuesta de Queen (la de siempre), nunca la interfaz. Por
-     defecto se pulsa para hablar; el modo conversación vuelve a
-     escuchar tras cada respuesta leída. Si el navegador no soporta
-     una pieza, esa pieza no aparece y el chat sigue como siempre. */
-  const recogOk = useMemo(() => recognitionSupported(), [])
-  const synthOk = useMemo(() => synthesisSupported(), [])
-  const [ttsOn, setTtsOn] = useState<boolean>(() => loadJSON('queen-voice-tts-v1', false))
-  const [convMode, setConvMode] = useState<boolean>(() => loadJSON('queen-voice-conv-v1', false))
-  const [listening, setListening] = useState(false)
-  /* «Hablando» lo mandan los eventos reales de la síntesis
-     (onstart/onend de speakQueen): el orbe de voz anima solo
-     mientras la lectura suena de verdad. */
-  const [speaking, setSpeaking] = useState(false)
-  const [interim, setInterim] = useState('')
-  const [voiceMsg, setVoiceMsg] = useState('')
-  const recogRef = useRef<RecognitionHandle | null>(null)
-  const convRef = useRef(convMode)
-  convRef.current = convMode
-  const ttsRef = useRef(ttsOn)
-  ttsRef.current = ttsOn
-  const sendRef = useRef<(text: string) => void>(() => {})
-  const spokenKeysRef = useRef<Set<string> | null>(null)
-  const prevSendingRef = useRef(false)
-  useEffect(() => { saveJSON('queen-voice-tts-v1', ttsOn) }, [ttsOn])
-  useEffect(() => { saveJSON('queen-voice-conv-v1', convMode) }, [convMode])
-
-  const stopListening = useCallback((cancel = false) => {
-    const handle = recogRef.current
-    recogRef.current = null
-    if (handle) { if (cancel) handle.abort(); else handle.stop() }
-    setListening(false)
-    setInterim('')
-  }, [])
-
-  const startListening = useCallback(() => {
-    if (!recogOk || recogRef.current || sendingRef.current) return
-    setVoiceMsg('')
-    setInterim('')
-    const handle = startRecognition({
-      onInterim: (text) => setInterim(text),
-      onFinal: (text) => {
-        recogRef.current = null
-        setListening(false)
-        setInterim('')
-        sendRef.current(text)
-      },
-      onError: (message) => {
-        recogRef.current = null
-        setListening(false)
-        setInterim('')
-        // El aviso queda visible hasta que el dueño lo cierre, y si
-        // el modo conversación estaba activo se dice que se detuvo:
-        // nada se apaga en silencio.
-        setVoiceMsg(convRef.current ? `${message} El modo conversación quedó desactivado.` : message)
-        // Un error de escucha detiene el modo conversación: sin
-        // esto, un «no te escuché» repetido reabriría el micrófono
-        // en bucle en un local con ruido.
-        setConvMode(false)
-      },
-      onEnd: () => {
-        recogRef.current = null
-        setListening(false)
-        setInterim('')
-      },
-    })
-    if (handle) {
-      recogRef.current = handle
-      setListening(true)
-    }
-  }, [recogOk])
-
-  const toggleMic = useCallback(() => {
-    if (listening) stopListening()
-    else startListening()
-  }, [listening, startListening, stopListening])
-
-  const toggleConv = useCallback(() => {
-    if (convMode) {
-      setConvMode(false)
-      stopListening()
-    } else {
-      setConvMode(true)
-      setTtsOn(true)
-      // El toque es el gesto del usuario: la escucha arranca ya.
-      startListening()
-    }
-  }, [convMode, startListening, stopListening])
-
-  const toggleTts = useCallback(() => {
-    if (ttsOn) { stopQueenSpeech(); setSpeaking(false) }
-    setTtsOn(!ttsOn)
-  }, [ttsOn])
-
-  /* Al salir de la pantalla, la escucha y la lectura se paran. */
-  useEffect(() => () => {
-    recogRef.current?.abort()
-    recogRef.current = null
-    stopQueenSpeech()
-  }, [])
-
-  /* Lectura de la respuesta nueva: al terminar de «pensar», si la
-     voz está activada se lee la respuesta; al acabar de leerla, el
-     modo conversación vuelve a escuchar. Las respuestas ya
-     presentes al abrir la pantalla no se leen (quedan marcadas). */
-  useEffect(() => {
-    if (spokenKeysRef.current === null) {
-      spokenKeysRef.current = new Set(msgs.filter((m) => m.key).map((m) => m.key as string))
-      prevSendingRef.current = sending
-      return
-    }
-    const wasSending = prevSendingRef.current
-    prevSendingRef.current = sending
-    if (!wasSending || sending) return
-    const last = [...msgs].reverse().find((m) => m.role === 'queen' && m.key)
-    if (!last || !last.key || spokenKeysRef.current.has(last.key)) return
-    spokenKeysRef.current.add(last.key)
-    if (ttsRef.current) {
-      speakQueen(
-        last.text,
-        () => { setSpeaking(false); if (convRef.current) startListening() },
-        () => setSpeaking(true),
-        // Vigía de TTS: si el motor de voz del dispositivo no
-        // empieza a sonar, se avisa con la causa — antes la lectura
-        // moría en silencio y el dueño solo veía que «no habla».
-        () => setVoiceMsg('Queen escribió su respuesta, pero la voz de este dispositivo no empezó a sonar. Revisa que el teléfono tenga una voz en español instalada y el motor de texto a voz activo (Ajustes → Idioma → Salida de texto a voz). La respuesta está escrita arriba.'),
-      )
-    } else if (convRef.current) {
-      startListening()
-    }
-  }, [sending, msgs, startListening])
 
   /* Persistencia del hilo y de los patrones (loadQueenState del original). */
   useEffect(() => {
@@ -462,8 +315,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
        Queen por el equipo queda en la Cronología del administrador
        (la pregunta recortada; el registro no guarda respuestas). */
     logActivity('queen', `Preguntó a Queen: «${question.slice(0, 90)}${question.length > 90 ? '…' : ''}»`, { section: 'queen' })
-    stopQueenSpeech()
-    setSpeaking(false)
     setChatNotice('')
     const patternLabel = queenQuestionPattern(question)
     const nextFreq = { ...freq, [patternLabel]: Math.min(9999, (freq[patternLabel] ?? 0) + 1) }
@@ -487,8 +338,6 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
       setSending(false)
     }, 550)
   }, [data, freq, msgs, ref, learnedCorrections])
-  /* La voz envía por el mismo send (su referencia viva). */
-  useEffect(() => { sendRef.current = (text: string) => send(text) }, [send])
 
   const recordFeedback = useCallback((turnKey: string, helpful: boolean, correction = '') => {
     const nextFeedback: NonNullable<QueenMsg['feedback']> = correction ? 'corregida' : helpful ? 'util' : 'no-util'
@@ -516,7 +365,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
     setClearArmed(false)
     lastAnswer.current = null
     setLanguageTry({ state: 'idle' })
-    try { localStorage.removeItem('queen-chat'); localStorage.removeItem('queen-freq'); localStorage.removeItem('queen-feedback-local-v1'); localStorage.removeItem('queen-draft') } catch { /* noop */ }
+    try { localStorage.removeItem('queen-chat'); localStorage.removeItem('queen-freq'); localStorage.removeItem('queen-feedback-local-v1'); localStorage.removeItem('queen-draft'); localStorage.removeItem('queen-voice-tts-v1'); localStorage.removeItem('queen-voice-conv-v1') } catch { /* noop */ }
     setComposerKey((k) => k + 1)
     setChatNotice('Historial completo borrado. No se tocó lo que Queen ha aprendido, ni las correcciones ya resueltas, ni ningún dato contable.')
   }
@@ -587,7 +436,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
       {clearArmed && hasQueenHistory && (
         <div className="queen-clear-bar" role="alert">
           <p style={{ fontSize: 14, margin: 0 }}>
-            <strong>¿Borrar todo el historial?</strong> Se borran la conversación y tus consultas frecuentes de esta copia.
+            <strong>¿Borrar todo el historial?</strong> Se borran la conversación y tus consultas frecuentes.
             No se toca lo que Queen ha aprendido, ni las correcciones ya resueltas, ni ningún dato contable.
           </p>
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
@@ -671,7 +520,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
           </div>
           <p style={{ fontSize: 12, color: 'var(--dim)', margin: '0 0 12px' }}>Queen nunca cambia un dato financiero sin tu confirmación dentro del aviso. Al cerrar uno, queda la fecha y la nota de qué se hizo.</p>
           {bank.cells.length === 0 && learnedCorrections.length === 0 ? (
-            <p style={{ fontSize: 14, color: 'var(--dim)', margin: 0 }}>Sin avisos registrados en esta copia: ningún día cargado trae descuadre verificado y todavía no hay correcciones aprendidas del chat. Cuando detecte algo, lo dejo aquí hasta que lo cerremos.</p>
+            <p style={{ fontSize: 14, color: 'var(--dim)', margin: 0 }}>Sin avisos registrados: ningún día cargado trae descuadre verificado y todavía no hay correcciones aprendidas del chat. Cuando detecte algo, lo dejo aquí hasta que lo cerremos.</p>
           ) : (
             <>
               {bank.cells.length > 0 && (
@@ -701,7 +550,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
                     {learnedCorrections.map((c) => (
                       <li key={c.id} style={{ border: '1px solid var(--border)', borderRadius: 16, padding: '10px 12px' }}>
                         <span style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}><span className="queenm-rowtext" style={{ flex: 1 }}>«{c.question}» → {c.correction}</span><span className="queenm-chipstate is-ok">Corrección aprendida</span></span>
-                        <span style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginTop: 3 }}>Guardada el {c.createdAt.slice(0, 10)} en la memoria local de esta copia; se aplica vía queenCore cuando la consulta coincide.</span>
+                        <span style={{ display: 'block', fontSize: 11, color: 'var(--dim)', marginTop: 3 }}>Guardada el {c.createdAt.slice(0, 10)} en la memoria local; se aplica vía queenCore cuando la consulta coincide.</span>
                       </li>
                     ))}
                   </ul>
@@ -717,11 +566,11 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
           <div className="queen-sms-head">
             <div>
               <h3><Icon name="message" size={18} /> SMS de cobro</h3>
-              <p>Cada movimiento queda en Enviados, Pendientes, Cancelados o Reenvíos. En esta copia no hay buzón ni transporte SMS desplegado, así que ningún mensaje se marca enviado sin envío real.</p>
+              <p>Cada movimiento queda en Enviados, Pendientes, Cancelados o Reenvíos. No hay transporte SMS desplegado, así que ningún mensaje se marca enviado sin envío real.</p>
             </div>
             <span className="queen-sms-count">{smsDue.length} listos</span>
           </div>
-          <p className="queen-sms-notice" role="status">Estado real: sin transporte en esta copia para enviar SMS NUEVOS. El original encola el SMS y lo despacha desde el Galaxy A16 con aprobación de Android; esa función en la nube no está desplegada aquí. El historial de abajo SÍ es real: es el buzón (smsOutbox) y el registro de envíos (smsLogs) que trae el respaldo (oleada 2: antes se descartaban al importar). Abajo están también las cuentas que el original usaría — solo morosas, nunca una cuenta pagada — con su saldo verificado.</p>
+          <p className="queen-sms-notice" role="status">Estado real: sin transporte para enviar SMS nuevos. El historial de abajo es el buzón (smsOutbox) y el registro de envíos (smsLogs) que trae el respaldo. Abajo están también las cuentas listas para cobrar — solo morosas, nunca una cuenta pagada — con su saldo verificado.</p>
           {smsNotice && <p className="queen-sms-notice" role="status">{smsNotice}</p>}
           <div className="queen-sms-outbox" aria-label="Historial de SMS de cobro">
             <strong>Historial de SMS</strong>
@@ -786,7 +635,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
                     <span>debe {fmtQueenCUP(c.morosasTotal)} en {fmtInt(c.morosas)} cuenta{c.morosas === 1 ? '' : 's'} morosa{c.morosas === 1 ? '' : 's'} · {c.category}</span>
                     <small>{c.transportLabel}</small>
                   </div>
-                  <button type="button" onClick={() => setSmsNotice(`Para ${c.client}: el SMS no puede salir de esta copia — no hay transporte desplegado. Su saldo moroso verificado es ${fmtQueenCUP(c.morosasTotal)}.`)} aria-label={`Revisar SMS para ${c.client}`}>Revisar</button>
+                  <button type="button" onClick={() => setSmsNotice(`Para ${c.client}: el SMS no puede salir — no hay transporte desplegado. Su saldo moroso verificado es ${fmtQueenCUP(c.morosasTotal)}.`)} aria-label={`Revisar SMS para ${c.client}`}>Revisar</button>
                 </li>
               ))}
             </ul>
@@ -837,7 +686,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
               <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 8 }}>Alias: {memory.aliases.map((a) => `${a.variant} → ${a.canonicalDisplay}`).join(' · ')}</p>
             )}
             {learnedCorrections.length > 0 && (
-              <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 8 }}>Correcciones del chat guardadas en esta copia: {learnedCorrections.length} (detalle en «Sugerencias»).</p>
+              <p style={{ fontSize: 12, color: 'var(--dim)', marginTop: 8 }}>Correcciones del chat guardadas: {learnedCorrections.length} (detalle en «Sugerencias»).</p>
             )}
           </details>
 
@@ -891,7 +740,7 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
 
       <div className="queen-lang" style={{ marginBottom: 12 }}>
         <p className="small" style={{ margin: 0 }}>
-          <strong>Capa de lenguaje:</strong> {lang.configured ? 'configurada' : 'sin configurar'}. {lang.note} Queen no escribe desde el chat: su escritura está denegada en dinero, cuentas, IPV, ADN y permisos. (En el sistema original Queen es 100 % texto; la voz de abajo es un añadido de esta copia, decisión del dueño del 26-oct.)
+          <strong>Capa de lenguaje:</strong> {lang.configured ? 'configurada' : 'sin configurar'}. {lang.note} Queen no escribe desde el chat: su escritura está denegada en dinero, cuentas, IPV, ADN y permisos.
         </p>
         {lastAnswer.current && supabaseMode ? (
           <button type="button" className="chip-btn" disabled={languageTry.state === 'busy'} onClick={() => void tryLanguage()}>
@@ -926,43 +775,8 @@ export default function QueenScreen({ data, supabaseMode, onTestLanguage, chatOn
         </div>
       )}
 
-      {/* Voz en tiempo real (añadido del dueño en esta copia): los
-          interruptores solo aparecen si el navegador soporta la
-          pieza; sin soporte, el chat queda exactamente como hoy. */}
-      {(recogOk || synthOk) && (
-        <div className="queen-voice-bar">
-          {synthOk && (
-            <button type="button" className={`chip-btn${ttsOn ? ' active' : ''}`} aria-pressed={ttsOn} onClick={toggleTts}>
-              <Icon name={ttsOn ? 'volume' : 'volumeOff'} size={14} /> Voz de Queen {ttsOn ? 'activada' : 'silenciada'}
-            </button>
-          )}
-          {recogOk && (
-            <button type="button" className={`chip-btn${convMode ? ' active' : ''}`} aria-pressed={convMode} onClick={toggleConv}>
-              <Icon name="mic" size={14} /> Conversación {convMode ? 'activada' : 'desactivada'}
-            </button>
-          )}
-          <span className="queen-voice-note">La voz es una capa sobre este mismo chat: lo que dictes se envía como un mensaje más y se lee la respuesta de Queen. Nada se escucha hasta tocar el micrófono.</span>
-        </div>
-      )}
-      {(speaking || listening || voiceMsg) && (
-        <div className="queen-voice-status" role="status" aria-live="polite">
-          <span style={{ flex: 1, display: 'inline-flex', alignItems: 'center', gap: 7 }}>
-            {speaking
-              ? <span className="queen-speaking-tag"><QueenVoiceOrb size={22} state="speaking" /> Queen está hablando…</span>
-              : listening
-                ? <><QueenVoiceOrb size={22} state="listening" /> Escuchando… {interim ? <span className="queen-voice-interim">«{interim}»</span> : 'habla ahora; toca el micrófono para enviar.'}</>
-                : voiceMsg}
-          </span>
-          {/* El aviso de un fallo de voz NO se quita solo: queda hasta
-              que el dueño lo cierre (defecto del dueño, 26-oct). */}
-          {!speaking && !listening && voiceMsg ? (
-            <button type="button" className="queen-voice-dismiss" onClick={() => setVoiceMsg('')} aria-label="Cerrar el aviso de voz">✕</button>
-          ) : null}
-        </div>
-      )}
-
       <div className="queen-composer-wrap">
-        <QueenComposer key={composerKey} sending={sending} quickOpen={quickOpen} hasQuickActions={hasData} onToggleQuick={() => setQuickOpen((open) => !open)} onSend={send} onHasTextChange={handleHasText} replyTo={replyTarget} onCancelReply={() => setReplyTarget(null)} voice={recogOk ? { listening, speaking, onMicToggle: toggleMic } : null} />
+        <QueenComposer key={composerKey} sending={sending} quickOpen={quickOpen} hasQuickActions={hasData} onToggleQuick={() => setQuickOpen((open) => !open)} onSend={send} onHasTextChange={handleHasText} replyTo={replyTarget} onCancelReply={() => setReplyTarget(null)} />
       </div>
     </section>
   )

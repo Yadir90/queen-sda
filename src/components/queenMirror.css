@@ -891,4 +891,3 @@ section.queen-chat { max-height: none; gap: 0; padding: 0 0 136px; }
   .qv-orb--speaking .qv-bar, .qv-orb--listening .qv-bar { animation-duration: 1.8s; }
   .qv-orb--listening .qv-ring--a, .qv-orb--listening .qv-ring--b { animation-duration: 2.6s; }
 }
-.queen-speaking-tag { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--deep); }

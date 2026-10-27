@@ -3,7 +3,7 @@ import type { StoredData, WarehouseEntry } from '../types'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
 import { buildProductsCatalog, buildWarehouse } from '../lib/productosCore.mjs'
-import { fmtCUP, fmtDate, fmtInt, todayISO } from '../lib/utils'
+import { fmtCUP, fmtDate, fmtDecEs, fmtInt, todayISO } from '../lib/utils'
 import { MediaImage } from '../components/MediaImage'
 import { slug } from '../lib/media'
 import { replaceExpenses, saveWarehouseExtended, supabaseConfigured } from '../lib/backend'
@@ -37,7 +37,7 @@ const SB_MODE = supabaseConfigured()
    rebajas crean/actualizan/eliminan su gasto enlazado en «Gastos»
    con la regla del original (lib/warehouseExpenses.ts). */
 
-const fmtQty = (v: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 3 }).format(v)
+const fmtQty = (v: number) => fmtDecEs(v, 3)
 
 export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData; isAdmin: boolean; onChanged: () => void }) {
   const entries = data.warehouseEntries
@@ -278,7 +278,7 @@ export default function Almacen({ data, isAdmin, onChanged }: { data: StoredData
         <p className="small muted" style={{ marginTop: 10 }}>
           Existencias calculadas desde los {fmtInt(entries.length)} movimientos manuales reales. Los metadatos de producto
           (código de barras, marca, categoría, descripción y fuente) vienen de «warehouse_product_meta_v1» del sistema
-          principal y de las búsquedas por código hechas en esta copia (ficha local, caché y OpenFoodFacts).
+          principal y de las búsquedas por código (ficha local, caché y OpenFoodFacts).
         </p>
       </Card>
 

@@ -203,8 +203,11 @@ check('el núcleo no exporta mutadores de negocio',
   !Object.keys(queenCore).some((k) => /^(set|add|delete|remove|update|save|mark|import)/i.test(k)))
 const langLocal = queenLanguageStatus(false)
 const langSb = queenLanguageStatus(true)
-check('capa de lenguaje: determinista siempre lista, IA sin configurar declarada',
-  langLocal.deterministicReady && !langLocal.configured && !langSb.configured && langSb.channelDeployed)
+/* D-R5-07: la expectativa anterior fijaba el estado FALSO de la nota
+   de obra («IA sin configurar» también en Supabase). Estado real:
+   con servidor, el canal queen-chat está desplegado y configurado. */
+check('capa de lenguaje: determinista siempre lista; con servidor el canal está configurado',
+  langLocal.deterministicReady && !langLocal.configured && langSb.configured && langSb.channelDeployed)
 
 console.log(`\nverify:queen — ${passed} ok, ${failed} fallos`)
 if (failed) process.exit(1)

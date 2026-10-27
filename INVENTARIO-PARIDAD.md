@@ -1,6 +1,6 @@
 # INVENTARIO-PARIDAD.md — Queen SDA original vs clon externo (inventario cerrado de paridad)
 
-**Totales: 995 líneas de inventario · PRESENTE 226 · PARCIAL 198 · AUSENTE 571** (recuento mecánico de `scripts/verify-inventario.mjs`, en verde a 2026-10-26 tras la copia integral: oleada 2 — Almacén manual, Inventario de bienes y las cinco colecciones del respaldo —, integración de media y ficha completa — firma, credencial, escáner, documentos, fotos — y el Sistema inmune en vivo. Verificación: `npm run verify:inventario` recorre las 995 líneas y falla si el código y el inventario dejan de coincidir)
+**Totales: 995 líneas de inventario · PRESENTE 275 · PARCIAL 208 · AUSENTE 528** (recuento mecánico de `scripts/verify-inventario.mjs`, en verde a 2026-10-26 tras la copia integral: oleada 2 — Almacén manual, Inventario de bienes y las cinco colecciones del respaldo —, integración de media y ficha completa — firma, credencial, escáner, documentos, fotos — y el Sistema inmune en vivo. Verificación: `npm run verify:inventario` recorre las 995 líneas y falla si el código y el inventario dejan de coincidir)
 
 ## Método y cómo verificar cada línea (script)
 
@@ -586,7 +586,7 @@
 | 468 | Registro de trabajadores completo (ficha, historial, ausencias) | WorkersRegistry del original | src/screens/WorkerRegistry.tsx + `saveWorkersRegistry` / `sbSaveWorkersRegistry` | **PRESENTE** | `saveWorkersRegistry` | Puerto regla a regla (D-RH); gaps declarados en el INFORME |
 | 469 | Matriz de permisos por sección y por persona | (capa multiusuario del clon) | src/lib/permissions.ts `sectionAccess` / `canModifyIn` | **PRESENTE** | `sectionAccess` | Piezas del dueño F/J: matriz de Yan y pestañas de admin invisibles |
 | 470 | Acceso rápido por dispositivo (PIN/biometría de desbloqueo) | (decisión del dueño para esta copia) | src/lib/quickAccess.ts | **PRESENTE** | `quickAccess` | Pieza H: hash con sal en el dispositivo, 5 intentos, se apaga al cerrar sesión |
-| 471 | Orbe de voz de Queen (icono premium + animación al hablar) | (acabado del dueño para esta copia) | src/components/QueenVoiceOrb.tsx | **PRESENTE** | `QueenVoiceOrb` | Pieza I: diferencia medida 6,9 % claro / 9,7 % oscuro |
+| 471 | Orbe de voz de Queen (icono premium + animación al hablar) | (acabado del dueño para esta copia, retirado por su orden) | — | **AUSENTE** | `QueenVoiceOrb` | Pieza I RETIRADA el 26-oct (D-R5-02): el dueño ordenó eliminar la voz de Queen («no funciona» en su A16); Queen queda 100 % texto como en el original — la ausencia ES la paridad |
 | 472 | Registro de actividad rastreable | (decisión del dueño: Cronología lo refleja todo) | src/lib/activityLog.ts + `activityDiff.ts` + SB `sbLoadActivityLog` / `sbSaveActivityLog` | **PRESENTE** | `sbSaveActivityLog` | Piezas K/L: diff por campo con anterior → nuevo e intentos fallidos |
 
 ---

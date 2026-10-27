@@ -3,7 +3,7 @@ import type { InventoryAdjustment, Section, StoredData } from '../types'
 import { buildInventoryBook, type BookProduct } from '../lib/productosCore.mjs'
 import { Card, EmptyState, TabHeader, TAB_BADGES } from '../components/ui'
 import { Icon } from '../components/icons'
-import { fmtDate, fmtInt, todayISO } from '../lib/utils'
+import { fmtDate, fmtDecEs, fmtInt, todayISO } from '../lib/utils'
 import { saveInventoryAdjustments, supabaseConfigured } from '../lib/backend'
 import { sbSaveInventoryAdjustments } from '../lib/supabaseBackend'
 import '../components/sectionsMirror.css'
@@ -24,7 +24,7 @@ const SB_MODE = supabaseConfigured()
    inicial de su fecha y reencadena desde ahí; «baja» y «traslado»
    restan ese día como bajas/traslados manuales. */
 
-const fmtCant = (v: number) => new Intl.NumberFormat('es-CU', { maximumFractionDigits: 2 }).format(v)
+const fmtCant = (v: number) => fmtDecEs(v, 2)
 
 const KIND_LABEL: Record<InventoryAdjustment['kind'], string> = { inicial: 'Saldo inicial fijado', baja: 'Baja manual', traslado: 'Traslado manual' }
 
@@ -254,8 +254,8 @@ export default function ExistenciasTab({ data, isAdmin, onChanged, onNavigate }:
                       <button type="submit" className="btn primary" disabled={adjBusy || adjQty === ''}>{adjBusy ? 'Guardando…' : 'Registrar ajuste'}</button>
                     </div>
                     <p className="small muted" style={{ marginBottom: 0 }}>
-                      El ajuste no toca el IPV: vive en el libro de esta copia y la cadena se reencadena con él,
-                      como en el sistema original. Fijar el saldo inicial manda sobre la apertura de ese día.
+                      El ajuste no toca el IPV: vive en el libro y la cadena se reencadena con él.
+                      Fijar el saldo inicial manda sobre la apertura de ese día.
                     </p>
                   </form>
                 ) : (

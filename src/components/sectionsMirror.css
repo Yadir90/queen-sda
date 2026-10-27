@@ -189,8 +189,13 @@
   .tab-header h2 { font-size: 30px; }
 }
 @media (prefers-color-scheme: dark) {
-  .tab-header { background: linear-gradient(135deg, color-mix(in srgb, var(--turquoise) 16%, var(--surface)), var(--surface) 62%); }
-  .tab-header-chip { color: var(--text); }
+  /* D-R5-06: el puerto trae el selector :root a propósito — en el clon
+     la base .tab-header vive en DOS hojas (index.css y esta) y la
+     base tardía ganaba la cascada al override oscuro (medido en
+     render: chip en #0b3d2e ilegible y degradado base en vez del de
+     la mezcla turquesa). La pintura es la literal del original. */
+  :root .tab-header { background: linear-gradient(135deg, color-mix(in srgb, var(--turquoise) 16%, var(--surface)), var(--surface) 62%); }
+  :root .tab-header-chip { color: var(--text); }
 }
 .lab-card {
   min-width: 0; padding: 16px;
@@ -821,7 +826,13 @@
 .mod-kpis { margin-bottom: 14px; }
 .mod-section-h { font-family: var(--font-display); font-size: 1.05rem; margin: 18px 0 10px; }
 .mod-row-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
-.mod-row-title { font-weight: 600; overflow-wrap: anywhere; }
+/* D-R5-04 (26-oct): era overflow-wrap: anywhere (puerto literal) y partía
+   las palabras por sílabas («Cobr/o de entr/ada») cuando la tarjeta era
+   estrecha. break-word solo parte si la palabra no cabe entera. */
+.mod-row-title { font-weight: 600; overflow-wrap: break-word; }
+/* D-R5-04: la cifra de una fila de registro nunca cede ni se parte:
+   quien cede es el bloque de texto (.mod-row-main, flex: 1). */
+.list.row > strong { flex: none; }
 .mod-row-fig { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; flex: none; text-align: right; }
 .mod-danger { color: var(--danger); }
 .mod-chip-row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
@@ -837,8 +848,19 @@
 .mod-day-card { padding-bottom: 8px; }
 .mod-day-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
 .mod-cat-grid { align-items: start; margin-bottom: 14px; }
+/* D-R5-04 (26-oct): las tarjetas por categoría de Otros ingresos iban en
+   .grid-2 (dos columnas SIEMPRE): a 360 px cada tarjeta medía ~158 px y
+   el texto salía estrujado letra a letra, con el importe flotando a
+   media tarjeta (captura del dueño). El original (ExtrasTab) usa
+   «grid md:grid-cols-2»: UNA columna hasta 768 px. Mismo criterio que
+   .economy-pair-grid. La especificidad (0,2,0) gana a .grid-2 (0,1,0). */
+.grid-2.mod-cat-grid { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 768px) {
+  .grid-2.mod-cat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 .mod-cat-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
-.mod-cat-head h3 { margin: 0; }
+.mod-cat-head h3 { margin: 0; min-width: 0; }
+.mod-cat-head strong { flex: none; white-space: nowrap; }
 
 button.mod-stat-btn { font: inherit; text-align: left; border: 0; cursor: pointer; width: 100%; color: var(--text); }
 button.mod-stat-btn .label { display: flex; align-items: center; gap: 5px; }

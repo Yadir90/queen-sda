@@ -124,7 +124,7 @@ function buildEvents(data: StoredData, bulletins: Bulletin[], activity: Activity
       out.push({
         id: `cta-lp-${lp.id}`, cat: 'cuentas', date: lp.date, ts: tsOf(lp.date), icon: 'wallet',
         title: `Abono · ${r.client}`,
-        detail: `${fmtCUP(lp.amount)} por ${lp.method} · registrado en esta copia · saldo restante ${fmtCUP(saldo)}`,
+        detail: `${fmtCUP(lp.amount)} por ${lp.method} · registrado · saldo restante ${fmtCUP(saldo)}`,
         go: 'cobrar', goLabel: 'Ver en Cobrar',
       })
     }

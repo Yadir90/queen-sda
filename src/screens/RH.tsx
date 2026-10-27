@@ -275,7 +275,7 @@ export function OrganigramaEquipo({ workers, marks, today, onOpenWorker, extende
         <h3 className="org-title"><Icon name="people" size={20} className="org-title-icon" /> Organigrama del equipo</h3>
         <span className="org-count-chip">{workers.length} en el equipo</span>
       </div>
-      <p className="org-intro">Flujo de trabajo: el equipo baja a cada área, el área a sus turnos (camareras, cajeras y cocina) y el turno a cada persona. El turno que se muestra es el válido: tu corrección a mano si la pusiste; si no, el detectado del IPV; si aún no se detecta, el puesto a mano. (En esta copia el turno puesto a mano, su corrección y las estrellas llegan por el estado extendido del servidor — app_settings — y el detectado sale de las marcas del IPV.)</p>
+      <p className="org-intro">Flujo de trabajo: el equipo baja a cada área, el área a sus turnos (camareras, cajeras y cocina) y el turno a cada persona. El turno que se muestra es el válido: tu corrección a mano si la pusiste; si no, el detectado del IPV; si aún no se detecta, el puesto a mano. El turno puesto a mano y su corrección mandan sobre el detectado, que sale de las marcas del IPV.</p>
 
       {/* Nivel 0: raíz del flujo */}
       <div className="org-rootwrap" aria-label="Raíz del organigrama: La Reina, equipo completo">
@@ -722,7 +722,7 @@ export default function RHScreen({
       <section className="card">
         <h3 className="font-display">Pagos fuera de nómina (del respaldo)</h3>
         {data.workerPayments.length === 0 ? (
-          <p className="small muted">El respaldo cargado no trae pagos a trabajadores fuera de la nómina (workerPayments). La colección viaja íntegra de ida y vuelta desde la oleada 2; si el sistema principal registra uno, aparecerá aquí tal como venga.</p>
+          <p className="small muted">El respaldo cargado no trae pagos a trabajadores fuera de la nómina (workerPayments). Si se registra uno, aparecerá aquí tal como venga.</p>
         ) : (
           <div className="list">
             {data.workerPayments.map((p, i) => (

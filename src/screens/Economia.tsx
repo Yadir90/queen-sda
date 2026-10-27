@@ -152,7 +152,10 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
   const cierreRow = (label: string, value: ReactNode, first = false) => (
     <div className="row" style={first ? { borderTop: 0, marginTop: 0, paddingTop: 0 } : undefined}>
       <span>{label}</span>
-      <strong>{value}</strong>
+      {/* D-R5-05: el importe (string) va en <strong> sin corte; la nota
+          «No registrado — …» es prosa y SÍ envuelve, alineada a la
+          derecha. Antes ambas iban en el mismo <strong>. */}
+      {typeof value === 'string' ? <strong>{value}</strong> : <span className="cierre-note">{value}</span>}
     </div>
   )
 
@@ -174,7 +177,7 @@ export default function Economia({ data, isAdmin, onChanged, onGoCobrar }: { dat
         <EmptyState
           icon="chart"
           title={`Sin datos de ${monthLabel(monthKey)} todavía`}
-          text="Este mes no tiene días de IPV ni gastos registrados en esta copia. Las cifras del cierre salen solo de registros reales: sin registro, no hay cifra."
+          text="Este mes no tiene días de IPV ni gastos registrados. Las cifras del cierre salen solo de registros reales: sin registro, no hay cifra."
         />
       ) : (
         <>

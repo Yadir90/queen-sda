@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Section, Session, StoredData } from '../types'
 import { Card, TabHeader, TAB_BADGES } from '../components/ui'
 import '../components/systemMirror.css'
-import ImportBackup from '../components/ImportBackup'
-import ImportIpv from '../components/ImportIpv'
 import { Icon } from '../components/icons'
 import { QueenOrb, QueenReactorMark } from '../components/QueenReactor'
 import QueenEvolutionPanel from '../components/QueenEvolutionPanel'
@@ -147,8 +145,8 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
       if (!cancelled) {
         const m = readStartupMetrics()
         const services: StartupEntry[] = [
-          { key: 'svc-datos', label: 'Servicio · Datos cargados', detail: `${data.days.length} días · ${data.receivables.length} cuentas en esta copia.`, ms: null, status: data.days.length ? 'ok' : 'pending' },
-          { key: 'svc-respaldo', label: 'Servicio · Respaldo', detail: data.importedAt ? `Importado el ${data.importedAt.slice(0, 10)}.` : 'Sin respaldo importado en esta copia.', ms: null, status: data.importedAt ? 'ok' : 'warn' },
+          { key: 'svc-datos', label: 'Servicio · Datos cargados', detail: `${data.days.length} días · ${data.receivables.length} cuentas.`, ms: null, status: data.days.length ? 'ok' : 'pending' },
+          { key: 'svc-respaldo', label: 'Servicio · Respaldo', detail: data.importedAt ? `Importado el ${data.importedAt.slice(0, 10)}.` : 'Sin respaldo importado.', ms: null, status: data.importedAt ? 'ok' : 'warn' },
           { key: 'svc-conexion', label: 'Servicio · Conexión', detail: sbMode ? 'Supabase configurado en el entorno.' : 'Modo local en este dispositivo.', ms: null, status: sbMode ? 'ok' : 'warn' },
         ]
         setStartupEntries([...m.phases, ...m.modules, ...services])
@@ -204,8 +202,8 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
     const segments: MirrorSegment[] = [
       seg('interfaz', 'Interfaz adaptable', 'healthy', 'La interfaz respondió en este dispositivo y Sistema se pintó sin error de render en esta apertura.'),
       seg('datos', 'Núcleo de datos', integrity.length ? 'error' : days.length ? 'healthy' : 'verifying', integrity.length ? `${fmtInt(integrity.length)} problema(s) de integridad: ${integrity[0].detail}` : days.length ? `${fmtInt(days.length)} días disponibles; no hay error técnico marcado.` : 'Listo para verificar cuando se importe el primer IPV.'),
-      seg('memoria', 'Memoria de Queen', (Object.keys(data.learnedKinds).length + Object.keys(data.aliases).length + Object.keys(data.cuentasOverrides).length) > 0 ? 'healthy' : 'verifying', `${fmtInt(QUEEN_OWNER_DIRECTIVES.length)} reglas permanentes, ${fmtInt(Object.keys(data.learnedKinds).length)} clasificaciones, ${fmtInt(Object.keys(data.aliases).length)} alias y ${fmtInt(Object.keys(data.cuentasOverrides).length)} decisiones del dueño viajan en esta copia.`),
-      seg('aprendizaje', 'Aprendizaje', data.queenLearning ? 'healthy' : 'verifying', data.queenLearning ? `${fmtInt(data.queenLearning.integratedConcepts.length)} conceptos y ${fmtInt(data.queenLearning.integratedAliases.length)} alias integrados por el ciclo de aprendizaje.` : 'El ciclo de aprendizaje de esta copia aún no registra integración: Queen espera una corrección o un patrón confirmado.'),
+      seg('memoria', 'Memoria de Queen', (Object.keys(data.learnedKinds).length + Object.keys(data.aliases).length + Object.keys(data.cuentasOverrides).length) > 0 ? 'healthy' : 'verifying', `${fmtInt(QUEEN_OWNER_DIRECTIVES.length)} reglas permanentes, ${fmtInt(Object.keys(data.learnedKinds).length)} clasificaciones, ${fmtInt(Object.keys(data.aliases).length)} alias y ${fmtInt(Object.keys(data.cuentasOverrides).length)} decisiones registradas.`),
+      seg('aprendizaje', 'Aprendizaje', data.queenLearning ? 'healthy' : 'verifying', data.queenLearning ? `${fmtInt(data.queenLearning.integratedConcepts.length)} conceptos y ${fmtInt(data.queenLearning.integratedAliases.length)} alias integrados por el ciclo de aprendizaje.` : 'El ciclo de aprendizaje aún no registra integración: Queen espera una corrección o un patrón confirmado.'),
       seg('pensamiento', 'Pensamiento operativo', integrity.length ? 'repairing' : days.length ? 'healthy' : 'verifying', integrity.length ? 'El razonamiento operativo está priorizando las incidencias detectadas.' : days.length ? `Analiza ${fmtInt(days.length)} días y el estado conectado de cada módulo.` : 'Preparado para razonar sobre el primer conjunto de datos importado.'),
       seg('ipv', 'IPV y cuadre', !days.length ? 'verifying' : descuadrados.length ? 'error' : 'healthy', !days.length ? 'Esperando datos suficientes para verificar el cuadre.' : descuadrados.length ? `${fmtInt(descuadrados.length)} de ${fmtInt(days.length)} días con cuadre distinto de cero.` : `${fmtInt(days.length)} de ${fmtInt(days.length)} días cuadrados.`),
       seg('auditoria', 'Auditoría IPV', integrity.length || descuadrados.length ? 'error' : days.length ? 'healthy' : 'verifying', `Auditoría derivable del clon: ${fmtInt(days.length)} IPV enlazados, ${fmtInt(integrity.length)} problemas de integridad, ${fmtInt(errorBank.cells.length)} células en el banco de errores.`, [
@@ -216,7 +214,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
       seg('cuentas', 'Cuentas y cobros', !data.receivables.length ? 'verifying' : morosas.length ? 'verifying' : 'healthy', data.receivables.length ? `${fmtInt(data.receivables.length)} cuentas conectadas al sistema; ${fmtInt(morosas.length)} morosas.` : 'Sin cuentas para comprobar en este momento.'),
       seg('rh', 'Recursos Humanos', hasRh ? 'healthy' : 'verifying', hasRh ? 'Los datos de RH están enlazados con los IPV importados.' : 'Sin registros de RH para comprobar en este período.'),
       seg('documentos', 'Documentos y envíos', failedBulletins > 0 ? 'error' : pendingBulletins > 0 ? 'repairing' : 'healthy', failedBulletins > 0 ? `${fmtInt(failedBulletins)} boletín(es) con error en la cola.` : pendingBulletins > 0 ? `${fmtInt(pendingBulletins)} boletín(es) pendiente(s) en la cola, sin marcar enviados.` : 'No hay documentos pendientes ni fallos de envío registrados.'),
-      seg('respaldos', 'Respaldos', data.importedAt ? 'healthy' : 'repairing', data.importedAt ? `Último respaldo importado el ${fmtDate(data.importedAt.slice(0, 10))}${data.exportedAt ? ` · exportado por el SDA: ${data.exportedAt}` : ''}. Respaldo nocturno en la nube: ${autoStatusEarly.cloudStatus}.` : 'Sin respaldo importado en esta copia.', [
+      seg('respaldos', 'Respaldos', data.importedAt ? 'healthy' : 'repairing', data.importedAt ? `Último respaldo importado el ${fmtDate(data.importedAt.slice(0, 10))}${data.exportedAt ? ` · exportado por el SDA: ${data.exportedAt}` : ''}. Respaldo nocturno en la nube: ${autoStatusEarly.cloudStatus}.` : 'Sin respaldo importado.', [
         { label: 'Último respaldo', value: data.importedAt ? fmtDate(data.importedAt.slice(0, 10)) : 'Sin respaldo' },
         { label: 'Destino (original)', value: 'Drive de La Reina / Backup SDA La Reina' },
         { label: 'Estado en el clon', value: autoStatusEarly.cloudStatus },
@@ -874,14 +872,17 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
               </tbody>
             </table>
 
-            {isAdmin ? (
-              <>
-                <h4 className="sistema-h4">Importar IPV del día (Excel)</h4>
-                <ImportIpv onImported={onChanged} existingDays={data.days} data={data} bare />
-                <h4 className="sistema-h4">Importar respaldo del SDA</h4>
-                <ImportBackup onImported={onChanged} bare />
-              </>
-            ) : null}
+            {/* D-R5-03 (26-oct): la importación (IPV y respaldo) vive en
+                su pantalla propia, «Importar», como en el original;
+                aquí queda el estado de los respaldos (arriba) y el
+                acceso. Antes los dos formularios vivían embebidos en
+                esta tarjeta y la entrada «Importar» caía en Sistema. */}
+            <h4 className="sistema-h4">Importar datos</h4>
+            <p className="sub" style={{ marginTop: 0 }}>
+              El IPV del día y los respaldos se importan desde la pantalla «Importar»
+              (rejilla «Más» → Importar), con la misma reconciliación de siempre.
+            </p>
+            <button className="btn" onClick={() => onNavigate('importar')}>Ir a Importar</button>
 
             <h4 className="sistema-h4">Perfiles de acceso</h4>
             <p className="sub">{sbMode
@@ -897,7 +898,7 @@ export default function Sistema({ data, session, onChanged, onNavigate, onRunAut
             {isAdmin && sbMode ? (
               <>
                 <h4 className="sistema-h4">Datos en el servidor</h4>
-                <p className="sub" style={{ margin: 0 }}>En modo Supabase no hay datos locales que restablecer: días, cuentas y abonos viven en el servidor. Importar un respaldo más fresco (arriba) actualiza el servidor sin duplicar; los abonos de Cobrar ya registrados no se tocan.</p>
+                <p className="sub" style={{ margin: 0 }}>En modo Supabase no hay datos locales que restablecer: días, cuentas y abonos viven en el servidor. Importar un respaldo más fresco (pantalla «Importar») actualiza el servidor sin duplicar; los abonos de Cobrar ya registrados no se tocan.</p>
               </>
             ) : null}
 

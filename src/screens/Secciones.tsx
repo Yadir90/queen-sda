@@ -17,13 +17,15 @@ import '../components/sectionsMirror.css'
    lista de navegación lo omite (se abre desde Productos): en esta
    copia Existencias SÍ es destino propio desde esta rejilla, con
    el mismo libro que se ve dentro de Productos.
-   Diferencias de arquitectura del clon, declaradas en la propia
+   Diferencia de arquitectura del clon, declarada en la propia
    rejilla: Gastos abre Economía (donde viven los gastos en esta
-   copia), Menú abre Documentos (donde se genera el menú) e
-   Importar abre Sistema (donde se importa el respaldo/IPV). Desde
-   la oleada 3 las 19 tarjetas abren una pantalla real: Ajustes,
-   Archivo, Cronología, Entradas, Existencias y Otros ingresos
-   dejaron de ser tarjetas sin destino. La pantalla «Cuentas» del
+   copia). Menú e Importar fueron destinos prestados (Documentos
+   y Sistema) hasta el 26-oct: el dueño los reportó como defecto
+   (D-R5-03) y desde entonces son secciones propias ('menu' e
+   'importar'), como en el original. Desde la oleada 3 las 19
+   tarjetas abren una pantalla real: Ajustes, Archivo, Cronología,
+   Entradas, Existencias y Otros ingresos dejaron de ser tarjetas
+   sin destino. La pantalla «Cuentas» del
    clon no es una sección del original (las cuentas viven dentro
    de Cobrar) y por eso ya no figura en esta rejilla: sigue
    accesible desde Cobrar y la barra lateral. */
@@ -47,10 +49,10 @@ const ITEMS: MasItem[] = [
   { name: 'Existencias', desc: 'Libro de existencias', icon: 'archive', go: 'existencias' },
   { name: 'Gastos', desc: 'Gastos y salidas de caja', icon: 'receipt', go: 'economia' },
   { name: 'Historial', desc: 'Boletines generados y su estado de envío', icon: 'clock', go: 'historial' },
-  { name: 'Importar', desc: 'Subir Excel diario del IPV', icon: 'upload', go: 'sistema' },
+  { name: 'Importar', desc: 'Subir Excel diario del IPV', icon: 'upload', go: 'importar' },
   { name: 'Inventario', desc: 'Registro independiente de los bienes del local', icon: 'archive', go: 'inventario' },
   { name: 'Laboratorio', desc: 'Simulación aislada e IPV de prueba que se cuadra a 0, sin tocar datos reales', icon: 'flask', go: 'laboratorio' },
-  { name: 'Menú', desc: 'Menú del día desde Productos, editable y en PDF', icon: 'doc', go: 'documentos' },
+  { name: 'Menú', desc: 'Menú del día desde Productos, editable y en PDF', icon: 'doc', go: 'menu' },
   { name: 'Otros ingresos', desc: 'Coctelería, pizzería, entrada y mesas', icon: 'plus', go: 'extras' },
   { name: 'Productos', desc: 'Ficha maestra: existencia, precios, costo promedio y ganancia', icon: 'package', go: 'productos' },
   { name: 'RH · Pagos', desc: 'Nómina quincenal y historial', icon: 'people', go: 'rh' },

@@ -3474,7 +3474,13 @@
 .system-search input { min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 13px; }
 .system-search button, .system-shortcuts button { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--text); padding: 7px 11px; font-size: 12px; font-weight: 720; }
 .system-search button { border: 0; background: var(--surface-alt); }
-.system-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -22px; }
+/* D-R5-01 (26-oct): el puerto literal traía margin-top: -22px del theme.css
+   del original, donde el nav es hijo directo de la red y sigue al mapa de
+   integración (sin título encima). En el clon el nav vive DENTRO de la
+   tarjeta «Accesos directos», tras su h3: el margen negativo montaba la
+   fila de botones sobre el título y lo tapaba (captura del dueño). Aquí
+   el nav va en flujo, debajo del título, sin solape. */
+.system-shortcuts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 2px; }
 .system-shortcuts button { background: var(--surface-tonal); }
 .system-health-signal { margin: 12px 0 16px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 17px; background: color-mix(in srgb, currentColor 4%, var(--surface)); }
 .system-health-signal > i { width: 13px; height: 13px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 5px color-mix(in srgb, currentColor 12%, transparent); }
@@ -4905,22 +4911,27 @@ html[data-ultralight="true"] :where(
    oscuro, claro por media): aquí van los valores OSCUROS del
    original que el clon tenía fijos en un valor intermedio, y en el
    bloque claro los CLAROS correspondientes. */
-.system-area-dna .dna-helix-base.is-critical { --change: #ff657c; }
-.system-area-dna .dna-helix-base.is-modified { --change: #f0c34b; }
-.system-area-dna .dna-helix-base.is-added { --change: #55dda5; }
+/* D-R5-06 (26-oct): los --change base son los del theme.css original
+   (línea 7321); los hex pizarra (#14222c/#edf5f8/#0c141b) eran de la
+   paleta inventada en la oleada 3d y salen: el nodo y los peldaños se
+   pintan con las variables del tema, como en el original (7488-7511),
+   para que sigan al tema restaurado en claro y oscuro. */
+.system-area-dna .dna-helix-base.is-critical { --change: #ff4968; }
+.system-area-dna .dna-helix-base.is-modified { --change: #f0bd3d; }
+.system-area-dna .dna-helix-base.is-added { --change: #2fd17f; }
 .system-area-dna .system-dna-helix { --helix-ribbon-a: #5ed6aa; --helix-ribbon-b: #9ce5ca; }
 .system-area-dna .dna-helix-node {
-  border-color: #14222c;
-  background: radial-gradient(circle at 34% 28%, color-mix(in srgb, currentColor 44%, #edf5f8) 0 17%, color-mix(in srgb, currentColor 76%, #14222c) 20% 60%, color-mix(in srgb, currentColor 90%, #0c141b) 100%);
-  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 12%, transparent), 0 0 14px color-mix(in srgb, currentColor 54%, transparent), inset -3px -3px 5px color-mix(in srgb, #0c141b 72%, currentColor);
+  border-color: color-mix(in srgb, currentColor 84%, var(--system-surface, var(--surface)));
+  background: radial-gradient(circle at 34% 28%, color-mix(in srgb, currentColor 28%, #fff) 0 17%, color-mix(in srgb, currentColor 72%, var(--system-surface, var(--surface))) 20% 58%, currentColor 100%);
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 11%, transparent), 0 0 13px color-mix(in srgb, currentColor 48%, transparent), inset -3px -3px 5px color-mix(in srgb, currentColor 32%, #07151c);
 }
 .system-area-dna .dna-helix-rung {
-  background: linear-gradient(90deg, currentColor, color-mix(in srgb, currentColor 30%, #edf5f8) 48%, currentColor);
+  background: linear-gradient(90deg, currentColor, color-mix(in srgb, currentColor 30%, var(--text)) 48%, currentColor);
   box-shadow: none;
 }
-.system-area-dna .dna-helix-rung b, .system-area-dna .dna-helix-rung small { box-shadow: 0 0 0 3px #14222c; }
+.system-area-dna .dna-helix-rung b, .system-area-dna .dna-helix-rung small { box-shadow: 0 0 0 3px var(--system-surface, var(--surface)); }
 .system-area-dna .dna-helix-rail { border-color: color-mix(in srgb, var(--accent) 42%, transparent); }
-.system-area { box-shadow: 0 1px 1px rgb(0 0 0 / .22), 0 10px 28px rgb(0 0 0 / .18); }
+.system-area { box-shadow: var(--card-shadow); }
 .system-evolution, .system-activity-board { box-shadow: var(--card-shadow); }
 @media (prefers-color-scheme: light) {
   .system-area-dna .dna-helix-base.is-critical { --change: #bc3049; }

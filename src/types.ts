@@ -693,7 +693,7 @@ export interface WorkerPayment {
   [key: string]: unknown
 }
 
-export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'inventario' | 'laboratorio' | 'documentos' | 'historial' | 'archivo' | 'entradas' | 'extras' | 'existencias' | 'cronologia' | 'ajustes'
+export type Section = 'inicio' | 'cobrar' | 'queen' | 'sistema' | 'mas' | 'dias' | 'cuentas' | 'rh' | 'economia' | 'transferencias' | 'productos' | 'elaboracion' | 'almacen' | 'inventario' | 'laboratorio' | 'documentos' | 'historial' | 'archivo' | 'entradas' | 'extras' | 'existencias' | 'cronologia' | 'ajustes' | 'menu' | 'importar'
 
 /* ===== Elaboración: fichas de costo (puerto del original) ===== */
 

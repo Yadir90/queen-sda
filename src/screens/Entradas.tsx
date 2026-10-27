@@ -211,10 +211,10 @@ export default function EntradasTab({ data }: { data: StoredData }) {
           <Card>
             <h3>Factura de entradas</h3>
             <p className="small muted" style={{ margin: 0 }}>
-              En el sistema original cada día puede llevar la foto de su factura archivada junto a las entradas.
-              Esas fotos viven como archivos en el servidor del original y <strong>no viajan en el respaldo</strong>:
-              esta copia no recibió ninguna, así que no hay foto que mostrar ni se simula el archivo. El comprobante
-              en PDF de las entradas tampoco se genera en esta copia. Lo que sí está completo es el detalle de arriba:
+              Cada día puede llevar la foto de su factura archivada junto a las entradas.
+              Esas fotos viven como archivos en el servidor y <strong>no viajan en el respaldo</strong>:
+              no se recibió ninguna, así que no hay foto que mostrar ni se simula el archivo. El comprobante
+              en PDF de las entradas tampoco se genera aquí. Lo que sí está completo es el detalle de arriba:
               cada entrada real de cada IPV importado, con su precio de compra.
             </p>
           </Card>

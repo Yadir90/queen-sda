@@ -295,10 +295,16 @@ export function MonthHeatMap({ days, monthKey, todayISO: today, compact = false 
     const [, m, d] = iso.split('-').map(Number)
     return `${d} ${['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][(m || 1) - 1]}`
   }
+  /* D-R5-06: en el original el MonthHeatMap ES una FutureCard (título,
+     subtítulo y la nota «Cómo leerlo» van dentro del componente); el
+     clon lo devolvía desnudo y la nota no existía en Inicio. Se
+     restaura la tarjeta completa con la nota literal del original. */
   return (
-    <div>
-      <h3 className="chart-card-title">{compact ? `El mes en calor · ${monthLabel}` : `Mapa térmico · ${monthLabel}`}</h3>
-      <p className="sub">Cada día respira según lo que vendió.</p>
+    <FutureCard
+      title={compact ? `El mes en calor · ${monthLabel}` : `Mapa térmico vivo · ${monthLabel}`}
+      subtitle="Cada día respira según lo que vendió."
+      nota="verde más intenso = más venta ese día. Un día pasado sin IPV late suave en rojo: no es un error de la gráfica, es que ese día no se subió. Toca un día para ver su resumen."
+    >
       <div className="heat-grid" role="grid" aria-label={`Calendario de ventas de ${monthLabel}`}>
         {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((d, i) => (
           <span key={i} className="heat-dow">{d}</span>
@@ -315,7 +321,7 @@ export function MonthHeatMap({ days, monthKey, todayISO: today, compact = false 
               aria-label={`${short(d.date)}: ${d.ventas != null ? `venta ${fmtCUP(d.ventas)}` : isFuture ? 'todavía no llega' : 'sin IPV importado'}`}
               className={`heat-cell${isToday ? ' is-today' : ''}${missing ? ' queen-fx-pulse' : ''}`}
               style={{
-                backgroundColor: d.ventas != null ? `rgba(14,159,110,${intensity})` : missing ? 'rgba(214,69,65,0.20)' : 'var(--surface-alt)',
+                backgroundColor: d.ventas != null ? `rgba(14,159,110,${intensity})` : missing ? 'rgba(214,69,65,0.20)' : 'var(--bg)',
                 color: d.ventas != null && intensity > 0.55 ? '#fff' : 'var(--text)',
               }}
             >
@@ -331,7 +337,7 @@ export function MonthHeatMap({ days, monthKey, todayISO: today, compact = false 
             ? `${short(selDay.date)}: todavía no llega.`
             : `${short(selDay.date)}: sin IPV importado. Ese día no cuenta en los totales hasta que se suba su hoja.`) : null}
       />
-    </div>
+    </FutureCard>
   )
 }
 

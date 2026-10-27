@@ -82,22 +82,26 @@
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
-    /* Paleta oscura del original (theme.css): azul pizarra, no verde.
-       La del clon era una variante verde (#0a1411/#15241e/#273f33…)
-       que el original no tiene: de ahí «muchos desajustes entre
-       claro y oscuro». Alineada token a token en la oleada 3d. */
-    --bg: #0c141b;
-    --surface: #14222c;
-    --surface-alt: #1b2d39;
-    --surface-tonal: #182832;
+    /* D-R5-06 (26-oct): valores EXACTOS del bloque oscuro de
+       client/src/theme.css del original, token a token. La oleada 3d
+       había puesto una paleta pizarra inventada (#0c141b/#14222c/
+       #29404d…) afirmando que era la del original: era falso — el
+       theme.css real es verde profundo (#0a1411/#15241e/#1c2f27) y el
+       tinte azulado de las capturas del dueño sale de los degradados
+       de componente (aurora + .tab-header con mezcla turquesa), no de
+       los tokens. El dueño: «el nuevo no se ve así». */
+    --bg: #0a1411;
+    --surface: #15241e;
+    --surface-alt: #1c2f27;
+    --surface-tonal: #1c2f27;
     --turquoise: #2dd4ee;
-    --turquoise-soft: #17343b;
-    --text: #edf5f8;
-    --dim: #a7bac5;
-    --border: #29404d;
+    --turquoise-soft: #14383b;
+    --text: #eaf5f0;
+    --dim: #9dbcae;
+    --border: #273f33;
     --accent: #22c55e;
-    --deep: #102b27;
-    --deep-2: #143d35;
+    --deep: #0b3d2e;
+    --deep-2: #11543f;
     /* Texto de las burbujas de Queen: blanco en ambos esquemas,
        como en el original (redefinido aquí a propósito). */
     --queen-chat-assistant-text: #ffffff;
@@ -126,7 +130,8 @@
     --chart-cursor: rgb(66 211 146 / 0.1);
     --chart-grid: #294238;
     --button-shadow: 0 1px 1px rgb(0 0 0 / .24), 0 6px 16px rgb(0 0 0 / .14);
-    --card-shadow: 0 1px 1px rgb(0 0 0 / .22), 0 10px 28px rgb(0 0 0 / .18);
+    /* Sombra de tarjeta oscura del original (theme.css), literal. */
+    --card-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 12px 30px rgb(0 0 0 / 0.16);
     --ambient-bg:
       radial-gradient(58rem 34rem at 88% -10%, rgb(45 212 238 / 0.08), transparent 62%),
       radial-gradient(46rem 30rem at -12% 4%, rgb(34 197 94 / 0.09), transparent 60%),
@@ -139,7 +144,7 @@
   /* En oscuro, --deep como TEXTO pasa a menta claro legible (el fondo
      --deep con texto blanco se mantiene oscuro a propósito, como en
      el original). */
-  .tab-header-chip { color: #edf5f8; }
+  .tab-header-chip { color: var(--text); }
   .period-tab.active { color: #a7d7bc; }
 }
 
@@ -568,7 +573,9 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .heat-dow { padding-bottom: 2px; text-align: center; font-size: 10px; font-weight: 700; color: var(--dim); }
 .heat-cell {
   display: flex; aspect-ratio: 1; align-items: center; justify-content: center;
-  border: 0; border-radius: 12px; font-size: 16px; font-weight: 400; color: var(--text);
+  /* D-R5-06: el original (futureCharts) usa text-[12px] font-bold
+     (rounded-xl = 12px ✓ ya estaba); el clon traía 16px/400. */
+  border: 0; border-radius: 12px; font-size: 12px; font-weight: 700; color: var(--text);
 }
 .heat-cell.is-today { box-shadow: 0 0 0 2px var(--gold); }
 
@@ -691,8 +698,15 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 .age-track { height: 8px; border-radius: 999px; background: var(--surface-tonal); overflow: hidden; margin-top: 8px; }
 .age-fill { height: 100%; background: linear-gradient(90deg, #22c55e, #eab308, #d43a2f); background-size: 200px 100%; }
 .rec-detail { border-top: 1px solid var(--border); padding: 12px 0 2px; margin-top: 12px; font-size: 0.88rem; }
-.rec-detail .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; }
-.rec-detail .row span:first-child { color: var(--dim); }
+.rec-detail .row { display: flex; justify-content: space-between; gap: 12px; padding: 3px 0; flex-wrap: wrap; }
+.rec-detail .row span:first-child { color: var(--dim); min-width: 0; }
+/* D-R5-05 (26-oct): en el Panel de cierre de Economía el importe se
+   partía («420.591 / CUP») porque el <strong> cedía ante rótulos largos.
+   El importe va SIEMPRE en una línea (número + CUP): la columna de
+   importe no se corta y el rótulo cede el ancho; si ni así cabe, el
+   importe baja entero a su línea, alineado a la derecha. */
+.rec-detail .row > strong { flex: none; white-space: nowrap; margin-left: auto; text-align: right; }
+.rec-detail .row > .cierre-note { min-width: 0; text-align: right; }
 
 .list-row { display: flex; align-items: center; gap: 12px; padding: 13px 4px; border-bottom: 1px solid var(--border); width: 100%; background: none; border-top: 0; border-left: 0; border-right: 0; color: var(--text); text-align: left; font-size: 0.95rem; }
 .list-row:last-child { border-bottom: 0; }
@@ -710,6 +724,11 @@ html[data-queen-motion="paused"] *, html[data-queen-motion="paused"] *::before, 
 table.kv { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 table.kv td { padding: 7px 0; border-bottom: 1px solid var(--border); }
 table.kv td:first-child { color: var(--dim); }
+/* D-R5-05 (auditoría): a .kv NO se le pone nowrap en el valor — la
+   tabla lleva también prosa («Secciones: Cantina · Elaboración · …»
+   en Menú) y el nowrap la desbordaba fuera de la tarjeta (demostrado
+   en render). El criterio «importe en una línea» se aplica en
+   .rec-detail, el componente del reporte del dueño. */
 table.kv td:last-child { text-align: right; font-weight: 700; font-family: var(--font-display); }
 
 /* ================================================================
@@ -1227,41 +1246,8 @@ select { border-color: color-mix(in srgb, var(--turquoise) 55%, var(--border)); 
   .queen-orb img { opacity: .78; filter: brightness(.82) saturate(.96) contrast(1.09); }
 }
 
-/* ===== AÑADIDO DEL DUEÑO (2026-10-26): voz de Queen en esta copia =====
-   Barra de interruptores de voz, estado de escucha con la
-   transcripción provisional siempre visible y el botón de micrófono
-   del composer. Nada de esto existe en el original (allí Queen es
-   100 % texto): es la capa de voz de lib/queenVoice. */
-.queen-voice-bar {
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-.queen-voice-note { font-size: 11px; color: var(--dim); line-height: 1.4; flex: 1 1 220px; }
-.queen-voice-status {
-  display: flex; align-items: center; gap: 7px;
-  margin: 0 0 8px; padding: 9px 13px;
-  border: 1px solid var(--border); border-radius: 14px;
-  background: var(--surface-tonal); color: var(--text);
-  font-size: 13px; line-height: 1.4;
-}
-.queen-voice-interim { font-style: italic; }
-.queen-voice-dismiss {
-  flex: none; align-self: flex-start; min-width: 30px; min-height: 30px;
-  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
-  color: var(--dim); font-size: 12px; line-height: 1; cursor: pointer;
-}
-.queen-voice-dismiss:active { background: var(--surface-tonal); }
-.queen-mic-btn.is-listening {
-  background: var(--accent); color: #fff;
-  animation: queen-mic-pulse 1.6s ease-in-out infinite;
-}
-@keyframes queen-mic-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
-  50% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--accent) 0%, transparent); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .queen-mic-btn.is-listening { animation: none; }
-}
+/* D-R5-02 (26-oct): la capa de voz de Queen se eliminó por orden
+   del dueño; esta hoja ya no trae ningún estilo de voz. */
 
 /* Filas de movimientos de Almacén (ronda 26-oct, defecto 1c):
    miniatura + info + cantidad + Editar/Eliminar sumaban ~450px

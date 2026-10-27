@@ -238,8 +238,8 @@ export default function Documentos({ data, today, isAdmin }: { data: StoredData;
         <p className="eyebrow">Respaldo · Ida y vuelta</p>
         <h2>Exportar respaldo del sistema</h2>
         <p className="sub">
-          El mismo formato JSON del respaldo del original ({'{'}backupOf, exportedAt, data{'}'}): se
-          puede reimportar aquí mismo desde «Sistema» y reproduce los mismos totales. Incluye días,
+          El formato JSON del respaldo ({'{'}backupOf, exportedAt, data{'}'}): se
+          puede reimportar aquí mismo desde «Importar» y reproduce los mismos totales. Incluye días,
           cuentas, gastos, nóminas, trabajadores y el estado de transferencias reconstruido.
         </p>
         <button

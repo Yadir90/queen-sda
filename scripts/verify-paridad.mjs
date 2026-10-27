@@ -138,7 +138,11 @@ check('Ajustes: pantalla AjustesTab con ancla real y destinatarios', ajustes.inc
    original. La puerta se endurece: exige declarar que el
    PIN-candado no existe, que la biometría está, y que el bloque de
    acceso rápido está presente con su nombre. */
-check('Ajustes: PIN-candado inexistente, biometría presente y acceso rápido por dispositivo declarado', ajustes.includes('PIN-candado') && ajustes.includes('no existe') && ajustes.includes('biometría sí está en esta copia') && ajustes.includes('Acceso rápido en este dispositivo'))
+/* D-R5-07: la expectativa anterior exigía la narración de obra
+   («biometría sí está en esta copia», «PIN-candado… no existe»);
+   el texto visible corregido declara el candado biométrico y el
+   acceso rápido sin referencias a la copia ni al original. */
+check('Ajustes: biometría como candado de acciones sensibles y acceso rápido por dispositivo declarados', ajustes.includes('La huella o la cara hacen además de candado de las acciones sensibles') && ajustes.includes('Acceso rápido en este dispositivo') && !ajustes.includes('biometría sí está en esta copia'))
 
 console.log('— CSS construido (dist) —')
 const assetsDir = new URL('dist/assets/', root)
@@ -191,8 +195,16 @@ if (existsSync(assetsDir)) {
   const defined = new Set([...allCss.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]))
   const missing = [...animNames].filter((n) => !defined.has(n))
   check(`barrido de animaciones: ${animNames.size} referenciadas, todas definidas (faltan: ${missing.join(', ') || 'ninguna'})`, missing.length === 0)
-  check('paleta oscura alineada con el original (fondo pizarra, deep oscuro)',
-    read('src/index.css').includes('--bg: #0c141b') && read('src/index.css').includes('--deep: #102b27'))
+  /* D-R5-06 (26-oct): la expectativa anterior afirmaba la paleta
+     pizarra inventada en la oleada 3d (#0c141b/#102b27) como si
+     fuera «la del original»; el theme.css real es verde profundo
+     y el dueño rechazó la pizarra («el nuevo no se ve así»). La
+     expectativa correcta son los tokens literales del bloque
+     oscuro del original. */
+  check('paleta oscura alineada con el original (theme.css: fondo verde profundo, deep del original)',
+    read('src/index.css').includes('--bg: #0a1411') && read('src/index.css').includes('--surface: #15241e')
+    && read('src/index.css').includes('--border: #273f33') && read('src/index.css').includes('--deep: #0b3d2e')
+    && !read('src/index.css').includes('--bg: #0c141b'))
 }
 
 // — D-R2-10: el asistente de contratación en 6 pasos de la ficha

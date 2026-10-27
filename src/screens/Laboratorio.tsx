@@ -630,9 +630,9 @@ function IpvLabPanel({ suggestions }: { suggestions: PriceSuggestions }) {
         {(!day || !result) && <p className="small muted" style={{ marginTop: 8 }}>Los botones se activan en cuanto subas un IPV de prueba arriba y el laboratorio termine de analizarlo.</p>}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
           <button type="button" className="lab-primary-btn" onClick={() => void downloadCorrected()} disabled={downloading || !fileObj || !day || !result} aria-label="Descargar IPV corregido"><Icon name="download" size={16} />{downloading ? 'Generando el IPV corregido…' : 'Descargar IPV corregido'}</button>
-          <button type="button" className="lab-secondary-btn" disabled aria-label="Enviar IPV cuadrado por correo (no disponible en esta copia)"><Icon name="send" size={16} />Enviar IPV cuadrado por correo</button>
+          <button type="button" className="lab-secondary-btn" disabled aria-label="Enviar IPV cuadrado por correo (no disponible)"><Icon name="send" size={16} />Enviar IPV cuadrado por correo</button>
         </div>
-        <p className="small muted" style={{ marginTop: 8 }}>El envío por correo no está disponible en esta copia externa: no hay transporte de correo desplegado aquí, así que ese botón queda deshabilitado y no se finge ningún envío. La descarga sí genera el Excel corregido como en el original.</p>
+        <p className="small muted" style={{ marginTop: 8 }}>El envío por correo no está disponible: no hay transporte de correo desplegado, así que ese botón queda deshabilitado y no se finge ningún envío. La descarga sí genera el Excel corregido.</p>
         {downloadMsg && <p role="status" className="small" style={{ marginTop: 8 }}>{downloadMsg}</p>}
         {downloadError && <p role="alert" className="small" style={{ color: 'var(--danger)', marginTop: 8 }}>{downloadError}</p>}
       </div>

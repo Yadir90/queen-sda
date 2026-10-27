@@ -14,6 +14,7 @@
    físico. El gasto enlazado no se edita ni se borra a mano en Gastos. */
 
 import type { Expense, StoredData, WarehouseEntry } from '../types'
+import { fmtDecEs } from './utils.ts'
 import { buildProductsCatalog } from './productosCore.mjs'
 import { warehouseProductKey } from './modulosExtended.ts'
 
@@ -82,8 +83,10 @@ export function warehouseCostFor(data: StoredData, productName: string): number 
   return costs.size === 1 ? [...costs][0]! : null
 }
 
-const fmtQty = (n: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 3 }).format(n)
-const fmtMoney = (n: number) => new Intl.NumberFormat('es-ES', { maximumFractionDigits: 2 }).format(n)
+/* D-R5-05: agrupación manual vía fmtDecEs (el Intl es-ES de Android no
+   separa los importes de 4 cifras). */
+const fmtQty = (n: number) => fmtDecEs(n, 3)
+const fmtMoney = (n: number) => fmtDecEs(n, 2)
 
 export type WarehouseExpenseValues = Omit<Expense, 'id'>
 

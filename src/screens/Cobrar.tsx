@@ -557,7 +557,7 @@ function AccountCard({ rec, saldo, payments, smsLogs = [], isAdmin, onPay, onRec
                     {event.kind === 'sms' ? <span>SMS de cobro enviado (registro del respaldo)</span> : null}
                     {event.kind === 'abono' ? (
                       <>
-                        <span>Pagó {fmtCUP(event.amount ?? 0)} · {event.method === 'transferencia' ? 'Transferencia' : 'Efectivo'}{event.local ? ' (en esta copia)' : ''}</span>
+                        <span>Pagó {fmtCUP(event.amount ?? 0)} · {event.method === 'transferencia' ? 'Transferencia' : 'Efectivo'}</span>
                         <button type="button" className="btn" style={{ minHeight: 30, padding: '3px 10px', fontSize: '0.75rem' }}
                           onClick={() => onReceipt({ key: `${rec.id}-${event.key}`, person: rec.client, amount: event.amount ?? 0, paidDate: event.date, method: event.method || 'efectivo', recDate: rec.date, totalAmount: Math.max(0, rec.originalAmount || rec.amount), remaining: event.balance })}>
                           Comprobante
@@ -1266,11 +1266,10 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
             </div>
           )}
           <p className="small muted" style={{ marginTop: 12 }}>
-            La tarjeta muestra solo el total que debe hoy; si saldó todo, no aparece ningún monto. En esta copia, la ficha
-            personal del sistema original (teléfono, correo, CI, dirección y notas de los clientes) no viaja en el respaldo:
+            La tarjeta muestra solo el total que debe hoy; si saldó todo, no aparece ningún monto. La ficha
+            personal (teléfono, correo, CI, dirección y notas de los clientes) no viaja en el respaldo:
             el teléfono solo aparece cuando el contacto está enlazado con un trabajador de RH, y el correo se muestra con
-            el texto de ausencia del propio original. El contacto se deriva de las cuentas: por eso no se elimina aquí —
-            en el original, al eliminarlo, el sistema reconstruye su ficha básica desde las cuentas que queden.
+            su texto de ausencia cuando falta. El contacto se deriva de las cuentas: por eso no se elimina aquí.
           </p>
         </>
       ) : null}
@@ -1308,7 +1307,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
             </div>
             <ReceiptPreviewCard receipt={receiptPreview} />
             <p className="small muted" style={{ marginTop: 12 }}>
-              Este comprobante se dibuja con los datos reales de ese abono tal como quedaron registrados. En el sistema original además se envía por correo si el cliente tiene correo en su ficha; en esta copia no hay envío de comprobantes, así que no se muestra ningún estado de envío inventado.
+              Este comprobante se dibuja con los datos reales de ese abono tal como quedaron registrados.
             </p>
           </div>
         </div>
@@ -1323,7 +1322,7 @@ export default function Cobrar({ data, isAdmin, onChanged, initialView = 'cuenta
           </div>
           {sectionTabs}
           <Card>
-            <EmptyState icon="grid" title="Sin entidades en esta copia" text="Las entidades (servicios a instituciones con cobro bancario) llegan con su propia fase del sistema externo. No se muestra ningún servicio inventado." />
+            <EmptyState icon="grid" title="Sin entidades" text="No hay entidades registradas: los servicios a instituciones con cobro bancario aparecerán aquí cuando existan. No se muestra ningún servicio inventado." />
           </Card>
         </>
       ) : null}
