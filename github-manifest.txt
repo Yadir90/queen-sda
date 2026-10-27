@@ -51,7 +51,6 @@ src/components/IpvDownloads.tsx
 src/components/MediaImage.tsx
 src/components/QueenEvolutionPanel.tsx
 src/components/QueenReactor.tsx
-src/components/QueenVoiceOrb.tsx
 src/components/WorkerFichaCompleta.tsx
 src/components/WorkerHiringDocuments.tsx
 src/components/charts.tsx
@@ -97,7 +96,6 @@ src/lib/productosCore.d.mts
 src/lib/productosCore.mjs
 src/lib/queenCore.d.mts
 src/lib/queenCore.mjs
-src/lib/queenVoice.ts
 src/lib/quickAccess.ts
 src/lib/supabaseBackend.ts
 src/lib/supabaseClient.ts
@@ -164,4 +162,24 @@ tsconfig.json
 vite.config.ts
 # Actualización 2026-10-26 (ronda de corrección tras la revisión del dueño en su A16): +9 rutas nuevas (src/components/FichaBoundary.tsx, src/lib/ultralight.ts, scripts/diag-ronda2.mjs, scripts/diag-cobrar.mjs, scripts/diag-cobrar2.mjs, scripts/diag-ajustes.mjs, scripts/diag-offline.mjs, scripts/probe-round2.mjs, scripts/diag-sistema.mjs) y la tanda de archivos corregidos (App, Ajustes, Cobrar, Sistema, Almacén, Elaboración, Economía, Transferencias, WorkerRegistry, Queen, systemMirror, secciones, backend, supabaseBackend, queenVoice, sw.js, manifiesto con short_name «SDA La Reina», auditoría visual). Total: 167 rutas. EXCLUIDO siempre: android-twa/ (material de firma del APK).
 
-# Actualización 2026-10-26 (tanda D-R2-10: asistente de contratación de RH confirmado y corregido): +3 rutas nuevas (src/components/WorkerHiringDocuments.tsx, scripts/diag-d7.mjs, public/.well-known/assetlinks.json). Rutas listadas en este manifiesto: 161.
+# Actualización 2026-10-26 (tanda D-R2-10: asistente de contratación de RH confirmado y corregido): +3 rutas nuevas (src/components/WorkerHiringDocuments.tsx, scripts/diag-d7.mjs, public/.well-known/assetlinks.json). Rutas listadas en este manifiesto: 161.scripts/verify-boletin.mjs
+scripts/verify-cuadre.mjs
+scripts/verify-via-real.mjs
+scripts/verify-voz.mjs
+scripts/probe-session.mjs
+scripts/probe-voice-lifecycle.mjs
+scripts/diag-ajustes.mjs
+scripts/diag-cobrar.mjs
+scripts/diag-cobrar2.mjs
+scripts/diag-offline.mjs
+scripts/diag-ronda2.mjs
+scripts/diag-sistema.mjs
+scripts/probe-round2.mjs
+src/components/FichaBoundary.tsx
+src/lib/ultralight.ts
+# Actualización 2026-10-26 (empaquetado unificado tras la Ronda 4): +15 rutas que existían en disco y no estaban listadas (baterías verify:boletin/cuadre/via-real/voz, sondas de sesión y de voz, diagnósticos de la ronda de corrección, FichaBoundary y ultralight). Rutas listadas: 175 — 167 de texto empujables por push-files; los 8 binarios (iconos Maduro 192/512, cuño webp, avatar por defecto, logos de La Reina ×2, iconos de evolución ×2) solo viajan en el zip.
+scripts/probe-r5.mjs
+scripts/verify-boletin.mjs
+src/screens/Importar.tsx
+src/screens/Menu.tsx
+# Actualización 2026-10-27 (empaquetado Ronda 5): +4 rutas (src/screens/Menu.tsx, src/screens/Importar.tsx, scripts/probe-r5.mjs, scripts/verify-boletin.mjs — esta última existía en disco desde la Ronda 4 con su línea pegada al comentario «161.» y nunca había llegado a GitHub) y −2 rutas eliminadas del árbol en D-R5-02 (src/lib/queenVoice.ts, src/components/QueenVoiceOrb.tsx): push-files no borra, sus copias remotas quedan como registro histórico hasta un borrado expreso. Rutas listadas: 177 — 169 de texto empujables por push-files; los 8 binarios solo viajan en el zip.
